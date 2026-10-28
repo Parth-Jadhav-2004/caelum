@@ -1,0 +1,39 @@
+# ~/.config/caelum/config.toml; credentials belong in environment variables.
+[app]
+hotkey = "SUPER + ALT + V"
+# Modifier-only shortcuts such as "CTRL + SUPER" also work in either press order.
+strategy = "single" # "chunked" is experimental; benchmark before enabling
+max_recording_seconds = 120
+minimum_recording_ms = 200
+retry_expiry_seconds = 60
+reduced_motion = false
+high_contrast = false
+# sounddevice index or device name; omit to use the system default
+# microphone = "USB Audio"
+silence_dbfs = -60.0 # conservative silence rejection, never an audio gate
+
+[stt]
+base_url = "https://api.groq.com/openai/v1"
+model = "whisper-large-v3-turbo"
+key_env = "GROQ_API_KEY"
+language = "" # auto detect, or "en", "hi", etc.
+vocabulary = "Caelum, Omarchy, Hyprland"
+timeout_seconds = 15.0
+chunk_seconds = 7.0
+overlap_seconds = 0.8
+concurrency = 2
+
+[cleanup]
+# Model ID verified against official OpenAI docs on 2026-10-28.
+# Startup also verifies account access via /models. Set model = "" for raw STT only.
+base_url = "https://api.openai.com/v1"
+key_env = "OPENAI_API_KEY"
+model = "gpt-6-luna"
+reasoning_effort = "none" # use "" to omit this parameter with another provider
+timeout_seconds = 1.8
+
+[desktop]
+theme = "light" # "dark" uses a pure black background
+history_enabled = false # completed transcripts only; no raw text, audio, or source-app tracking
+retention_days = 30
+stt_usd_per_hour = 0.0 # 0 means unknown; configure your own rate for new-session estimates
