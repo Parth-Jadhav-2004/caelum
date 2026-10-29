@@ -1,4 +1,4 @@
-"""Opt-in final transcripts only. No audio, raw text, source app, or credentials."""
+"""Local final transcripts only. No audio, raw text, source app, or credentials."""
 
 import json
 import os
@@ -44,8 +44,6 @@ class History:
         connection.execute("DELETE FROM dictations WHERE created_at < ?", (cutoff.isoformat(),))
 
     def record(self, session, text, metrics, config, refined, copied):
-        if not load(self.config_path).desktop.history_enabled:
-            return
         duration = max(0, metrics.get("capture_ms", 0))
         rate = load(self.config_path).desktop.stt_usd_per_hour
         with closing(self.connect()) as connection, connection:

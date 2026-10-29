@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from caelum.config import Config, save
+from caelum.config import Config, load, save
 from caelum.launcher import desktop_quote, entry_path, install
 
 
@@ -48,6 +48,7 @@ def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
 
     def activated(app):
         activations.append(True)
+
         def verify():
             try:
                 for page in ("home", "history", "stats", "settings"):
@@ -72,8 +73,26 @@ def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
                 )
                 assert app.hotkey.get_text() == "SUPER + ALT + V"
                 assert app.window.get_width() >= 820
-                assert not app.config.desktop.history_enabled
+                assert not hasattr(app, "history_switch")
+                assert not hasattr(app, "theme_button")
                 assert not app.history.path.exists()
+                app.work = lambda operation, done: done(operation())
+                app.theme_switch.set_active(True)
+                assert load(config_path).desktop.theme == "dark"
+                assert app.theme_switch.get_state()
+                app.theme_switch.set_active(False)
+                assert load(config_path).desktop.theme == "light"
+                assert not app.theme_switch.get_state()
+                app.history.record(
+                    "desktop-test", "Saved words appear here.", {}, app.config, True, False
+                )
+                rows = app.history.read()
+                app.render_data(({"state": "hidden"}, rows, rows, app.history.summary()))
+                card = app.history_rows.get_first_child()
+                assert (
+                    card.get_first_child().get_next_sibling().get_text()
+                    == "Saved words appear here."
+                )
             except BaseException as error:
                 failures.append(error)
             finally:

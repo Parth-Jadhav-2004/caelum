@@ -34,6 +34,5 @@ timeout_seconds = 1.8
 
 [desktop]
 theme = "light" # "dark" uses a pure black background
-history_enabled = false # completed transcripts only; no raw text, audio, or source-app tracking
 retention_days = 30
 stt_usd_per_hour = 0.0 # 0 means unknown; configure your own rate for new-session estimates

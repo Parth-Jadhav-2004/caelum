@@ -35,7 +35,7 @@ Run native tests only in an interactive Omarchy login with the repository daemon
 ## Phase 2 desktop evidence
 
 - [x] Atomic settings round-trip, private permissions, failed-save preservation.
-- [x] Opt-in persistence creates no database while disabled; final-only schema; deduplicated session IDs.
+- [x] Automatic persistence with legacy disabled-setting migration; final-only schema; deduplicated session IDs.
 - [x] Literal search, deletion, retention, sensitive export, rate snapshots, retained-data aggregate math.
 - [x] Pause/cancel/resume and completion hook after final insertion; storage-hook failure never retries insertion.
 - [x] Idle settings reload, microphone changes, shortcut-conflict rollback, active-session rejection.

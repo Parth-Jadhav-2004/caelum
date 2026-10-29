@@ -46,7 +46,6 @@ class Cleanup:
 @dataclass
 class Desktop:
     theme: str = "light"
-    history_enabled: bool = False
     retention_days: int = 30
     stt_usd_per_hour: float = 0.0
 
@@ -70,7 +69,10 @@ def load(path=None):
         raise ValueError("Unknown configuration section")
     config = Config()
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
-        values = data.get(section, {})
+        values = data.get(section, {}).copy()
+        if section == "desktop" and "history_enabled" in values:
+            if type(values.pop("history_enabled")) is not bool:
+                raise ValueError("Invalid type for desktop.history_enabled")
         if set(values) - {f.name for f in fields(cls)}:
             raise ValueError(f"Unknown option in {section}")
         defaults = cls()

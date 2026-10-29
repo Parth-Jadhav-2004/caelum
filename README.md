@@ -1,8 +1,8 @@
 # Caelum
 
-Push-to-talk dictation for **Omarchy / Hyprland on native Wayland**. Hold **Super+Alt+V**, speak, release. Caelum uploads the recording to Groq Whisper, conservatively cleans it with a configurable LLM, then pastes once into the original focused application. **No live transcript. Local history is off by default.**
+Push-to-talk dictation for **Omarchy / Hyprland on native Wayland**. Hold **Super+Alt+V**, speak, release. Caelum uploads the recording to Groq Whisper, conservatively cleans it with a configurable LLM, then pastes once into the original focused application. **No live transcript. Completed dictations are saved locally automatically.**
 
-The native GTK4 recording pill shows microphone energy and capture/processing states. It never takes keyboard focus or receives pointer input. The Phase 2 desktop application reuses that pipeline with settings, opt-in history, and statistics. Full release qualification still requires live provider/corpus and desktop acceptance testing.
+The native GTK4 recording pill shows microphone energy and capture/processing states. It never takes keyboard focus or receives pointer input. The Phase 2 desktop application reuses that pipeline with settings, automatic local history, and statistics. Full release qualification still requires live provider/corpus and desktop acceptance testing.
 
 ## Desktop application · Phase 2
 
@@ -15,14 +15,14 @@ The native GTK4 recording pill shows microphone energy and capture/processing st
 The native GTK4 application has a white light theme and a **pure-black dark theme**, without gradients. Opening the window does not start microphone capture or provider requests. Use **Start dictation service**, then the configured hold-to-talk shortcut. Closing the window leaves dictation running; **Stop service** stops it and discards pending audio. **Pause** cancels pending work and ignores the shortcut until resumed.
 
 - **Overview:** live service state, shortcut, today's saved words, retained recording minutes, recent dictations.
-- **History:** opt-in completed transcripts, literal search (up to 200 matches), copy, delete-one, confirmed delete-all, sensitive-text JSONL export.
-- **Statistics:** today / last seven days / calendar month / retained words, seven-day chart, recording-time WPM, mean release-to-dispatch latency, optional STT-only estimates.
-- **Settings:** shortcut recorder, microphone selection, explicit three-second local input meter test, language, provider/model settings, history retention, and your own STT hourly price. Settings are validated and saved atomically. Idle services reload without restarting; active sessions or shortcut collisions leave the previous runtime settings intact and show an application warning.
+- **History:** automatically saved completed transcripts, literal search (up to 200 matches), copy, delete-one, confirmed delete-all, sensitive-text JSONL export.
+- **Statistics:** today / last seven days / calendar month / retained words, seven-day chart, recording-time WPM, mean release-to-dispatch latency.
+- **Settings:** shortcut recorder, microphone selection, explicit three-second local input meter test, language, provider/model settings, history retention, and a dark-mode toggle. Settings are validated and saved atomically. Idle services reload without restarting; active sessions or shortcut collisions leave the previous runtime settings intact and show an application warning.
 - **Desktop integration:** Settings can add Caelum to the app launcher or enable/disable start-at-login. These entries use this checkout's credential-loading launcher. Keep the checkout at its installed path. Nothing is installed or enabled automatically.
 
-History uses `$XDG_DATA_HOME/caelum/history.sqlite3` (normally `~/.local/share/caelum/history.sqlite3`), owner-only file permissions, and a private application directory. No database is created until history is enabled and a dictation completes. Only final transcripts are stored: no audio, raw transcript, source application, or credentials. Turning history off stops new saves without deleting existing entries; use **Delete all** to erase them. Retention runs on read/write, not while Caelum is entirely closed. Statistics recalculate from retained entries. See [privacy details](docs/privacy.md), including disk-encryption and export limitations.
+History uses `$XDG_DATA_HOME/caelum/history.sqlite3` (normally `~/.local/share/caelum/history.sqlite3`), owner-only file permissions, and a private application directory. The database is created when the first dictation completes. Only final transcripts are stored: no audio, raw transcript, source application, or credentials. History is always enabled; use **Delete all** to erase saved entries. Older `history_enabled = false` preferences are ignored and removed on the next settings save. Retention runs on read/write, not while Caelum is entirely closed. Statistics recalculate from retained entries. See [privacy details](docs/privacy.md), including disk-encryption and export limitations.
 
-Costs are **not bills**: configure your own USD-per-audio-hour rate for future sessions. Zero means unknown, not free. Estimates exclude cleanup tokens, retries, overlap, and provider minimums. No rates are fetched or assumed.
+Statistics use retained history, so deletion and retention recalculate totals. Word counts use whitespace-separated words; WPM uses recording duration. Latency measures release to dispatch rather than observed on-screen insertion.
 
 Modifier-only shortcuts such as `CTRL + SUPER` are supported: press in either order, hold both to dictate, and release either to finish. Left/right variants work. Such a chord also begins recording when used as the prefix of a longer desktop shortcut; choose a three-key shortcut if that overlap is undesirable.
 

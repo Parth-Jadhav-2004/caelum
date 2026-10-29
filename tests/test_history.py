@@ -29,24 +29,30 @@ def record(storage, identifier="session", text="A few spoken words.", copied=Fal
     )
 
 
-def enable(storage, rate=0):
+def set_rate(storage, rate=0):
     config, path, _ = storage
-    config.desktop.history_enabled = True
     config.desktop.stt_usd_per_hour = rate
     save(config, path)
 
 
-def test_disabled_history_does_not_create_database(storage):
-    record(storage)
+def test_history_records_by_default_and_survives_reopening(storage):
     history = storage[2]
     assert not history.path.exists()
+    record(storage)
+    reopened = History(storage[1], history.path)
+    assert reopened.read()[0]["final_transcript"] == "A few spoken words."
+    assert reopened.summary()["sessions"] == 1
+
+
+def test_reading_empty_history_does_not_create_database(storage):
+    history = storage[2]
     assert history.read() == []
     assert history.summary()["sessions"] == 0
     assert not history.path.exists()
 
 
 def test_private_permissions_deduplication_and_schema(storage):
-    enable(storage, rate=3.6)
+    set_rate(storage, rate=3.6)
     record(storage)
     record(storage)
     history = storage[2]
@@ -65,7 +71,6 @@ def test_private_permissions_deduplication_and_schema(storage):
 
 
 def test_search_literal_and_delete_recalculates(storage):
-    enable(storage)
     record(storage, "one", "Literal 100% _ and 'quotes'")
     record(storage, "two", "Other words", copied=True)
     history = storage[2]
@@ -79,18 +84,16 @@ def test_search_literal_and_delete_recalculates(storage):
     assert history.summary()["sessions"] == 0
 
 
-def test_disabling_is_checked_at_write_time(storage):
-    enable(storage)
-    record(storage)
+def test_legacy_disabled_preference_cannot_prevent_recording(storage):
     config, path, history = storage
-    config.desktop.history_enabled = False
-    save(config, path)
-    record(storage, "not-saved")
+    path.write_text("[desktop]\nhistory_enabled = false\n")
+    record(storage)
     assert len(history.read()) == 1
+    save(load(path), path)
+    assert "history_enabled" not in path.read_text()
 
 
 def test_retention_and_export(storage, tmp_path):
-    enable(storage)
     record(storage, "old")
     record(storage, "new", "Sensitive new words")
     history = storage[2]
@@ -109,9 +112,9 @@ def test_retention_and_export(storage, tmp_path):
 
 
 def test_rate_is_snapshotted_not_retroactive(storage):
-    enable(storage, rate=3)
+    set_rate(storage, rate=3)
     record(storage, "first")
-    enable(storage, rate=6)
+    set_rate(storage, rate=6)
     record(storage, "second")
     assert storage[2].summary()["estimated_stt_usd"] == pytest.approx(0.15)
 

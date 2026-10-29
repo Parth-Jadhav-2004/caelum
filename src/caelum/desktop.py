@@ -121,8 +121,6 @@ def run(path=None, *, on_activate=None):
             self.window.add_css_class("caelum")
             header = Gtk.HeaderBar()
             header.set_title_widget(self.label("CAELUM", "wordmark"))
-            self.theme_button = self.button("Dark mode", self.toggle_theme)
-            header.pack_end(self.theme_button)
             self.window.set_titlebar(header)
             outer = self.box(False, 0)
             navigation = self.box(spacing=6)
@@ -265,8 +263,8 @@ def run(path=None, *, on_activate=None):
         def build_stats(self):
             page = self.page(
                 "stats",
-                "Find your rhythm.",
-                "An honest picture of your saved dictations. No made-up time savings.",
+                "Statistics",
+                "Your dictation activity.",
             )
             self.stats_labels = {}
             grid = Gtk.Grid(column_spacing=14, row_spacing=14, column_homogeneous=True)
@@ -294,17 +292,6 @@ def run(path=None, *, on_activate=None):
             self.chart.set_draw_func(self.draw_chart)
             self.daily = {}
             page.append(self.chart)
-            self.cost_label = self.label("", "muted", True)
-            page.append(self.cost_label)
-            page.append(
-                self.label(
-                    "Statistics use retained history only. Deletion and retention recalculate every total. "
-                    "Speed uses total recording time, not detected speech time. Output latency measures "
-                    "release to paste dispatch, not confirmed on-screen insertion.",
-                    "muted",
-                    True,
-                )
-            )
 
         def draw_chart(self, _, context, width, height):
             dark = self.config.desktop.theme == "dark"
@@ -342,10 +329,21 @@ def run(path=None, *, on_activate=None):
         def build_settings(self):
             page = self.page(
                 "settings",
-                "Make yourself at home.",
-                "Your microphone, your shortcut, your privacy. All in one place.",
+                "Settings",
+                "Appearance, dictation, and history.",
             )
             self.entries = {}
+            appearance = self.box(False)
+            appearance_label = self.label("Dark mode", "field-title")
+            appearance_label.set_hexpand(True)
+            appearance.append(appearance_label)
+            self.syncing_theme = False
+            self.theme_switch = Gtk.Switch(active=self.config.desktop.theme == "dark")
+            self.theme_switch.set_valign(Gtk.Align.CENTER)
+            self.theme_switch.set_tooltip_text("Dark mode")
+            self.theme_switch.connect("state-set", self.toggle_theme)
+            appearance.append(self.theme_switch)
+            page.append(appearance)
             self.hotkey = self.entry(self.config.app.hotkey)
             hotkey_row = self.box(False)
             self.hotkey.set_hexpand(True)
@@ -399,28 +397,9 @@ def run(path=None, *, on_activate=None):
                     True,
                 )
             )
-            self.history_switch = Gtk.Switch(active=self.config.desktop.history_enabled)
-            self.history_switch.set_halign(Gtk.Align.START)
-            self.field(
-                page,
-                "Save completed dictations",
-                self.history_switch,
-                "Off by default. Turning this off stops new saves; use Delete all to erase "
-                "existing entries. Raw transcripts and source application names are never saved.",
-            )
             self.retention = Gtk.SpinButton.new_with_range(1, 3650, 1)
             self.retention.set_value(self.config.desktop.retention_days)
             self.field(page, "Keep history for this many days", self.retention)
-            self.rate = Gtk.SpinButton.new_with_range(0, 1000, 0.01)
-            self.rate.set_digits(4)
-            self.rate.set_value(self.config.desktop.stt_usd_per_hour)
-            self.field(
-                page,
-                "Your STT price · USD per audio hour",
-                self.rate,
-                "Optional. Zero means unknown, not free. New sessions snapshot this rate. "
-                "Cleanup, retries, chunk overlap, and provider minimums are not included.",
-            )
             self.save_button = self.button("Save settings", self.save_settings, "primary")
             page.append(self.save_button)
             desktop_actions = self.box(False)
@@ -538,10 +517,9 @@ def run(path=None, *, on_activate=None):
             updated.app.microphone = self.devices[self.mic.get_selected()][1]
             for (section, key), widget in self.entries.items():
                 setattr(getattr(updated, section), key, widget.get_text().strip())
-            updated.desktop.history_enabled = self.history_switch.get_active()
             updated.desktop.retention_days = self.retention.get_value_as_int()
-            updated.desktop.stt_usd_per_hour = self.rate.get_value()
             self.save_button.set_sensitive(False)
+            self.theme_switch.set_sensitive(False)
 
             def persist():
                 try:
@@ -558,6 +536,7 @@ def run(path=None, *, on_activate=None):
                     return "Settings saved and applied."
                 finally:
                     GLib.idle_add(self.save_button.set_sensitive, True)
+                    GLib.idle_add(self.theme_switch.set_sensitive, True)
 
             def saved(message):
                 self.config = updated
@@ -567,34 +546,46 @@ def run(path=None, *, on_activate=None):
 
             self.work(persist, saved)
 
-        def toggle_theme(self):
-            target = "dark" if self.config.desktop.theme == "light" else "light"
+        def toggle_theme(self, switch, active):
+            if self.syncing_theme:
+                return False
+            target = "dark" if active else "light"
+            switch.set_sensitive(False)
+            self.save_button.set_sensitive(False)
 
             def persist():
-                current = load(self.path)
-                current.desktop.theme = target
-                save(current, self.path)
+                try:
+                    current = load(self.path)
+                    current.desktop.theme = target
+                    save(current, self.path)
+                except (OSError, ValueError):
+                    return "Could not save the appearance setting. Check configuration file permissions."
+                return None
 
-            def changed(_):
-                self.config.desktop.theme = target
+            def changed(error):
+                if error:
+                    self.message(error)
+                else:
+                    self.config.desktop.theme = target
                 self.apply_theme()
+                switch.set_sensitive(True)
+                self.save_button.set_sensitive(True)
 
             self.work(persist, changed)
+            return True
 
         def apply_theme(self):
             dark = self.config.desktop.theme == "dark"
             background, foreground = ("#000000", "#ffffff") if dark else ("#ffffff", "#111111")
-            muted, border, hover = (
-                ("#a0a0a0", "#292929", "#161616") if dark else ("#686868", "#e6e6e6", "#f5f5f5")
-            )
+            muted, hover = ("#a0a0a0", "#161616") if dark else ("#686868", "#f5f5f5")
             css = f"""
             window.caelum, .caelum headerbar, .caelum .background {{
               background: {background}; color: {foreground}; background-image: none;
             }}
             .caelum {{ font-family: 'Inter', 'Adwaita Sans', sans-serif; font-size: 14px; }}
-            .caelum headerbar {{ box-shadow: none; border-bottom: 1px solid {border}; }}
+            .caelum headerbar {{ box-shadow: none; border: none; }}
             .caelum .wordmark {{ font-weight: 800; letter-spacing: 4px; font-size: 13px; }}
-            .caelum .navigation {{ padding: 32px 16px; border-right: 1px solid {border}; }}
+            .caelum .navigation {{ padding: 32px 16px; border: none; }}
             .caelum .page {{ padding: 36px 40px; }}
             .caelum .title {{ font-size: 32px; font-weight: 650; letter-spacing: -1px; }}
             .caelum .section-title {{ font-size: 17px; font-weight: 600; }}
@@ -603,21 +594,23 @@ def run(path=None, *, on_activate=None):
             .caelum .metric {{ font-size: 30px; font-weight: 550; }}
             .caelum .shortcut {{ font-size: 25px; font-weight: 500; }}
             .caelum .field-title {{ font-weight: 600; }}
-            .caelum .panel {{ border: 1px solid {border}; border-radius: 12px; padding: 22px; }}
+            .caelum .panel {{ border: none; box-shadow: none; padding: 18px 0; }}
             .caelum button {{ background: {background}; color: {foreground};
               background-image: none; box-shadow: none; text-shadow: none;
-              border: 1px solid {border}; border-radius: 7px; padding: 9px 14px; }}
+              border: none; border-radius: 7px; padding: 9px 14px; }}
             .caelum button:hover {{ background: {hover}; }}
             .caelum button:disabled {{ opacity: 0.4; }}
             .caelum button.nav-item {{ border-color: transparent; }}
             .caelum button.selected {{ background: {hover}; font-weight: 650; }}
             .caelum button.primary {{ background: {foreground}; color: {background}; }}
             .caelum entry, .caelum dropdown, .caelum spinbutton {{
-              background: {background}; color: {foreground}; border: 1px solid {border};
+              background: {hover}; color: {foreground}; border: none;
               border-radius: 6px; box-shadow: none; padding: 6px; }}
             .caelum .notice {{ background: {hover}; padding: 12px 24px; }}
             .caelum levelbar block.filled {{ background: {foreground}; border-color: {foreground}; }}
-            .caelum switch:checked {{ background: {foreground}; border-color: {foreground}; }}
+            .caelum switch {{ background: {hover}; border: none; box-shadow: none; }}
+            .caelum switch slider {{ background: {muted}; border: none; box-shadow: none; }}
+            .caelum switch:checked {{ background: {foreground}; }}
             .caelum switch:checked slider {{ background: {background}; }}
             .caelum *:focus-visible {{ outline: 2px solid {muted}; outline-offset: 2px; }}
             """
@@ -639,7 +632,10 @@ def run(path=None, *, on_activate=None):
                 )
             else:
                 settings.set_property("gtk-application-prefer-dark-theme", dark)
-            self.theme_button.set_label("Light mode" if dark else "Dark mode")
+            self.syncing_theme = True
+            self.theme_switch.set_active(dark)
+            self.theme_switch.set_state(dark)
+            self.syncing_theme = False
             self.chart.queue_draw()
 
         def start_service(self):
@@ -730,9 +726,7 @@ def run(path=None, *, on_activate=None):
             self.pause_button.set_sensitive(bool(status))
             self.pause_button.set_label("Resume" if self.paused else "Pause")
             self.history_note.set_text(
-                f"History {'on' if self.config.desktop.history_enabled else 'off'} · "
-                f"{self.config.desktop.retention_days}-day retention · "
-                "Deleting entries also removes them from statistics. Search shows up to 200 matches."
+                f"Saved automatically on this device · Kept for {self.config.desktop.retention_days} days"
             )
             for widget, value in zip(
                 self.home_metrics,
@@ -744,7 +738,7 @@ def run(path=None, *, on_activate=None):
                 strict=True,
             ):
                 widget.set_text(str(value))
-            signature = (rows, recent, self.config.desktop.history_enabled, self.search.get_text())
+            signature = (rows, recent, self.search.get_text())
             changed = signature != self.history_signature
             if changed:
                 self.history_signature = signature
@@ -754,11 +748,7 @@ def run(path=None, *, on_activate=None):
                 message = (
                     "No matching dictations."
                     if self.search.get_text()
-                    else (
-                        "Nothing here yet. Your next saved dictation will appear here."
-                        if self.config.desktop.history_enabled
-                        else "History is off. Enable it in Settings to keep your completed dictations."
-                    )
+                    else "No dictations yet. Your next completed dictation will appear here."
                 )
                 self.history_rows.append(self.label(message, "muted", True))
             for row in recent if changed else []:
@@ -766,9 +756,7 @@ def run(path=None, *, on_activate=None):
             if changed and not recent:
                 self.recent.append(
                     self.label(
-                        "Your next saved dictation will appear here."
-                        if self.config.desktop.history_enabled
-                        else "Your words stay private. Enable history to see recent sessions.",
+                        "Your next completed dictation will appear here.",
                         "muted",
                         True,
                     )
@@ -786,11 +774,6 @@ def run(path=None, *, on_activate=None):
                 )
             self.daily = summary["daily"]
             self.chart.queue_draw()
-            self.cost_label.set_text(
-                f"Estimated STT only · ${summary['estimated_stt_usd']:.4f} USD\n"
-                f"{summary['unpriced_sessions']} sessions have no configured price. "
-                "Not an invoice; cleanup, retries, chunk overlap, and minimum charges are excluded."
-            )
 
         def history_card(self, row, compact=False):
             card = self.box(spacing=10)
