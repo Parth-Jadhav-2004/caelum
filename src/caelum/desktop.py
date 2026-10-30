@@ -270,6 +270,13 @@ def run(path=None, *, on_activate=None):
             self.record_button.set_visible(self.portable)
             self.record_button.set_sensitive(False)
             actions.append(self.record_button)
+            self.retry_button = self.button(
+                "Retry",
+                lambda: self.work(lambda: request("retry"), lambda _: self.refresh()),
+                "primary",
+            )
+            self.retry_button.set_visible(False)
+            actions.append(self.retry_button)
             actions.append(self.button("Cancel", lambda: self.work(lambda: request("cancel"))))
             hero.append(actions)
             page.append(hero)
@@ -777,6 +784,11 @@ def run(path=None, *, on_activate=None):
                     )
             self.start_button.set_visible(not bool(status))
             self.stop_button.set_visible(bool(status))
+            retry_available = (
+                bool(status) and status["state"] == "error" and status.get("pending_audio", False)
+            )
+            self.retry_button.set_visible(retry_available)
+            self.record_button.set_visible(self.portable and not retry_available)
             self.record_button.set_sensitive(
                 bool(status)
                 and not self.paused
