@@ -25,12 +25,12 @@ overlap_seconds = 0.8
 concurrency = 2
 
 [cleanup]
-# Model ID verified against official OpenAI docs on 2026-10-28.
-# Startup also verifies account access via /models. Set model = "" for raw STT only.
-base_url = "https://api.openai.com/v1"
-key_env = "OPENAI_API_KEY"
-model = "gpt-6-luna"
-reasoning_effort = "none" # use "" to omit this parameter with another provider
+# Free single-key default: raw transcription until refinement is benchmarked.
+# Opt in to Groq refinement with model = "openai/gpt-oss-20b".
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+model = ""
+reasoning_effort = "" # omit for custom providers unless supported
 timeout_seconds = 1.8
 
 [desktop]

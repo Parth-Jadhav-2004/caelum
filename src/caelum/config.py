@@ -37,10 +37,10 @@ class STT:
 
 @dataclass
 class Cleanup:
-    base_url: str = "https://api.openai.com/v1"
-    key_env: str = "OPENAI_API_KEY"
-    model: str = "gpt-6-luna"
-    reasoning_effort: str = "none"
+    base_url: str = "https://api.groq.com/openai/v1"
+    key_env: str = "GROQ_API_KEY"
+    model: str = ""
+    reasoning_effort: str = ""
     timeout_seconds: float = 1.8
 
 
@@ -88,6 +88,10 @@ def load(path=None):
             if not valid:
                 raise ValueError(f"Invalid type for {section}.{key}")
         setattr(config, section, cls(**values))
+    return validate(config)
+
+
+def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
     if a.backend not in ("auto", "hyprland", "portable"):
         raise ValueError("backend must be auto, hyprland, or portable")

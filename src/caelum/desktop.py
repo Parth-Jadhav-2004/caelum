@@ -1,5 +1,6 @@
 """Native GTK desktop shell; slow work stays outside the GTK main thread."""
 
+import asyncio
 import json
 import os
 import socket
@@ -10,7 +11,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from .config import config_path, load, save
+from .config import config_path, load, save, validate
 from .history import History
 from .launcher import entry_path, install
 from .portable import backend_name
@@ -38,6 +39,121 @@ def microphones():
         for device in sound.query_devices()
         if device["max_input_channels"] > 0
     ]
+
+
+PRESETS = ("Groq", "Transcription only", "Custom provider")
+
+
+def provider_preset(config):
+    groq = "https://api.groq.com/openai/v1"
+    if config.stt.base_url.rstrip("/") != groq or config.stt.model != "whisper-large-v3-turbo":
+        return 2
+    if not config.cleanup.model:
+        return 1
+    if (
+        config.cleanup.base_url.rstrip("/") == groq
+        and config.cleanup.model == "openai/gpt-oss-20b"
+        and config.cleanup.key_env == config.stt.key_env == "GROQ_API_KEY"
+    ):
+        return 0
+    return 2
+
+
+def apply_provider_preset(config, selected):
+    updated = deepcopy(config)
+    if selected == 2:
+        return updated
+    if selected not in (0, 1):
+        raise ValueError("Unknown provider preset")
+    updated.stt.base_url = "https://api.groq.com/openai/v1"
+    updated.stt.model = "whisper-large-v3-turbo"
+    updated.stt.key_env = "GROQ_API_KEY"
+    updated.cleanup.base_url = updated.stt.base_url
+    updated.cleanup.key_env = updated.stt.key_env
+    updated.cleanup.model = "openai/gpt-oss-20b" if selected == 0 else ""
+    updated.cleanup.reasoning_effort = "low" if selected == 0 else ""
+    return updated
+
+
+async def connection_status(config):
+    from .providers import ProviderError, Providers
+
+    try:
+        validate(config)
+    except ValueError as error:
+        return f"Check provider settings: {error}"
+    provider = Providers(config)
+    results = []
+    try:
+        for title, settings in (("Transcription", config.stt), ("Refinement", config.cleanup)):
+            if not settings.model:
+                results.append(f"{title}: off (raw transcription)")
+                continue
+            try:
+                models = await provider.models(settings)
+                results.append(
+                    f"{title}: connected (model available)"
+                    if settings.model in models
+                    else f"{title}: model unavailable; choose another model in Advanced"
+                )
+            except ProviderError as error:
+                results.append(
+                    f"{title}: key missing; add {settings.key_env} to the launch environment"
+                    if error.kind == "missing_key"
+                    else f"{title}: {error}"
+                )
+    finally:
+        await provider.client.aclose()
+    return "\n".join(results)
+
+
+def service_presentation(status):
+    if not status:
+        return "Stopped", "Start the service to record."
+    if status.get("paused"):
+        return "Paused", "Resume to use the recording shortcut."
+    state = status.get("state", "hidden")
+    if state == "error":
+        if status.get("pending_audio"):
+            guidance = {
+                "invalid_key": "Update the key in the launch environment and restart Caelum.",
+                "missing_key": "Add the provider key to the launch environment and restart Caelum.",
+                "quota": "Check provider usage or billing before retrying.",
+                "rate_limit": "Wait for the provider rate limit to reset, then retry.",
+                "offline": "Check your network connection, then retry.",
+                "timeout": "The provider timed out. Retry when the connection is stable.",
+                "model": "Choose an available model in Settings.",
+            }.get(status.get("error_kind"), "Retry or cancel before the recording expires.")
+            return "Awaiting retry", guidance + " Pending audio stays in memory only."
+        if status.get("error_kind") in ("microphone", "capture"):
+            return "Microphone unavailable", "Open Settings to choose a microphone and test input."
+        return "Recording failed", "Check Settings and try recording again."
+    labels = {
+        "hidden": (
+            "Ready",
+            "Use Record or your approved desktop shortcut to begin."
+            if status.get("backend") == "portable"
+            else "Hold your shortcut to begin.",
+        ),
+        "starting": ("Starting microphone", "Preparing to record."),
+        "listening": ("Recording", "Listening for speech. No interim text is shown."),
+        "recording": ("Recording", "Release your shortcut or finish recording to process."),
+        "processing": ("Processing", "Transcribing your recording."),
+        "refining": ("Processing", "Refining punctuation and formatting."),
+        "success": ("Done", "Refined text was sent to the original application."),
+        "unrefined": (
+            "Done · unrefined",
+            "Raw transcription was sent to the original application.",
+        ),
+        "copied": ("Copied", "Paste manually in the intended application."),
+        "saved": ("Saved", "Use Copy text below, then paste into your chosen app."),
+        "no_speech": ("No speech detected", "Nothing inserted. Try recording again."),
+    }
+    title, detail = labels.get(state, ("Ready", "Use your shortcut or Record to begin."))
+    metrics = status.get("metrics") or []
+    if state in ("saved", "copied") and metrics and not metrics[-1].get("cleanup_refined", False):
+        detail += " Raw transcription; refinement was skipped or unavailable."
+    return title, detail
 
 
 def run(path=None, *, on_activate=None):
@@ -114,13 +230,22 @@ def run(path=None, *, on_activate=None):
                 spacing=spacing,
             )
 
+        def flow(self):
+            flow = Gtk.FlowBox()
+            flow.set_selection_mode(Gtk.SelectionMode.NONE)
+            flow.set_max_children_per_line(6)
+            flow.set_min_children_per_line(1)
+            flow.set_row_spacing(8)
+            flow.set_column_spacing(8)
+            return flow
+
         def activate(self, _):
             if hasattr(self, "window"):
                 self.window.present()
                 return
             self.window = Gtk.ApplicationWindow(application=self, title="Caelum")
             self.window.set_default_size(1080, 760)
-            self.window.set_size_request(820, 600)
+            self.window.set_size_request(480, 480)
             self.window.add_css_class("caelum")
             header = Gtk.HeaderBar()
             # Keep the brand above the sidebar, independent of the centered title slot.
@@ -181,15 +306,27 @@ def run(path=None, *, on_activate=None):
             content.append(self.stack)
             outer.append(content)
             self.window.set_child(outer)
+            self.compact_window = False
+
+            def adapt_layout(widget, _clock):
+                compact = 0 < widget.get_width() < 800
+                if compact and not self.compact_window:
+                    self.sidebar_toggle.set_active(False)
+                self.compact_window = compact
+                return True
+
+            self.window.add_tick_callback(adapt_layout)
             self.build_home()
             self.build_history()
             self.build_stats()
             self.build_settings()
             self.apply_theme()
             self.navigate("home")
+            if Gdk.Display.get_default().get_monitors().get_item(0).get_geometry().width < 1000:
+                self.sidebar_toggle.set_active(False)
             self.window.present()
             self.refresh()
-            self.timer = GLib.timeout_add_seconds(3, self.refresh)
+            self.timer = GLib.timeout_add_seconds(1, self.refresh)
             self.work(microphones, self.set_devices)
             if on_activate:
                 on_activate(self)
@@ -243,6 +380,17 @@ def run(path=None, *, on_activate=None):
             hero.add_css_class("panel")
             self.status_label = self.label("Checking dictation service…", "section-title")
             hero.append(self.status_label)
+            self.status_label.set_wrap(True)
+            self.status_detail = self.label("", "muted", True)
+            hero.append(self.status_detail)
+            self.delivery_note = self.label(
+                "Manual paste: completed text appears here. Choose Copy text, then paste."
+                if self.portable
+                else "Automatic paste on this Hyprland session. If focus changes, copy and paste manually.",
+                "muted",
+                True,
+            )
+            hero.append(self.delivery_note)
             self.shortcut_label = self.label(
                 "Record. Copy. Paste." if self.portable else self.config.app.hotkey, "shortcut"
             )
@@ -257,7 +405,7 @@ def run(path=None, *, on_activate=None):
                     True,
                 )
             )
-            actions = self.box(False)
+            actions = self.flow()
             self.start_button = self.button("Start service", self.start_service, "primary")
             actions.append(self.start_button)
             self.stop_button = self.button("Stop service", self.stop_service)
@@ -277,10 +425,18 @@ def run(path=None, *, on_activate=None):
             )
             self.retry_button.set_visible(False)
             actions.append(self.retry_button)
-            actions.append(self.button("Cancel", lambda: self.work(lambda: request("cancel"))))
+            self.cancel_button = self.button(
+                "Cancel recording",
+                lambda: self.work(lambda: request("cancel"), lambda _: self.refresh()),
+            )
+            self.cancel_button.set_visible(False)
+            actions.append(self.cancel_button)
+            self.settings_action = self.button("Open Settings", lambda: self.navigate("settings"))
+            self.settings_action.set_visible(False)
+            actions.append(self.settings_action)
             hero.append(actions)
             page.append(hero)
-            metrics = self.box(False)
+            metrics = self.flow()
             self.home_metrics = []
             for title in ("Words today", "Recording minutes", "Saved sessions"):
                 card = self.box(spacing=8)
@@ -376,7 +532,8 @@ def run(path=None, *, on_activate=None):
 
         def field(self, page, title, widget, description=None):
             group = self.box(spacing=8)
-            group.append(self.label(title, "field-title"))
+            group.append(self.label(title, "field-title", True))
+            widget.update_property([Gtk.AccessibleProperty.LABEL], [title])
             if description:
                 group.append(self.label(description, "muted", True))
             group.append(widget)
@@ -405,7 +562,7 @@ def run(path=None, *, on_activate=None):
 
             input_settings = settings_section("Recording")
             self.hotkey = self.entry(self.config.app.hotkey)
-            hotkey_row = self.box(False)
+            hotkey_row = self.box()
             self.hotkey.set_hexpand(True)
             hotkey_row.append(self.hotkey)
             self.record_key = self.button("Record shortcut", self.begin_shortcut)
@@ -438,27 +595,57 @@ def run(path=None, *, on_activate=None):
                     "The test stays in memory; it is not uploaded, played, or saved.", "muted", True
                 )
             )
-            provider_groups = {
-                "stt": settings_section("Transcription"),
-                "cleanup": settings_section("Text cleanup"),
-            }
+            providers = settings_section("Providers")
+            self.preset = Gtk.DropDown.new_from_strings(PRESETS)
+            self.preset.set_selected(provider_preset(self.config))
+            self.field(providers, "Provider preset", self.preset)
+            providers.append(
+                self.label(
+                    "Groq uses one GROQ_API_KEY for transcription and refinement. Free usage has "
+                    "provider limits. Refinement is optional; its quality and speed still need live "
+                    "qualification. Transcription only sends no text to a refinement provider.",
+                    "muted",
+                    True,
+                )
+            )
+            self.connection_label = self.label(self.key_status(self.config), "muted", True)
+            providers.append(self.connection_label)
+            self.check_button = self.button("Check connection", self.check_connection)
+            self.check_button.set_halign(Gtk.Align.START)
+            providers.append(self.check_button)
+            providers.append(
+                self.label(
+                    "Connection checks contact the provider's model list, without audio or transcript. "
+                    "A listed model does not guarantee available quota. Keys come from the launch "
+                    "environment; restart the app after replacing a key.",
+                    "muted",
+                    True,
+                )
+            )
+            self.advanced = Gtk.Expander(label="Advanced provider settings")
+            advanced_body = self.box(spacing=16)
+            self.advanced.set_child(advanced_body)
+            providers.append(self.advanced)
             for section, key, title in (
                 ("stt", "language", "Language · blank for automatic detection"),
                 ("stt", "base_url", "Transcription API URL"),
                 ("stt", "model", "Transcription model"),
                 ("stt", "key_env", "Transcription credential environment variable"),
-                ("cleanup", "base_url", "Cleanup API URL"),
-                ("cleanup", "model", "Cleanup model · blank to disable refinement"),
-                ("cleanup", "key_env", "Cleanup credential environment variable"),
-                ("cleanup", "reasoning_effort", "Cleanup reasoning effort"),
+                ("cleanup", "base_url", "Refinement API URL"),
+                ("cleanup", "model", "Refinement model · blank to disable"),
+                ("cleanup", "key_env", "Refinement credential environment variable"),
+                ("cleanup", "reasoning_effort", "Refinement reasoning effort"),
             ):
                 widget = self.entry(getattr(getattr(self.config, section), key))
                 self.entries[(section, key)] = widget
-                self.field(provider_groups[section], title, widget)
-            page.append(
+                self.field(advanced_body, title, widget)
+                widget.connect("changed", self.provider_edited)
+            self.advanced.set_expanded(self.preset.get_selected() == 2)
+            self.preset.connect("notify::selected", self.select_preset)
+            providers.append(
                 self.label(
-                    "Credentials stay in the launch environment, never in these fields. "
-                    "Changing provider sends future recordings or text to that provider.",
+                    "Changing provider sends future recordings or text to that provider. "
+                    "Save settings to apply your selection.",
                     "muted",
                     True,
                 )
@@ -472,7 +659,7 @@ def run(path=None, *, on_activate=None):
             self.field(storage_settings, "Keep history for this many days", self.retention)
             self.save_button = self.button("Save settings", self.save_settings, "primary")
             self.save_button.set_halign(Gtk.Align.START)
-            desktop_actions = self.box(False)
+            desktop_actions = self.flow()
             desktop_actions.append(
                 self.button(
                     "Add to app launcher",
@@ -496,6 +683,72 @@ def run(path=None, *, on_activate=None):
             )
 
             page.append(self.save_button)
+
+        def key_status(self, config):
+            return "\n".join(
+                f"{title}: "
+                + (
+                    "off (raw transcription)"
+                    if not provider.model
+                    else "key present; check connection"
+                    if os.environ.get(provider.key_env)
+                    else f"key missing; set {provider.key_env} and restart Caelum"
+                )
+                for title, provider in (
+                    ("Transcription", config.stt),
+                    ("Refinement", config.cleanup),
+                )
+            )
+
+        def provider_draft(self):
+            updated = deepcopy(self.config)
+            for (section, key), widget in self.entries.items():
+                setattr(getattr(updated, section), key, widget.get_text().strip())
+            return updated
+
+        def provider_edited(self, _):
+            if getattr(self, "selecting_preset", False):
+                return
+            self.selecting_preset = True
+            self.preset.set_selected(2)
+            self.advanced.set_expanded(True)
+            self.selecting_preset = False
+            self.connection_generation = getattr(self, "connection_generation", 0) + 1
+            self.connection_label.set_text(self.key_status(self.provider_draft()))
+
+        def select_preset(self, *_):
+            if getattr(self, "selecting_preset", False):
+                return
+            selected = self.preset.get_selected()
+            if selected == 2:
+                self.advanced.set_expanded(True)
+                return
+            updated = apply_provider_preset(self.provider_draft(), selected)
+            self.selecting_preset = True
+            for (section, key), widget in self.entries.items():
+                widget.set_text(str(getattr(getattr(updated, section), key)))
+            self.selecting_preset = False
+            self.connection_generation = getattr(self, "connection_generation", 0) + 1
+            self.connection_label.set_text(self.key_status(updated))
+
+        def check_connection(self):
+            updated = self.provider_draft()
+            generation = getattr(self, "connection_generation", 0)
+            self.check_button.set_sensitive(False)
+            self.connection_label.set_text("Checking connection…")
+
+            def checked(text):
+                self.check_button.set_sensitive(True)
+                if generation == getattr(self, "connection_generation", 0):
+                    self.connection_label.set_text(text)
+
+            def check():
+                try:
+                    return asyncio.run(connection_status(updated))
+                finally:
+                    GLib.idle_add(self.check_button.set_sensitive, True)
+
+            self.work(check, checked)
 
         def set_devices(self, devices):
             selected = self.config.app.microphone
@@ -622,19 +875,19 @@ def run(path=None, *, on_activate=None):
             window.caelum, .caelum headerbar, .caelum .background {
               background: #000000; color: #e7e7e7; background-image: none;
             }
-            .caelum { font-family: 'Adwaita Sans', 'Noto Sans', sans-serif; font-size: 14px; }
+            .caelum { font-family: 'Adwaita Sans', 'Noto Sans', sans-serif; font-size: 1em; }
             .caelum headerbar { min-height: 52px; padding: 0 20px;
               box-shadow: none; border: none; }
-            .caelum .wordmark { font-weight: 700; font-size: 20px; letter-spacing: -0.6px; }
+            .caelum .wordmark { font-weight: 700; font-size: 1.4em; letter-spacing: -0.6px; }
             .caelum .navigation { padding: 8px 16px 24px; background: #000000; }
             .caelum .sidebar-toggle { margin-bottom: 24px; }
-            .caelum .page { padding: 28px 36px 40px; }
-            .caelum .title { font-size: 30px; font-weight: 600; letter-spacing: -0.8px; }
-            .caelum .section-title { font-size: 16px; font-weight: 600; }
-            .caelum .muted { color: #a1a1a1; font-size: 13px; }
-            .caelum .metric { font-size: 30px; font-weight: 500; }
-            .caelum .shortcut { font-size: 34px; font-weight: 500; letter-spacing: -0.6px; }
-            .caelum .field-title { font-size: 13px; font-weight: 600; }
+            .caelum .page { padding: 24px 20px 32px; }
+            .caelum .title { font-size: 2em; font-weight: 600; letter-spacing: -0.8px; }
+            .caelum .section-title { font-size: 1.15em; font-weight: 600; }
+            .caelum .muted { color: #b3b3b3; font-size: 0.95em; }
+            .caelum .metric { font-size: 2em; font-weight: 500; }
+            .caelum .shortcut { font-size: 2em; font-weight: 500; letter-spacing: -0.6px; }
+            .caelum .field-title { font-size: 1em; font-weight: 600; }
             .caelum .panel { background: #111111; border: none; border-radius: 16px;
               box-shadow: none; padding: 22px; }
             .caelum .metric-panel { padding: 8px 0 12px; }
@@ -666,7 +919,7 @@ def run(path=None, *, on_activate=None):
             .caelum levelbar trough { background: #232323; border-radius: 4px; min-height: 6px; }
             .caelum levelbar block { border: none; border-radius: 4px; }
             .caelum levelbar block.filled { background: #a1a1a1; }
-            .caelum *:focus-visible { outline: 2px solid #777777; outline-offset: 2px; }
+            .caelum *:focus-visible { outline: 2px solid #d8d8d8; outline-offset: 2px; }
             """
             if hasattr(self, "css"):
                 Gtk.StyleContext.remove_provider_for_display(Gdk.Display.get_default(), self.css)
@@ -700,7 +953,9 @@ def run(path=None, *, on_activate=None):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            self.message("Starting dictation… Provider access is checked before it becomes ready.")
+            self.message(
+                "Starting dictation… If it cannot start, open Settings and check the key, microphone, and shortcut."
+            )
 
         def stop_service(self):
             self.work(
@@ -754,15 +1009,10 @@ def run(path=None, *, on_activate=None):
         def render_data(self, data):
             status, rows, recent, summary = data
             if status:
-                state = status["state"]
                 self.paused = status.get("paused", False)
-                self.status_label.set_text(
-                    "Dictation is paused"
-                    if self.paused
-                    else "Ready when you are"
-                    if state == "hidden"
-                    else f"Dictation · {state.replace('_', ' ')}"
-                )
+                title, detail = service_presentation(status)
+                self.status_label.set_text(title)
+                self.status_detail.set_text(detail)
                 if status.get("backend", "hyprland") == "portable":
                     self.shortcut_label.set_text(
                         status.get("shortcut_description", "Record. Copy. Paste.")
@@ -776,7 +1026,9 @@ def run(path=None, *, on_activate=None):
                         "Dictation works, but history could not be saved. Check disk permissions."
                     )
             else:
-                self.status_label.set_text("Dictation is stopped")
+                title, detail = service_presentation(None)
+                self.status_label.set_text(title)
+                self.status_detail.set_text(detail)
                 if self.process and self.process.poll() is not None and self.process.returncode:
                     self.message(
                         "Service could not start. Run caelum doctor to check credentials, "
@@ -788,6 +1040,18 @@ def run(path=None, *, on_activate=None):
                 bool(status) and status["state"] == "error" and status.get("pending_audio", False)
             )
             self.retry_button.set_visible(retry_available)
+            self.cancel_button.set_visible(
+                bool(status)
+                and (
+                    status.get("pending_audio", False)
+                    or status["state"]
+                    in ("starting", "listening", "recording", "processing", "refining")
+                )
+            )
+            self.cancel_button.set_label(
+                "Discard recording" if retry_available else "Cancel recording"
+            )
+            self.settings_action.set_visible(not status or status["state"] == "error")
             self.record_button.set_visible(self.portable and not retry_available)
             self.record_button.set_sensitive(
                 bool(status)
@@ -868,7 +1132,7 @@ def run(path=None, *, on_activate=None):
             )
             label.set_selectable(True)
             card.append(label)
-            actions = self.box(False)
+            actions = self.flow()
             actions.append(self.button("Copy text", lambda: self.copy_text(text)))
             if not compact:
                 actions.append(
@@ -886,6 +1150,12 @@ def run(path=None, *, on_activate=None):
                             "muted",
                         )
                     )
+            if not row["refined"]:
+                card.append(
+                    self.label(
+                        "Raw transcription · refinement skipped or unavailable", "muted", True
+                    )
+                )
             card.append(actions)
             return card
 

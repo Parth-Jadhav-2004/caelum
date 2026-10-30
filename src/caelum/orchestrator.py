@@ -80,10 +80,12 @@ class Orchestrator:
         self.poll_task = None
         self.on_completed = None
         self.paused = False
+        self.error_kind = ""
 
     async def event(self, state=None, error_code=""):
         if state:
             self.state = state
+            self.error_kind = error_code if state == "error" else ""
         self.sequence += 1
         capture = self.capture
         history = (
@@ -171,6 +173,9 @@ class Orchestrator:
                     self.accepted_tokens.add(token)
                 await self.cancel()
             elif action == "retry" and self.pcm is not None and self.state == "error":
+                # Reserve the retry before scheduling work: two queued UI clicks
+                # must not create concurrent finalization tasks.
+                self.state = "processing"
                 if self.expiry:
                     self.expiry.cancel()
                 self.work = asyncio.create_task(self.finalize(self.session))
@@ -184,6 +189,7 @@ class Orchestrator:
                     "paused": self.paused,
                     "state": self.state,
                     "pending_audio": self.pcm is not None,
+                    "error_kind": self.error_kind,
                     "metrics": self.recent_metrics[-1:],
                 }
 
@@ -325,7 +331,7 @@ class Orchestrator:
                     )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             if session != self.session:
                 return
             if self.chunker:
@@ -333,6 +339,10 @@ class Orchestrator:
                 self.chunker = None
             self.failed_at = self.failed_at or time.monotonic()
             await self.event("error", "network")
+            self.error_kind = error.kind if isinstance(error, ProviderError) else "unavailable"
+            if isinstance(error, ProviderError):
+                with suppress(RuntimeError, OSError, TimeoutError):
+                    await notify(str(error))
             remaining = self.config.app.retry_expiry_seconds - (time.monotonic() - self.failed_at)
             self.expiry = asyncio.create_task(self.expire(session, max(0, remaining)))
             self.recovery_task = asyncio.create_task(

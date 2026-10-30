@@ -25,12 +25,12 @@ not imply every desktop combination has been hardware-qualified.
 .venv/bin/caelum app
 ```
 
-The native GTK4 application uses a **pure-black theme**, charcoal surfaces, and Adwaita Sans, without gradients or hover highlights. The app name stays at the upper left above a sidebar toggle; collapse it to keep compact icon navigation. Opening the window does not start microphone capture or provider requests. Use **Start dictation service**, then the configured hold-to-talk shortcut. Closing the window leaves dictation running; **Stop service** stops it and discards pending audio. **Pause** cancels pending work and ignores the shortcut until resumed.
+The native GTK4 application uses a **pure-black theme**, charcoal surfaces, and Adwaita Sans, without gradients or hover highlights. The app name stays at the upper left above a sidebar toggle; collapse it to keep compact icon navigation. Opening the window does not start microphone capture or provider requests. Use **Start dictation service**, then the configured hold-to-talk shortcut. The overview names recording, processing, paused, and awaiting-retry states, explains paste behavior, and labels raw transcription when refinement is skipped. Closing the window leaves dictation running; **Stop service** stops it and discards pending audio. **Pause** cancels pending work and ignores the shortcut until resumed.
 
 - **Overview:** live service state, shortcut, today's saved words, retained recording minutes, recent dictations.
 - **History:** automatically saved completed transcripts, literal search (up to 200 matches), copy, delete-one, confirmed delete-all, sensitive-text JSONL export.
 - **Statistics:** today / last seven days / calendar month / retained words, seven-day chart, recording-time WPM, mean release-to-dispatch latency.
-- **Settings:** shortcut recorder, microphone selection, explicit three-second local input meter test, language, provider/model settings, history retention, and grouped recording, provider, and storage controls. Settings are validated and saved atomically. Idle services reload without restarting; active sessions or shortcut collisions leave the previous runtime settings intact and show an application warning.
+- **Settings:** Groq / Transcription only / Custom provider presets, an explicit connection check (model-list access only, no audio or transcript), technical provider fields under Advanced, shortcut recorder, microphone selection, explicit three-second local input meter test, language, provider/model settings, history retention, and grouped recording, provider, and storage controls. Settings are validated and saved atomically. Idle services reload without restarting; active sessions or shortcut collisions leave the previous runtime settings intact and show an application warning.
 - **Desktop integration:** Settings can add Caelum to the app launcher or enable/disable start-at-login. These entries use this checkout's credential-loading launcher. Keep the checkout at its installed path. Nothing is installed or enabled automatically.
 
 History uses `$XDG_DATA_HOME/caelum/history.sqlite3` (normally `~/.local/share/caelum/history.sqlite3`), owner-only file permissions, and a private application directory. The database is created when the first dictation completes. Only final transcripts are stored: no audio, raw transcript, source application, or credentials. History is always enabled; use **Delete all** to erase saved entries. Older `history_enabled = false` preferences are ignored and removed on the next settings save. Retention runs on read/write, not while Caelum is entirely closed. Statistics recalculate from retained entries. See [privacy details](docs/privacy.md), including disk-encryption and export limitations.
@@ -52,7 +52,7 @@ The required native packages were already installed during development. For anot
 
 `init` creates `~/.config/caelum/config.toml` and refuses to overwrite it. Edit that file for microphone, language, hotkey, model, reduced motion, or high contrast. See [config.example.toml](config.example.toml).
 
-Provide `GROQ_API_KEY` and `OPENAI_API_KEY` in the environment launching Caelum. Do not put secrets in the TOML config or commit them. `.env.example` documents the variable names; `.env` is deliberately **not automatically loaded**.
+Provide `GROQ_API_KEY` in the environment launching Caelum. Fresh configurations use Groq transcription with refinement disabled, so no second key or paid refinement provider is required. Do not put secrets in the TOML config or commit them. `.env.example` documents the variable names; `.env` is deliberately **not automatically loaded**.
 
 ```bash
 .venv/bin/caelum models stt
@@ -72,7 +72,15 @@ For OpenRouter, set cleanup `base_url="https://openrouter.ai/api/v1"`, `key_env=
 
 For Meta directly, use cleanup `base_url="https://api.meta.ai/v1"`, `key_env="MODEL_API_KEY"`, `model="muse-spark-1.3-contributor"`, `reasoning_effort="minimal"`, and `timeout_seconds=3.0`. Meta does not support disabling reasoning for Muse Spark. [Contributor mode permits Meta to use submitted content for model training](https://dev.meta.ai/docs/models), including cleanup transcripts. The currently configured local model can be checked in `~/.config/caelum/config.toml`.
 
-The default cleanup model is `gpt-6-luna`, with `reasoning_effort="none"`. Its identifier and Chat Completions support were verified in the [official OpenAI documentation](https://developers.openai.com/api/docs/models/gpt-6-luna) on October 28, 2026. Startup checks the configured cleanup model against the account's `/models` listing. Account access and live performance have **not** been verified without credentials. Set `[cleanup] model=""` to explicitly use raw STT only; the pill then says “Done · unrefined”. A failed or slow cleanup request also falls back to the raw transcript.
+Refinement is optional and never blocks service startup. To try Groq refinement with
+the same key, set `[cleanup]` to `base_url="https://api.groq.com/openai/v1"`,
+`key_env="GROQ_API_KEY"`, `model="openai/gpt-oss-20b"`, and
+`reasoning_effort="low"`. This candidate has not yet passed the live quality and
+latency benchmark, so it is not enabled by default. Groq free usage is subject to
+provider limits. Existing configurations retain their chosen provider/model.
+Use `caelum models cleanup` to check model access explicitly. A missing key,
+unavailable model, failed request, or slow cleanup falls back to raw transcription.
+The pill says “Done · unrefined” when refinement is skipped or fails.
 
 The service registers compositor bindings at runtime and removes its own binding handles on clean exit. **No Hyprland config files are edited.** It refuses shortcut collisions, re-registers after compositor config reload, consumes the recording chord, handles modifier release ordering, and enables Escape cancellation only during an active session. Stop with Ctrl+C. A hard kill may leave runtime shortcuts until `hyprctl reload` or the next Caelum startup; no microphone continues after process death.
 

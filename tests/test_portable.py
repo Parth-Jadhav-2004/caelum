@@ -164,7 +164,13 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
 
     config = Config()
     config.app.backend = "portable"
-    config.cleanup.model = ""
+    # Cleanup verification must never gate recording, even with an invalid model/key.
+    config.cleanup.model = "unavailable-model"
+    config.cleanup.key_env = "CAELUM_MISSING_CLEANUP_KEY"
+    monkeypatch.delenv(config.cleanup.key_env, raising=False)
+    monkeypatch.setattr(
+        "caelum.providers.Providers.models", AsyncMock(side_effect=AssertionError("startup probe"))
+    )
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     monkeypatch.setenv(config.stt.key_env, "unused-test-credential")
     monkeypatch.setattr("caelum.portable.Bindings.install", AsyncMock())
@@ -218,6 +224,12 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
                     service.result()
                 await asyncio.sleep(0.01)
         assert (await control("status"))["backend"] == "portable"
+        await control("pause")
+        assert (await control("status"))["paused"]
+        await control("toggle")
+        assert (await control("status"))["state"] == "hidden"
+        await control("resume")
+        assert not (await control("status"))["paused"]
         for _ in range(2):
             await control("toggle")
             assert (await control("status"))["state"] == "listening"

@@ -218,3 +218,41 @@ async def test_toggle_stops_current_recording_inside_control_lock(core):
     core.release = AsyncMock()
     await core.handle("toggle")
     core.release.assert_awaited_once()
+
+
+@pytest.mark.parametrize("dispatched", [True, False])
+async def test_repeated_retry_after_delivery_does_not_duplicate(core, monkeypatch, dispatched):
+    insertion = AsyncMock(return_value=dispatched)
+    monkeypatch.setattr("caelum.orchestrator.insert", insertion)
+    core.state = "error"
+    await core.handle("retry")
+    work = core.work
+    await work
+    for _ in range(3):
+        await core.handle("retry")
+    assert core.work is work
+    insertion.assert_awaited_once()
+    assert core.pcm is None
+
+
+async def test_expired_or_cancelled_audio_cannot_be_retried(core, monkeypatch):
+    insertion = AsyncMock()
+    monkeypatch.setattr("caelum.orchestrator.insert", insertion)
+    await core.expire(core.session, 0)
+    await core.handle("retry")
+    await core.handle("cancel")
+    await core.handle("retry")
+    insertion.assert_not_awaited()
+    core.provider.stt.assert_not_awaited()
+
+
+async def test_queued_retry_clicks_schedule_only_one_finalization(core, monkeypatch):
+    insertion = AsyncMock(return_value=True)
+    monkeypatch.setattr("caelum.orchestrator.insert", insertion)
+    core.state = "error"
+    await core.handle("retry")
+    work = core.work
+    await core.handle("retry")
+    assert core.work is work
+    await work
+    insertion.assert_awaited_once()

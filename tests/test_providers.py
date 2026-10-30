@@ -1,5 +1,6 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -114,3 +115,115 @@ async def test_cleanup_unconfigured_does_not_claim_refinement(config):
             False,
         )
         assert states == []
+
+
+@pytest.mark.parametrize(
+    "status,body,kind",
+    [
+        (401, {}, "invalid_key"),
+        (403, {}, "permission"),
+        (402, {}, "quota"),
+        (429, {}, "rate_limit"),
+        (429, {"error": {"code": "insufficient_quota"}}, "quota"),
+        (503, {}, "unavailable"),
+        (404, {}, "model"),
+    ],
+)
+async def test_provider_failure_categories(config, monkeypatch, status, body, kind):
+    monkeypatch.setattr("caelum.providers.asyncio.sleep", AsyncMock())
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, json=body))
+    ) as client:
+        provider = Providers(config, client)
+        with pytest.raises(ProviderError) as error:
+            await provider.stt(b"\0" * 100)
+        assert error.value.kind == kind
+        with pytest.raises(ProviderError) as error:
+            await provider.models(config.stt)
+        assert error.value.kind == kind
+
+
+async def test_retry_after_is_honored(config, monkeypatch):
+    sleep = AsyncMock()
+    monkeypatch.setattr("caelum.providers.asyncio.sleep", sleep)
+    responses = iter([
+        httpx.Response(429, headers={"Retry-After": "2"}),
+        httpx.Response(200, json={"text": "ok"}),
+    ])
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: next(responses))
+    ) as client:
+        assert (await Providers(config, client).stt(b"\0" * 100)).text == "ok"
+    sleep.assert_awaited_once_with(2.0)
+
+
+@pytest.mark.parametrize("failure,kind", [
+    (httpx.ConnectError, "offline"),
+    (httpx.ReadTimeout, "timeout"),
+])
+async def test_transport_failure_categories(config, failure, kind):
+    def respond(request):
+        raise failure("sensitive details", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client)
+        with pytest.raises(ProviderError) as error:
+            await provider.stt(b"\0" * 100)
+        assert error.value.kind == kind
+        assert "sensitive" not in str(error.value)
+        assert await provider.cleanup("hello") == ("hello", False)
+        assert provider.metrics["cleanup_error"] == kind
+
+
+@pytest.mark.parametrize("host,token_field,store", [
+    ("api.groq.com/openai", "max_tokens", False),
+    ("api.openai.com", "max_completion_tokens", True),
+    ("custom.example", "max_tokens", False),
+])
+async def test_cleanup_request_fields(config, host, token_field, store):
+    config.cleanup.base_url = f"https://{host}/v1"
+    config.cleanup.reasoning_effort = ""
+    def respond(request):
+        body = json.loads(request.content)
+        assert token_field in body
+        assert ("store" in body) is store
+        assert "reasoning_effort" not in body
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Hello."}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await Providers(config, client).cleanup("hello") == ("Hello.", True)
+
+
+async def test_missing_cleanup_key_falls_back_without_request(config, monkeypatch):
+    monkeypatch.delenv(config.cleanup.key_env)
+    respond = Mock()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client)
+        assert await provider.cleanup("hello") == ("hello", False)
+        assert provider.metrics["cleanup_error"] == "missing_key"
+        respond.assert_not_called()
+
+
+@pytest.mark.parametrize("effort,expected", [("none", None), ("low", "low"), ("max", None)])
+async def test_groq_refinement_reasoning_fields(config, effort, expected):
+    config.cleanup.model = "openai/gpt-oss-20b"
+    config.cleanup.reasoning_effort = effort
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body.get("reasoning_effort") == expected
+        assert "store" not in body and "max_completion_tokens" not in body
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Hello."}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await Providers(config, client).cleanup("hello") == ("Hello.", True)
+
+
+async def test_retry_after_longer_than_deadline_does_not_retry_early(config):
+    config.stt.timeout_seconds = 0.02
+    respond = Mock(return_value=httpx.Response(429, headers={"Retry-After": "60"}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(ProviderError) as error:
+            await Providers(config, client).stt(b"\0" * 100)
+        assert error.value.kind == "timeout"
+    assert respond.call_count == 1

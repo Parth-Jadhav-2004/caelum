@@ -4,6 +4,9 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
 
 import httpx
 
@@ -13,6 +16,42 @@ from .quality import PROMPT, normalize, validate_cleanup
 
 class ProviderError(RuntimeError):
     """Sanitized error: never contains response bodies, headers, or dictation."""
+
+    def __init__(self, message, kind="unavailable"):
+        super().__init__(message)
+        self.kind = kind
+
+
+def response_error(response):
+    status = response.status_code
+    kind, message = {
+        401: ("invalid_key", "Invalid provider key; update the key"),
+        403: ("permission", "Provider access denied; check key permissions"),
+        402: ("quota", "Provider quota exhausted; check usage or billing"),
+        429: ("rate_limit", "Provider rate limit reached; retry later"),
+        404: ("model", "Provider model or endpoint unavailable; check settings"),
+    }.get(status, ("unavailable", "Provider unavailable; retry or cancel"))
+    # Inspect only known machine codes; never expose provider response text.
+    if status in (403, 429):
+        try:
+            code = response.json().get("error", {}).get("code")
+            if code in ("insufficient_quota", "quota_exceeded", "billing_hard_limit_reached"):
+                kind, message = "quota", "Provider quota exhausted; check usage or billing"
+        except (ValueError, AttributeError, TypeError):
+            pass
+    return ProviderError(message, kind)
+
+
+def retry_delay(response, attempt):
+    value = response.headers.get("Retry-After", "")
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            delay = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            delay = 0
+    return max(0.15 * 2**attempt + random.uniform(0, 0.15), delay)
 
 
 @dataclass
@@ -44,7 +83,7 @@ class Providers:
     def headers(self, provider):
         key = os.environ.get(provider.key_env)
         if not key:
-            raise ProviderError(f"Missing credential: {provider.key_env}")
+            raise ProviderError(f"Missing credential: {provider.key_env}; add the key", "missing_key")
         return {"Authorization": f"Bearer {key}"}
 
     async def models(self, provider):
@@ -54,9 +93,14 @@ class Providers:
                 headers=self.headers(provider),
                 timeout=10,
             )
-            response.raise_for_status()
+            if response.is_error:
+                raise response_error(response)
             return sorted(item["id"] for item in response.json()["data"])
-        except (httpx.HTTPError, KeyError, ValueError):
+        except httpx.TimeoutException:
+            raise ProviderError("Provider timed out; retry later", "timeout") from None
+        except httpx.ConnectError:
+            raise ProviderError("Provider unreachable; check your connection", "offline") from None
+        except (httpx.HTTPError, KeyError, ValueError, TypeError, AttributeError):
             raise ProviderError("Could not verify provider model list") from None
 
     async def stt(self, pcm, start=0, end=None):
@@ -88,11 +132,12 @@ class Providers:
                         )
                         if response.status_code not in (429, 500, 502, 503, 504) or attempt == 2:
                             break
+                        if response_error(response).kind == "quota":
+                            break
                         self.metrics["retries"] += 1
-                        await asyncio.sleep(0.15 * 2**attempt + random.uniform(0, 0.15))
-                    if response.status_code in (401, 403):
-                        raise ProviderError("STT credential rejected")
-                    response.raise_for_status()
+                        await asyncio.sleep(retry_delay(response, attempt))
+                    if response.is_error:
+                        raise response_error(response)
                     body = response.json()
                     text = normalize(body["text"])
                     words = [
@@ -116,7 +161,13 @@ class Providers:
                         }
                     )
                     return Transcript(text, words, start, end)
-            except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
+            except (httpx.TimeoutException, TimeoutError):
+                raise ProviderError("Transcription timed out; retry or cancel", "timeout") from None
+            except httpx.ConnectError:
+                raise ProviderError(
+                    "Provider unreachable; check your connection and retry", "offline"
+                ) from None
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
                 raise ProviderError("Transcription unavailable; retry or cancel") from None
 
     async def cleanup(self, raw, on_refining=lambda: None):
@@ -136,11 +187,25 @@ class Providers:
                     headers=headers,
                     json={
                         "model": cfg.model,
-                        "store": False,
-                        "max_completion_tokens": max(256, min(8192, len(raw) * 2)),
+                        **(
+                            {"store": False}
+                            if urlparse(cfg.base_url).hostname == "api.openai.com"
+                            else {}
+                        ),
+                        (
+                            "max_completion_tokens"
+                            if urlparse(cfg.base_url).hostname == "api.openai.com"
+                            else "max_tokens"
+                        ): max(256, min(8192, len(raw) * 2)),
                         **(
                             {"reasoning_effort": cfg.reasoning_effort}
-                            if cfg.reasoning_effort
+                            if cfg.reasoning_effort and (
+                                urlparse(cfg.base_url).hostname != "api.groq.com"
+                                or (
+                                    cfg.model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b")
+                                    and cfg.reasoning_effort in ("low", "medium", "high")
+                                )
+                            )
                             else {}
                         ),
                         "messages": [
@@ -150,7 +215,8 @@ class Providers:
                     },
                     timeout=cfg.timeout_seconds,
                 )
-                response.raise_for_status()
+                if response.is_error:
+                    raise response_error(response)
                 body = response.json()
                 result, refined = validate_cleanup(raw, body["choices"][0]["message"]["content"])
                 self.metrics["cleanup_refined"] = refined
@@ -162,7 +228,17 @@ class Providers:
                         and isinstance(v, int)
                     }
                 return result, refined
-        except (httpx.HTTPError, TimeoutError, ProviderError, KeyError, TypeError, ValueError):
+        except ProviderError as error:
+            self.metrics["cleanup_error"] = error.kind
+            return raw, False
+        except (httpx.TimeoutException, TimeoutError):
+            self.metrics["cleanup_error"] = "timeout"
+            return raw, False
+        except httpx.ConnectError:
+            self.metrics["cleanup_error"] = "offline"
+            return raw, False
+        except (httpx.HTTPError, KeyError, TypeError, ValueError, IndexError, AttributeError):
+            self.metrics["cleanup_error"] = "unavailable"
             return raw, False
         finally:
             self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000

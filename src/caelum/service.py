@@ -211,12 +211,6 @@ async def serve(config, config_path=None):
             writer.close()
 
     try:
-        if config.cleanup.model:
-            models = await provider.models(config.cleanup)
-            if config.cleanup.model not in models:
-                raise ValueError(
-                    "Configured cleanup model is not available; run caelum models cleanup"
-                )
         if await locked():
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
