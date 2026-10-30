@@ -25,7 +25,7 @@ jobs:
           elif command -v pacman >/dev/null; then
             pacman -Syu --noconfirm git curl python python-gobject python-cairo gtk4 portaudio libnotify glib2 xorg-server-xvfb xorg-xauth
           else
-            dnf install -y git curl python3 python3-gobject python3-cairo gtk4 portaudio libnotify glib2 xorg-x11-server-Xvfb xorg-x11-xauth
+            dnf install -y git curl python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2 xorg-x11-server-Xvfb xorg-x11-xauth
           fi
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -87,7 +87,7 @@ jobs:
             dnf install -y ./dist/*.rpm
           fi
           caelum --help
-          python3 -c 'import gi; gi.require_version("Gtk","4.0"); import cairo'
+          python3 -c 'import gi; gi.require_version("Gtk","4.0"); from gi.repository import Gtk; import cairo; assert Gtk.get_major_version() == 4'
           PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx'
       - uses: actions/upload-artifact@v4
         with:

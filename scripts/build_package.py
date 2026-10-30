@@ -217,7 +217,7 @@ License: LicenseRef-Caelum-No-License-Declared
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
-Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gtk4, portaudio, libnotify, glib2, systemd
+Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, glib2, systemd
 %description
 Dictation for Linux desktops. GNOME/KDE use explicit copy; Hyprland integration is optional.
 %install

@@ -85,7 +85,7 @@ sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 li
 # Arch
 sudo pacman -S python python-gobject python-cairo gtk4 portaudio libnotify glib2
 # Fedora
-sudo dnf install python3 python3-gobject python3-cairo gtk4 portaudio libnotify glib2
+sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2
 
 ./scripts/setup.sh
 .venv/bin/caelum init

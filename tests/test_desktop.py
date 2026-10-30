@@ -88,7 +88,8 @@ def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
                     None, Gdk.KEY_v, 0, Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.ALT_MASK
                 )
                 assert app.hotkey.get_text() == "SUPER + ALT + V"
-                assert app.window.get_width() >= 820
+                # X11 client-side decorations can reduce the reported client allocation.
+                assert app.window.get_size_request().width == 820
                 assert not hasattr(app, "history_switch")
                 assert not hasattr(app, "theme_button")
                 assert not app.history.path.exists()
