@@ -99,7 +99,7 @@ does not depend on Hyprland, gtk4-layer-shell, or wl-clipboard.
 ## Release process
 
 Tag `v<project version>` after tests pass. The release workflow runs tests on
-Ubuntu 24.04, Debian 12/13, Arch, and Fedora 43, then builds all target packages and
+Ubuntu 24.04/26.04, Debian 12/13, Arch, and Fedora 43, then builds all target packages and
 uploads them to a **draft prerelease**. Inspect CI results and package metadata
 before publishing that draft. Version, Python dependencies, and hashes come from
 `pyproject.toml` and `uv.lock`. `scripts/build_package.py TARGET` builds the same
@@ -107,7 +107,7 @@ payload locally (uv + zstd; RPM additionally needs rpmbuild).
 
 The Arch source PKGBUILD in `packaging/arch` is a template until its source hash is
 filled from the published source archive. Release automation produces a separate
-ready-to-use PKGBUILD with the verified hash. It uses distro Python dependencies;
+ready-to-use PKGBUILD with the verified hash. It uses distro Python dependencies (python-sounddevice may require the AUR or Omarchy repository);
 the prebuilt Arch package instead vendors locked dependencies.
 
 Flatpak is intentionally not shipped in this preview: microphone routing,
