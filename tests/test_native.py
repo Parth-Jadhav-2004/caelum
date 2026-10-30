@@ -104,6 +104,8 @@ async def test_native_pill_protocol_geometry_focus_and_dismiss(monkeypatch, tmp_
 
 async def test_native_binding_registration_is_reversible():
     before = await hypr_json("binds")
+    if any(b.get("description", "").startswith("Caelum") for b in before):
+        pytest.skip("Preserving another Caelum service's active shortcuts")
     bindings = Bindings("SUPER + ALT + V")
     try:
         await bindings.install()
