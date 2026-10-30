@@ -75,6 +75,7 @@ jobs:
       - name: Validate release version and build
         shell: bash
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             python3 -c 'import os,tomllib; assert os.environ["GITHUB_REF_NAME"] == "v" + tomllib.load(open("pyproject.toml","rb"))["project"]["version"]'
           fi

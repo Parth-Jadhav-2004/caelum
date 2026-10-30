@@ -256,12 +256,10 @@ if __name__ == "__main__":
     parser.add_argument("target", choices=TARGETS)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
-    epoch = int(
-        os.environ.get(
-            "SOURCE_DATE_EPOCH",
-            subprocess.check_output(
-                ["git", "log", "-1", "--format=%ct"], cwd=ROOT, text=True
-            ).strip(),
-        )
-    )
+    epoch_value = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch_value is None:
+        epoch_value = subprocess.check_output(
+            ["git", "log", "-1", "--format=%ct"], cwd=ROOT, text=True
+        ).strip()
+    epoch = int(epoch_value)
     build(args.target, args.output.resolve(), epoch)
