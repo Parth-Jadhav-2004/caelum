@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from caelum.config import Config, load, save
+from caelum.config import Config, save
 from caelum.launcher import desktop_quote, entry_path, install
 
 
@@ -30,11 +30,11 @@ def test_desktop_quoting():
 @pytest.mark.skipif(
     os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
 )
-def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
+def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
     import gi
 
     gi.require_version("Gtk", "4.0")
-    from gi.repository import GLib
+    from gi.repository import GLib, Gtk
 
     from caelum.desktop import run
 
@@ -42,7 +42,9 @@ def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
     monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
     monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden", "paused": False})
     config_path = tmp_path / "config.toml"
-    save(Config(), config_path)
+    legacy = Config()
+    legacy.desktop.theme = "light"
+    save(legacy, config_path)
     failures = []
     activations = []
 
@@ -54,9 +56,23 @@ def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
                 for page in ("home", "history", "stats", "settings"):
                     app.navigate(page)
                     assert app.stack.get_visible_child_name() == page
-                for theme in ("dark", "light"):
-                    app.config.desktop.theme = theme
-                    app.apply_theme()
+                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 820
+                assert app.config.desktop.theme == "dark"
+                assert app.brand.get_text() == "Caelum"
+                assert app.brand.get_xalign() == 0
+                assert app.sidebar_toggle.get_active()
+                for _ in range(2):
+                    app.sidebar_toggle.set_active(False)
+                    assert app.navigation.get_size_request().width == 88
+                    assert all(not label.get_visible() for label in app.nav_labels)
+                    assert not app.sidebar_footer.get_visible()
+                    app.nav_buttons["history"].emit("clicked")
+                    assert app.stack.get_visible_child_name() == "history"
+                    assert app.nav_buttons["history"].has_css_class("selected")
+                    app.sidebar_toggle.set_active(True)
+                    assert app.navigation.get_size_request().width == 208
+                    assert all(label.get_visible() for label in app.nav_labels)
+                    assert app.sidebar_footer.get_visible()
                 from gi.repository import Gdk
 
                 app.begin_shortcut()
@@ -76,18 +92,18 @@ def test_native_desktop_pages_and_themes(tmp_path, monkeypatch):
                 assert not hasattr(app, "history_switch")
                 assert not hasattr(app, "theme_button")
                 assert not app.history.path.exists()
-                app.work = lambda operation, done: done(operation())
-                app.theme_switch.set_active(True)
-                assert load(config_path).desktop.theme == "dark"
-                assert app.theme_switch.get_state()
-                app.theme_switch.set_active(False)
-                assert load(config_path).desktop.theme == "light"
-                assert not app.theme_switch.get_state()
+                assert not hasattr(app, "theme_switch")
                 app.history.record(
                     "desktop-test", "Saved words appear here.", {}, app.config, True, False
                 )
                 rows = app.history.read()
-                app.render_data(({"state": "hidden"}, rows, rows, app.history.summary()))
+                summary = app.history.summary()
+                app.render_data((None, rows, rows, summary))
+                assert app.start_button.get_visible()
+                assert not app.stop_button.get_visible()
+                app.render_data(({"state": "hidden"}, rows, rows, summary))
+                assert not app.start_button.get_visible()
+                assert app.stop_button.get_visible()
                 card = app.history_rows.get_first_child()
                 assert (
                     card.get_first_child().get_next_sibling().get_text()

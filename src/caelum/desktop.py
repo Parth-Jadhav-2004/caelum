@@ -58,6 +58,7 @@ def run(path=None, *, on_activate=None):
             )
             self.path = Path(path) if path else config_path()
             self.config = load(self.path)
+            self.config.desktop.theme = "dark"
             self.history = History(self.path)
             self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="caelum-desktop")
             self.process = None
@@ -120,32 +121,55 @@ def run(path=None, *, on_activate=None):
             self.window.set_size_request(820, 600)
             self.window.add_css_class("caelum")
             header = Gtk.HeaderBar()
-            header.set_title_widget(self.label("CAELUM", "wordmark"))
+            # Keep the brand above the sidebar, independent of the centered title slot.
+            header.set_title_widget(Gtk.Box())
+            self.brand = self.label("Caelum", "wordmark")
+            header.pack_start(self.brand)
             self.window.set_titlebar(header)
             outer = self.box(False, 0)
-            navigation = self.box(spacing=6)
+            self.navigation = self.box(spacing=6)
+            navigation = self.navigation
             navigation.add_css_class("navigation")
-            navigation.set_size_request(190, -1)
-            navigation.append(self.label("YOUR WORKSPACE", "eyebrow"))
+            navigation.set_size_request(208, -1)
+            self.sidebar_toggle = Gtk.ToggleButton(active=True)
+            self.sidebar_toggle.set_icon_name("sidebar-show-symbolic")
+            self.sidebar_toggle.add_css_class("sidebar-toggle")
+            self.sidebar_toggle.set_halign(Gtk.Align.START)
+            self.sidebar_toggle.set_tooltip_text("Collapse sidebar")
+            self.sidebar_toggle.update_property(
+                [Gtk.AccessibleProperty.LABEL], ["Collapse sidebar"]
+            )
+            self.sidebar_toggle.connect("toggled", self.toggle_sidebar)
+            navigation.append(self.sidebar_toggle)
             self.stack = Gtk.Stack()
             self.stack.set_hexpand(True)
             self.stack.set_vexpand(True)
             self.nav_buttons = {}
-            for name, title in (
-                ("home", "Overview"),
-                ("history", "History"),
-                ("stats", "Statistics"),
-                ("settings", "Settings"),
+            self.nav_labels = []
+            for name, title, icon in (
+                ("home", "Overview", "go-home-symbolic"),
+                ("history", "History", "document-open-recent-symbolic"),
+                ("stats", "Statistics", "view-grid-symbolic"),
+                ("settings", "Settings", "preferences-system-symbolic"),
             ):
-                button = self.button(title, lambda name=name: self.navigate(name), "nav-item")
+                button = Gtk.ToggleButton()
+                button.add_css_class("nav-item")
+                button.connect("clicked", lambda _, name=name: self.navigate(name))
+                row = self.box(False, 12)
+                row.append(Gtk.Image.new_from_icon_name(icon))
+                label = self.label(title)
+                row.append(label)
+                button.set_child(row)
+                button.set_tooltip_text(title)
+                button.update_property([Gtk.AccessibleProperty.LABEL], [title])
+                self.nav_labels.append(label)
                 self.nav_buttons[name] = button
                 navigation.append(button)
             spacer = self.box()
             spacer.set_vexpand(True)
             navigation.append(spacer)
-            navigation.append(
-                self.label("Made for your voice.\nStored on your terms.", "muted", True)
-            )
+            self.sidebar_footer = self.label("Your voice.\nYour workspace.", "muted", True)
+            navigation.append(self.sidebar_footer)
             outer.append(navigation)
             content = self.box(spacing=0)
             content.set_hexpand(True)
@@ -173,15 +197,29 @@ def run(path=None, *, on_activate=None):
             scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
             body = self.box(spacing=24)
             body.add_css_class("page")
-            body.append(self.label(title, "title"))
-            body.append(self.label(description, "muted", True))
+            heading = self.box(spacing=8)
+            heading.append(self.label(title, "title"))
+            heading.append(self.label(description, "muted", True))
+            body.append(heading)
             scroll.set_child(body)
             self.stack.add_named(scroll, name)
             return body
 
+        def toggle_sidebar(self, toggle):
+            expanded = toggle.get_active()
+            self.navigation.set_size_request(208 if expanded else 88, -1)
+            for label in self.nav_labels:
+                label.set_visible(expanded)
+            self.sidebar_footer.set_visible(expanded)
+            action = "Collapse sidebar" if expanded else "Expand sidebar"
+            toggle.set_tooltip_text(action)
+            toggle.update_property([Gtk.AccessibleProperty.LABEL], [action])
+            toggle.set_icon_name("sidebar-show-symbolic" if expanded else "sidebar-hide-symbolic")
+
         def navigate(self, name):
             self.stack.set_visible_child_name(name)
             for key, button in self.nav_buttons.items():
+                button.set_active(key == name)
                 if key == name:
                     button.add_css_class("selected")
                 else:
@@ -193,7 +231,7 @@ def run(path=None, *, on_activate=None):
 
         def build_home(self):
             page = self.page(
-                "home", "A little less typing.", "Speak naturally. Get back to what you were doing."
+                "home", "Overview", "Hold your shortcut to speak. Release to insert your words."
             )
             hero = self.box(spacing=18)
             hero.add_css_class("panel")
@@ -205,9 +243,7 @@ def run(path=None, *, on_activate=None):
                 self.label("Hold to speak. Release to insert. Escape to cancel.", "muted", True)
             )
             actions = self.box(False)
-            self.start_button = self.button(
-                "Start dictation service", self.start_service, "primary"
-            )
+            self.start_button = self.button("Start service", self.start_service, "primary")
             actions.append(self.start_button)
             self.stop_button = self.button("Stop service", self.stop_service)
             self.stop_button.set_visible(False)
@@ -222,11 +258,11 @@ def run(path=None, *, on_activate=None):
             page.append(hero)
             metrics = self.box(False)
             self.home_metrics = []
-            for title in ("WORDS TODAY", "RECORDING MINUTES", "SAVED SESSIONS"):
+            for title in ("Words today", "Recording minutes", "Saved sessions"):
                 card = self.box(spacing=8)
-                card.add_css_class("panel")
+                card.add_css_class("metric-panel")
                 card.set_hexpand(True)
-                card.append(self.label(title, "eyebrow"))
+                card.append(self.label(title, "muted"))
                 value = self.label("—", "metric")
                 self.home_metrics.append(value)
                 card.append(value)
@@ -244,7 +280,7 @@ def run(path=None, *, on_activate=None):
         def build_history(self):
             page = self.page(
                 "history",
-                "Your words, kept close.",
+                "History",
                 "Only completed dictations. Local to this device. Never microphone audio.",
             )
             self.history_note = self.label("", "muted", True)
@@ -284,7 +320,7 @@ def run(path=None, *, on_activate=None):
                 label = self.label("—", "metric")
                 self.stats_labels[key] = label
                 panel.append(label)
-                grid.attach(panel, index % 3, index // 3, 1, 1)
+                grid.attach(panel, index % 2, index // 2, 1, 1)
             page.append(grid)
             page.append(self.label("Words over the last seven days", "section-title"))
             self.chart = Gtk.DrawingArea()
@@ -294,11 +330,10 @@ def run(path=None, *, on_activate=None):
             page.append(self.chart)
 
         def draw_chart(self, _, context, width, height):
-            dark = self.config.desktop.theme == "dark"
-            foreground = 1 if dark else 0
+            foreground = 0.72
             maximum = max([1, *self.daily.values()])
             column = width / 7
-            context.select_font_face("sans-serif")
+            context.select_font_face("Adwaita Sans")
             context.set_font_size(11)
             for index, (day, words) in enumerate(self.daily.items()):
                 left = index * column + 10
@@ -330,20 +365,18 @@ def run(path=None, *, on_activate=None):
             page = self.page(
                 "settings",
                 "Settings",
-                "Appearance, dictation, and history.",
+                "Tune your recording, text cleanup, and local history.",
             )
             self.entries = {}
-            appearance = self.box(False)
-            appearance_label = self.label("Dark mode", "field-title")
-            appearance_label.set_hexpand(True)
-            appearance.append(appearance_label)
-            self.syncing_theme = False
-            self.theme_switch = Gtk.Switch(active=self.config.desktop.theme == "dark")
-            self.theme_switch.set_valign(Gtk.Align.CENTER)
-            self.theme_switch.set_tooltip_text("Dark mode")
-            self.theme_switch.connect("state-set", self.toggle_theme)
-            appearance.append(self.theme_switch)
-            page.append(appearance)
+
+            def settings_section(title):
+                group = self.box(spacing=20)
+                group.add_css_class("panel")
+                group.append(self.label(title, "section-title"))
+                page.append(group)
+                return group
+
+            input_settings = settings_section("Recording")
             self.hotkey = self.entry(self.config.app.hotkey)
             hotkey_row = self.box(False)
             self.hotkey.set_hexpand(True)
@@ -351,7 +384,7 @@ def run(path=None, *, on_activate=None):
             self.record_key = self.button("Record shortcut", self.begin_shortcut)
             hotkey_row.append(self.record_key)
             self.field(
-                page,
+                input_settings,
                 "Push-to-talk shortcut",
                 hotkey_row,
                 "Use at least one modifier. Conflicts are checked when the service applies it.",
@@ -363,19 +396,24 @@ def run(path=None, *, on_activate=None):
             self.recording_key = False
             self.pending_modifiers = []
             self.mic = Gtk.DropDown.new_from_strings(["System default"])
-            self.field(page, "Microphone", self.mic)
+            self.field(input_settings, "Microphone", self.mic)
             mic_test = self.box(False)
             self.meter = Gtk.LevelBar(min_value=0, max_value=1)
             self.meter.set_hexpand(True)
+            self.meter.set_valign(Gtk.Align.CENTER)
             mic_test.append(self.meter)
             self.test_button = self.button("Test input · 3 seconds", self.test_microphone)
             mic_test.append(self.test_button)
-            page.append(mic_test)
-            page.append(
+            input_settings.append(mic_test)
+            input_settings.append(
                 self.label(
                     "The test stays in memory; it is not uploaded, played, or saved.", "muted", True
                 )
             )
+            provider_groups = {
+                "stt": settings_section("Transcription"),
+                "cleanup": settings_section("Text cleanup"),
+            }
             for section, key, title in (
                 ("stt", "language", "Language · blank for automatic detection"),
                 ("stt", "base_url", "Transcription API URL"),
@@ -388,7 +426,7 @@ def run(path=None, *, on_activate=None):
             ):
                 widget = self.entry(getattr(getattr(self.config, section), key))
                 self.entries[(section, key)] = widget
-                self.field(page, title, widget)
+                self.field(provider_groups[section], title, widget)
             page.append(
                 self.label(
                     "Credentials stay in the launch environment, never in these fields. "
@@ -397,11 +435,15 @@ def run(path=None, *, on_activate=None):
                     True,
                 )
             )
+            storage_settings = self.box(spacing=20)
+            storage_settings.add_css_class("panel")
+            storage_settings.append(self.label("History & desktop", "section-title"))
+            page.append(storage_settings)
             self.retention = Gtk.SpinButton.new_with_range(1, 3650, 1)
             self.retention.set_value(self.config.desktop.retention_days)
-            self.field(page, "Keep history for this many days", self.retention)
+            self.field(storage_settings, "Keep history for this many days", self.retention)
             self.save_button = self.button("Save settings", self.save_settings, "primary")
-            page.append(self.save_button)
+            self.save_button.set_halign(Gtk.Align.START)
             desktop_actions = self.box(False)
             desktop_actions.append(
                 self.button(
@@ -415,8 +457,8 @@ def run(path=None, *, on_activate=None):
             self.login_button = self.button("", self.toggle_login)
             self.login_label()
             desktop_actions.append(self.login_button)
-            page.append(desktop_actions)
-            page.append(
+            storage_settings.append(desktop_actions)
+            storage_settings.append(
                 self.label(
                     "Starting at login runs the dictation service, not this window. "
                     "Closing the window leaves dictation running. Use Stop service to stop it.",
@@ -424,6 +466,8 @@ def run(path=None, *, on_activate=None):
                     True,
                 )
             )
+
+            page.append(self.save_button)
 
         def set_devices(self, devices):
             selected = self.config.app.microphone
@@ -519,7 +563,6 @@ def run(path=None, *, on_activate=None):
                 setattr(getattr(updated, section), key, widget.get_text().strip())
             updated.desktop.retention_days = self.retention.get_value_as_int()
             self.save_button.set_sensitive(False)
-            self.theme_switch.set_sensitive(False)
 
             def persist():
                 try:
@@ -536,7 +579,6 @@ def run(path=None, *, on_activate=None):
                     return "Settings saved and applied."
                 finally:
                     GLib.idle_add(self.save_button.set_sensitive, True)
-                    GLib.idle_add(self.theme_switch.set_sensitive, True)
 
             def saved(message):
                 self.config = updated
@@ -546,73 +588,56 @@ def run(path=None, *, on_activate=None):
 
             self.work(persist, saved)
 
-        def toggle_theme(self, switch, active):
-            if self.syncing_theme:
-                return False
-            target = "dark" if active else "light"
-            switch.set_sensitive(False)
-            self.save_button.set_sensitive(False)
-
-            def persist():
-                try:
-                    current = load(self.path)
-                    current.desktop.theme = target
-                    save(current, self.path)
-                except (OSError, ValueError):
-                    return "Could not save the appearance setting. Check configuration file permissions."
-                return None
-
-            def changed(error):
-                if error:
-                    self.message(error)
-                else:
-                    self.config.desktop.theme = target
-                self.apply_theme()
-                switch.set_sensitive(True)
-                self.save_button.set_sensitive(True)
-
-            self.work(persist, changed)
-            return True
-
         def apply_theme(self):
-            dark = self.config.desktop.theme == "dark"
-            background, foreground = ("#000000", "#ffffff") if dark else ("#ffffff", "#111111")
-            muted, hover = ("#a0a0a0", "#161616") if dark else ("#686868", "#f5f5f5")
-            css = f"""
-            window.caelum, .caelum headerbar, .caelum .background {{
-              background: {background}; color: {foreground}; background-image: none;
-            }}
-            .caelum {{ font-family: 'Inter', 'Adwaita Sans', sans-serif; font-size: 14px; }}
-            .caelum headerbar {{ box-shadow: none; border: none; }}
-            .caelum .wordmark {{ font-weight: 800; letter-spacing: 4px; font-size: 13px; }}
-            .caelum .navigation {{ padding: 32px 16px; border: none; }}
-            .caelum .page {{ padding: 36px 40px; }}
-            .caelum .title {{ font-size: 32px; font-weight: 650; letter-spacing: -1px; }}
-            .caelum .section-title {{ font-size: 17px; font-weight: 600; }}
-            .caelum .muted {{ color: {muted}; font-size: 13px; }}
-            .caelum .eyebrow {{ color: {muted}; font-size: 10px; letter-spacing: 1.2px; }}
-            .caelum .metric {{ font-size: 30px; font-weight: 550; }}
-            .caelum .shortcut {{ font-size: 25px; font-weight: 500; }}
-            .caelum .field-title {{ font-weight: 600; }}
-            .caelum .panel {{ border: none; box-shadow: none; padding: 18px 0; }}
-            .caelum button {{ background: {background}; color: {foreground};
-              background-image: none; box-shadow: none; text-shadow: none;
-              border: none; border-radius: 7px; padding: 9px 14px; }}
-            .caelum button:hover {{ background: {hover}; }}
-            .caelum button:disabled {{ opacity: 0.4; }}
-            .caelum button.nav-item {{ border-color: transparent; }}
-            .caelum button.selected {{ background: {hover}; font-weight: 650; }}
-            .caelum button.primary {{ background: {foreground}; color: {background}; }}
-            .caelum entry, .caelum dropdown, .caelum spinbutton {{
-              background: {hover}; color: {foreground}; border: none;
-              border-radius: 6px; box-shadow: none; padding: 6px; }}
-            .caelum .notice {{ background: {hover}; padding: 12px 24px; }}
-            .caelum levelbar block.filled {{ background: {foreground}; border-color: {foreground}; }}
-            .caelum switch {{ background: {hover}; border: none; box-shadow: none; }}
-            .caelum switch slider {{ background: {muted}; border: none; box-shadow: none; }}
-            .caelum switch:checked {{ background: {foreground}; }}
-            .caelum switch:checked slider {{ background: {background}; }}
-            .caelum *:focus-visible {{ outline: 2px solid {muted}; outline-offset: 2px; }}
+            css = """
+            window.caelum, .caelum headerbar, .caelum .background {
+              background: #000000; color: #e7e7e7; background-image: none;
+            }
+            .caelum { font-family: 'Adwaita Sans', 'Noto Sans', sans-serif; font-size: 14px; }
+            .caelum headerbar { min-height: 52px; padding: 0 20px;
+              box-shadow: none; border: none; }
+            .caelum .wordmark { font-weight: 700; font-size: 20px; letter-spacing: -0.6px; }
+            .caelum .navigation { padding: 8px 16px 24px; background: #000000; }
+            .caelum .sidebar-toggle { margin-bottom: 24px; }
+            .caelum .page { padding: 28px 36px 40px; }
+            .caelum .title { font-size: 30px; font-weight: 600; letter-spacing: -0.8px; }
+            .caelum .section-title { font-size: 16px; font-weight: 600; }
+            .caelum .muted { color: #a1a1a1; font-size: 13px; }
+            .caelum .metric { font-size: 30px; font-weight: 500; }
+            .caelum .shortcut { font-size: 34px; font-weight: 500; letter-spacing: -0.6px; }
+            .caelum .field-title { font-size: 13px; font-weight: 600; }
+            .caelum .panel { background: #111111; border: none; border-radius: 16px;
+              box-shadow: none; padding: 22px; }
+            .caelum .metric-panel { padding: 8px 0 12px; }
+            .caelum button, .caelum button:hover, .caelum button:active {
+              background: #232323; color: #e7e7e7; background-image: none;
+              box-shadow: none; text-shadow: none; border: none;
+              border-radius: 10px; padding: 10px 14px; }
+            .caelum button:disabled { opacity: 0.4; }
+            .caelum button.nav-item, .caelum button.nav-item:hover,
+            .caelum button.sidebar-toggle, .caelum button.sidebar-toggle:hover,
+            .caelum headerbar button, .caelum headerbar button:hover {
+              background: transparent; color: #a1a1a1; }
+            .caelum button.nav-item { padding: 12px; }
+            .caelum button.nav-item.selected, .caelum button.nav-item.selected:hover {
+              background: #1b1b1b; color: #e7e7e7; font-weight: 600; }
+            .caelum button.primary, .caelum button.primary:hover,
+            .caelum button.primary:active { background: #d8d8d8; color: #111111; }
+            .caelum entry, .caelum entry:hover, .caelum entry:focus-within,
+            .caelum dropdown, .caelum dropdown:hover,
+            .caelum spinbutton, .caelum spinbutton:hover {
+              background: #202020; color: #e7e7e7; background-image: none;
+              border: none; border-radius: 10px; box-shadow: none; padding: 8px; }
+            .caelum dropdown button, .caelum dropdown button:hover,
+            .caelum spinbutton button, .caelum spinbutton button:hover,
+            .caelum spinbutton entry, .caelum spinbutton entry:hover {
+              background: transparent; border: none; box-shadow: none; }
+            .caelum .notice { background: #1b1b1b; border-radius: 10px;
+              margin: 12px 36px 0; padding: 12px 16px; }
+            .caelum levelbar trough { background: #232323; border-radius: 4px; min-height: 6px; }
+            .caelum levelbar block { border: none; border-radius: 4px; }
+            .caelum levelbar block.filled { background: #a1a1a1; }
+            .caelum *:focus-visible { outline: 2px solid #777777; outline-offset: 2px; }
             """
             if hasattr(self, "css"):
                 Gtk.StyleContext.remove_provider_for_display(Gdk.Display.get_default(), self.css)
@@ -628,14 +653,10 @@ def run(path=None, *, on_activate=None):
             if settings.find_property("gtk-interface-color-scheme"):
                 settings.set_property(
                     "gtk-interface-color-scheme",
-                    Gtk.InterfaceColorScheme.DARK if dark else Gtk.InterfaceColorScheme.LIGHT,
+                    Gtk.InterfaceColorScheme.DARK,
                 )
             else:
-                settings.set_property("gtk-application-prefer-dark-theme", dark)
-            self.syncing_theme = True
-            self.theme_switch.set_active(dark)
-            self.theme_switch.set_state(dark)
-            self.syncing_theme = False
+                settings.set_property("gtk-application-prefer-dark-theme", True)
             self.chart.queue_draw()
 
         def start_service(self):
@@ -721,7 +742,7 @@ def run(path=None, *, on_activate=None):
                         "Service could not start. Run caelum doctor to check credentials, "
                         "models, shortcut conflicts, and desktop access."
                     )
-            self.start_button.set_sensitive(not bool(status))
+            self.start_button.set_visible(not bool(status))
             self.stop_button.set_visible(bool(status))
             self.pause_button.set_sensitive(bool(status))
             self.pause_button.set_label("Resume" if self.paused else "Pause")

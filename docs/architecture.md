@@ -13,7 +13,7 @@
 - `service.py`: UID-checked local Unix socket, single-instance lock, session lock/sleep monitors, compositor reload/output handling, helper supervision and cleanup.
 - `hud.py`: GTK4 layer-shell overlay, empty input region, no keyboard interactivity, zero exclusive zone, pinned output, 17 real-energy bars, reduced motion, accessibility labels/announcements, terminal dwell/dismissal, unmapped idle state.
 - `benchmark.py`: opt-in same-audio A/B replay with real-time chunk scheduling, transcript-free numeric reports and WER.
-- `desktop.py`: native GTK4 overview/history/statistics/settings, monochrome themes, worker-thread I/O, explicit local input test, and UID-scoped service control. The dashboard never subscribes to interim transcription.
+- `desktop.py`: native GTK4 overview/history/statistics/settings, a black theme with collapsible icon navigation, worker-thread I/O, explicit local input test, and UID-scoped service control. The dashboard never subscribes to interim transcription.
 - `history.py`: automatic SQLite final-text persistence after insertion dispatch, retention, literal search, deletion/export, and retained-data statistics. Connections are short-lived and local to each worker thread. Numeric aggregation does not load transcript contents.
 - `launcher.py`: explicit app-launcher/autostart desktop entries referencing the existing private-environment launcher.
 - `config.py`: typed defaults and validation, including desktop privacy preferences; atomic owner-only TOML writes.

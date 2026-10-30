@@ -132,18 +132,18 @@ def run(reduced_motion=False, high_contrast=False):
             cr.set_source_rgba(0, 0, 0, 0.018)
             cr.fill()
         rounded(cr, x, y, 232, 48, 24)
-        cr.set_source_rgba(0.09, 0.098, 0.114, 1 if high_contrast else 0.94)
+        cr.set_source_rgba(0, 0, 0, 1 if high_contrast else 0.96)
         cr.fill_preserve()
-        cr.set_source_rgba(1, 1, 1, 0.14)
+        cr.set_source_rgba(0.18, 0.18, 0.18, 1)
         cr.set_line_width(1)
         cr.stroke()
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         kind = state["state"]
         capture = kind in ("listening", "recording")
-        mint, white, error = (0.659, 0.863, 0.784), (0.961, 0.961, 0.969), (0.953, 0.706, 0.667)
+        accent, white, error = (0.847, 0.847, 0.847), (0.906, 0.906, 0.906), (0.953, 0.706, 0.667)
         cr.set_source_rgb(
             *(
-                mint
+                accent
                 if kind in ("recording", "success", "unrefined")
                 else error
                 if kind == "error"
@@ -176,7 +176,7 @@ def run(reduced_motion=False, high_contrast=False):
                 if kind == "error"
                 else LABELS.get(kind, "")
             )
-            cr.select_font_face("Noto Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.select_font_face("Adwaita Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(13)
             label_width = cr.text_extents(label).width
             if label_width > 180:

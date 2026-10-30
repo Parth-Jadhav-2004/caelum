@@ -39,7 +39,7 @@ Run native tests only in an interactive Omarchy login with the repository daemon
 - [x] Literal search, deletion, retention, sensitive export, rate snapshots, retained-data aggregate math.
 - [x] Pause/cancel/resume and completion hook after final insertion; storage-hook failure never retries insertion.
 - [x] Idle settings reload, microphone changes, shortcut-conflict rollback, active-session rejection.
-- [x] Native GTK smoke check mounts all four pages and applies both themes with isolated storage.
+- [x] Native GTK smoke check mounts all four pages, checks the 820px minimum width, and toggles the sidebar with isolated storage.
 - [ ] Physical shortcut recorder and conflicting-shortcut apply/recovery through the complete UI.
 - [ ] Physical device selection/disconnect and local input-meter test across USB/Bluetooth hardware.
 - [ ] Real dictation saved through the daemon, then searched/copied/exported/deleted through the UI.

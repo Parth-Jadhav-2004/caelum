@@ -33,6 +33,6 @@ reasoning_effort = "none" # use "" to omit this parameter with another provider
 timeout_seconds = 1.8
 
 [desktop]
-theme = "light" # "dark" uses a pure black background
+theme = "dark" # The desktop uses a pure black theme; legacy "light" values are accepted.
 retention_days = 30
 stt_usd_per_hour = 0.0 # 0 means unknown; configure your own rate for new-session estimates
