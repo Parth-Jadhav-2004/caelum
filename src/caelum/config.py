@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 @dataclass
 class App:
+    backend: str = "auto"
     hotkey: str = "SUPER + ALT + V"
     strategy: str = "single"
     max_recording_seconds: int = 120
@@ -88,6 +89,8 @@ def load(path=None):
                 raise ValueError(f"Invalid type for {section}.{key}")
         setattr(config, section, cls(**values))
     a, s, c = config.app, config.stt, config.cleanup
+    if a.backend not in ("auto", "hyprland", "portable"):
+        raise ValueError("backend must be auto, hyprland, or portable")
     if config.desktop.theme not in ("light", "dark"):
         raise ValueError("Theme must be light or dark")
     if not 1 <= config.desktop.retention_days <= 3650:
@@ -109,7 +112,7 @@ def load(path=None):
     if c.reasoning_effort not in ("", "none", "minimal", "low", "medium", "high", "xhigh", "max"):
         raise ValueError("Invalid cleanup reasoning_effort")
     if not re.fullmatch(r"(?:[A-Z0-9_]+\s*\+\s*)*[A-Z0-9_]+", a.hotkey):
-        raise ValueError("hotkey must use uppercase Hyprland key names")
+        raise ValueError("hotkey must use uppercase key names")
     pieces = [piece.strip() for piece in a.hotkey.split("+")]
     if len(pieces) < 2 or any(
         piece not in {"SUPER", "ALT", "CTRL", "SHIFT"} for piece in pieces[:-1]

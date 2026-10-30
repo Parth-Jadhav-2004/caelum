@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 import uuid
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ async def hypr_json(name):
 def runtime_dir():
     root = os.environ.get("XDG_RUNTIME_DIR")
     if not root:
-        raise RuntimeError("XDG_RUNTIME_DIR is required; run inside your Wayland login")
+        raise RuntimeError("XDG_RUNTIME_DIR is required; run inside your Linux desktop login")
     path = Path(root) / "caelum"
     path.mkdir(mode=0o700, exist_ok=True)
     if path.is_symlink() or path.stat().st_uid != os.getuid():
@@ -220,6 +221,10 @@ def wayland_env():
 
 async def session_locked():
     # Omarchy's lock plugin exposes the requested state before secure lock mapping.
+    if not shutil.which("omarchy-shell"):
+        from .portable import session_locked as logind_locked
+
+        return await logind_locked()
     value = await command("omarchy-shell", "lock", "isLocked", timeout=2)
     if value not in ("true", "false"):
         raise RuntimeError("Cannot establish Omarchy lock state")

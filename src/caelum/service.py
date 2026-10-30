@@ -13,6 +13,7 @@ from .config import load
 from .history import History
 from .linux import Bindings, hypr_json, runtime_dir, session_locked
 from .orchestrator import HUD, Orchestrator
+from .portable import backend_name
 from .providers import Providers
 
 
@@ -42,14 +43,14 @@ async def safety_monitor(core):
         await process.wait()
 
 
-async def lock_monitor(core):
+async def lock_monitor(core, locked=session_locked):
     while True:
         if core.capture or core.pcm is not None:
             try:
-                locked = await session_locked()
+                is_locked = await locked()
             except (OSError, RuntimeError, TimeoutError):
                 locked = True  # missing capture safety feedback fails closed
-            if locked:
+            if is_locked:
                 await core.handle("cancel")
         await asyncio.sleep(0.2)
 
@@ -85,6 +86,10 @@ async def reload_settings(core, bindings, provider, path=None):
             raise RuntimeError("Finish or cancel dictation before applying settings")
         updated = await asyncio.to_thread(load, path)
         previous = bindings.hotkey
+        if backend_name(updated) != backend_name(core.config):
+            raise RuntimeError("Restart the service to change desktop backend")
+        if previous != updated.app.hotkey and getattr(bindings, "save_only", False):
+            raise RuntimeError("Restart the service to change the desktop portal shortcut")
         if previous != updated.app.hotkey:
             await bindings.remove()
             bindings.hotkey = updated.app.hotkey
@@ -110,8 +115,20 @@ async def serve(config, config_path=None):
         raise RuntimeError("Caelum is already running") from None
     path = directory / "control.sock"
     path.unlink(missing_ok=True)
-    bindings, hud, provider = Bindings(config.app.hotkey), HUD(config.app), Providers(config)
+    native = backend_name(config) == "hyprland"
+    if native:
+        bindings, hud = Bindings(config.app.hotkey), HUD(config.app)
+        locked = session_locked
+    else:
+        from .portable import HUD as PortableHUD
+        from .portable import Bindings as PortableBindings
+        from .portable import session_locked as locked
+
+        bindings, hud = PortableBindings(config.app.hotkey), PortableHUD(config.app)
+    provider = Providers(config)
     core = Orchestrator(config, provider, hud, bindings)
+    if not native:
+        bindings.core = core
     history = History(config_path)
     pending_writes = set()
     storage_error = False
@@ -121,13 +138,16 @@ async def serve(config, config_path=None):
         try:
             await asyncio.to_thread(history.record, *arguments[:3], snapshot, *arguments[3:])
             storage_error = False
+            return True
         except (OSError, ValueError, RuntimeError, sqlite3.Error):
             storage_error = True
+            return False
 
     def completed(*arguments):
         task = asyncio.create_task(persist(arguments, deepcopy(core.config)))
         pending_writes.add(task)
         task.add_done_callback(pending_writes.discard)
+        return task
 
     core.on_completed = completed
     stop = asyncio.Event()
@@ -151,6 +171,7 @@ async def serve(config, config_path=None):
             if message.get("action") not in {
                 "start",
                 "stop",
+                "toggle",
                 "cancel",
                 "retry",
                 "status",
@@ -160,7 +181,7 @@ async def serve(config, config_path=None):
                 "resume",
             }:
                 raise ValueError("Unknown command")
-            token = str(message.get("token", "manual"))[:80]
+            token = str(message.get("token") or "")[:80]
             if message["action"] == "shutdown":
                 await core.handle("cancel")
                 stop.set()
@@ -173,6 +194,11 @@ async def serve(config, config_path=None):
                 if message["action"] == "status":
                     result["storage_error"] = storage_error
                     result["hotkey"] = core.config.app.hotkey
+                    result["backend"] = "hyprland" if native else "portable"
+                    result["shortcut_mode"] = "native" if native else bindings.mode
+                    result["shortcut_description"] = (
+                        core.config.app.hotkey if native else bindings.description
+                    )
             writer.write(json.dumps(result or {"ok": True}).encode() + b"\n")
         except Exception:
             if core.capture is None and core.pcm is None:
@@ -191,17 +217,22 @@ async def serve(config, config_path=None):
                 raise ValueError(
                     "Configured cleanup model is not available; run caelum models cleanup"
                 )
-        await session_locked()
+        if await locked():
+            raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
+        await bindings.install()
         server = await asyncio.start_unix_server(handle, path=str(path), limit=4096)
         path.chmod(0o600)
-        await bindings.install()
         tasks = [
             asyncio.create_task(safety_monitor(core)),
-            asyncio.create_task(lock_monitor(core)),
-            asyncio.create_task(compositor_monitor(core, bindings)),
-            asyncio.create_task(hud.process.wait()),
+            asyncio.create_task(lock_monitor(core, locked)),
+            asyncio.create_task(
+                compositor_monitor(core, bindings) if native else bindings.monitor()
+            ),
         ]
+
+        if hud.process:
+            tasks.append(asyncio.create_task(hud.process.wait()))
 
         def failed(task):
             if not task.cancelled():
@@ -211,7 +242,12 @@ async def serve(config, config_path=None):
 
         for task in tasks:
             task.add_done_callback(failed)
-        print(f"Caelum ready · hold {config.app.hotkey} · Escape cancels", flush=True)
+        print(
+            f"Caelum ready · hold {config.app.hotkey} · Escape cancels"
+            if native
+            else f"Caelum ready · {bindings.description} · results in Caelum history",
+            flush=True,
+        )
         await stop.wait()
     finally:
         if server:

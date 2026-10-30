@@ -13,6 +13,7 @@ from pathlib import Path
 from .config import config_path, load, save
 from .history import History
 from .launcher import entry_path, install
+from .portable import backend_name
 
 
 def request(action):
@@ -68,6 +69,7 @@ def run(path=None, *, on_activate=None):
             self.devices = [("System default", None)]
             self.history_signature = None
             self.paused = False
+            self.portable = backend_name(self.config) == "portable"
             self.connect("activate", self.activate)
             self.connect("shutdown", self.shutdown)
 
@@ -231,16 +233,29 @@ def run(path=None, *, on_activate=None):
 
         def build_home(self):
             page = self.page(
-                "home", "Overview", "Hold your shortcut to speak. Release to insert your words."
+                "home",
+                "Overview",
+                "Record your voice, then copy your words into any app."
+                if self.portable
+                else "Hold your shortcut to speak. Release to insert your words.",
             )
             hero = self.box(spacing=18)
             hero.add_css_class("panel")
             self.status_label = self.label("Checking dictation service…", "section-title")
             hero.append(self.status_label)
-            self.shortcut_label = self.label(self.config.app.hotkey, "shortcut")
+            self.shortcut_label = self.label(
+                "Record. Copy. Paste." if self.portable else self.config.app.hotkey, "shortcut"
+            )
+            self.shortcut_label.set_wrap(True)
             hero.append(self.shortcut_label)
             hero.append(
-                self.label("Hold to speak. Release to insert. Escape to cancel.", "muted", True)
+                self.label(
+                    "Use Record, then Finish recording. Copy your completed text below."
+                    if self.portable
+                    else "Hold to speak. Release to insert. Escape to cancel.",
+                    "muted",
+                    True,
+                )
             )
             actions = self.box(False)
             self.start_button = self.button("Start service", self.start_service, "primary")
@@ -251,9 +266,11 @@ def run(path=None, *, on_activate=None):
             self.pause_button = self.button("Pause", self.toggle_pause)
             self.pause_button.set_sensitive(False)
             actions.append(self.pause_button)
-            actions.append(
-                self.button("Cancel recording", lambda: self.work(lambda: request("cancel")))
-            )
+            self.record_button = self.button("Record", self.toggle_recording, "primary")
+            self.record_button.set_visible(self.portable)
+            self.record_button.set_sensitive(False)
+            actions.append(self.record_button)
+            actions.append(self.button("Cancel", lambda: self.work(lambda: request("cancel"))))
             hero.append(actions)
             page.append(hero)
             metrics = self.box(False)
@@ -311,7 +328,10 @@ def run(path=None, *, on_activate=None):
                     ("month_words", "Words this month"),
                     ("words", "Words retained"),
                     ("wpm", "Words / recording minute"),
-                    ("latency_ms", "Mean output dispatch"),
+                    (
+                        "latency_ms",
+                        "Mean completion time" if self.portable else "Mean output dispatch",
+                    ),
                 )
             ):
                 panel = self.box(spacing=8)
@@ -387,7 +407,8 @@ def run(path=None, *, on_activate=None):
                 input_settings,
                 "Push-to-talk shortcut",
                 hotkey_row,
-                "Use at least one modifier. Conflicts are checked when the service applies it.",
+                "Your desktop may ask you to approve or change this shortcut. Restart the service "
+                "after changing a portal shortcut. Modifier-only shortcuts require Hyprland.",
             )
             controller = Gtk.EventControllerKey()
             controller.connect("key-pressed", self.capture_shortcut)
@@ -582,7 +603,8 @@ def run(path=None, *, on_activate=None):
 
             def saved(message):
                 self.config = updated
-                self.shortcut_label.set_text(updated.app.hotkey)
+                if not self.portable:
+                    self.shortcut_label.set_text(updated.app.hotkey)
                 self.message(message)
                 self.refresh()
 
@@ -659,6 +681,10 @@ def run(path=None, *, on_activate=None):
                 settings.set_property("gtk-application-prefer-dark-theme", True)
             self.chart.queue_draw()
 
+        def toggle_recording(self):
+            self.record_button.set_sensitive(False)
+            self.work(lambda: request("toggle"), lambda _: self.refresh())
+
         def start_service(self):
             if self.process and self.process.poll() is None:
                 return
@@ -730,7 +756,14 @@ def run(path=None, *, on_activate=None):
                     if state == "hidden"
                     else f"Dictation · {state.replace('_', ' ')}"
                 )
-                self.shortcut_label.set_text(status.get("hotkey", self.config.app.hotkey))
+                if status.get("backend", "hyprland") == "portable":
+                    self.shortcut_label.set_text(
+                        status.get("shortcut_description", "Record. Copy. Paste.")
+                        if status.get("shortcut_mode") == "portal"
+                        else "Record. Copy. Paste."
+                    )
+                else:
+                    self.shortcut_label.set_text(status.get("hotkey", self.config.app.hotkey))
                 if status.get("storage_error"):
                     self.message(
                         "Dictation works, but history could not be saved. Check disk permissions."
@@ -744,6 +777,17 @@ def run(path=None, *, on_activate=None):
                     )
             self.start_button.set_visible(not bool(status))
             self.stop_button.set_visible(bool(status))
+            self.record_button.set_sensitive(
+                bool(status)
+                and not self.paused
+                and status["state"] not in ("processing", "refining")
+                and not status.get("pending_audio", False)
+            )
+            self.record_button.set_label(
+                "Finish recording"
+                if status and status["state"] in ("listening", "recording", "starting")
+                else "Record"
+            )
             self.pause_button.set_sensitive(bool(status))
             self.pause_button.set_label("Resume" if self.paused else "Pause")
             self.history_note.set_text(
@@ -812,9 +856,9 @@ def run(path=None, *, on_activate=None):
             )
             label.set_selectable(True)
             card.append(label)
+            actions = self.box(False)
+            actions.append(self.button("Copy text", lambda: self.copy_text(text)))
             if not compact:
-                actions = self.box(False)
-                actions.append(self.button("Copy text", lambda: self.copy_text(text)))
                 actions.append(
                     self.button(
                         "Delete",
@@ -830,7 +874,7 @@ def run(path=None, *, on_activate=None):
                             "muted",
                         )
                     )
-                card.append(actions)
+            card.append(actions)
             return card
 
         def copy_text(self, text):

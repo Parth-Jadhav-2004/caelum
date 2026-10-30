@@ -1,8 +1,21 @@
 # Caelum
 
-Push-to-talk dictation for **Omarchy / Hyprland on native Wayland**. Hold **Super+Alt+V**, speak, release. Caelum uploads the recording to Groq Whisper, conservatively cleans it with a configurable LLM, then pastes once into the original focused application. **No live transcript. Completed dictations are saved locally automatically.**
+Private dictation for **Linux desktops**, with native Hyprland integration and a
+portable recording workflow for GNOME, KDE, and X11. **Caelum 0.2 is a cross-distro
+preview.** Download the package matching your OS from
+[GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases) and read the
+[Linux compatibility and installation guide](docs/linux.md).
 
-The native GTK4 recording pill shows microphone energy and capture/processing states. It never takes keyboard focus or receives pointer input. The Phase 2 desktop application reuses that pipeline with settings, automatic local history, and statistics. Full release qualification still requires live provider/corpus and desktop acceptance testing.
+On Hyprland, hold **Super+Alt+V**, speak, and release to paste once into the original
+application. On other desktops, use **Record / Finish recording** (or an available
+portal shortcut), then **Copy text** and paste into your chosen app. Caelum uploads
+recordings to your configured transcription provider and optionally cleans text
+with an LLM. Completed dictations are stored locally; audio is not saved.
+
+The portable backend uses notifications and logind lock feedback. The native
+Hyprland backend additionally offers a click-through recording pill and addressed
+paste. Portal availability varies by desktop/version; package availability does
+not imply every desktop combination has been hardware-qualified.
 
 ## Desktop application · Phase 2
 
@@ -26,11 +39,11 @@ Statistics use retained history, so deletion and retention recalculate totals. W
 
 Modifier-only shortcuts such as `CTRL + SUPER` are supported: press in either order, hold both to dictate, and release either to finish. Left/right variants work. Such a chord also begins recording when used as the prefix of a longer desktop shortcut; choose a three-key shortcut if that overlap is undesirable.
 
-This increment remains Linux/Omarchy-only. A system-tray icon, cross-platform ports, encrypted database/keyring integration, and automatic upgrades are not implemented.
+This application is Linux-only. The portable desktop backend is a preview; see the compatibility guide. A system-tray icon, cross-platform ports, encrypted database/keyring integration, and automatic upgrades are not implemented.
 
-## Install on this Omarchy machine
+## Source installation on this Omarchy machine
 
-The required native packages were already installed during development. For another Arch/Omarchy machine, install `python`, `python-gobject`, `python-cairo`, `gtk4`, `gtk4-layer-shell`, `portaudio`, `wl-clipboard`, `libnotify`, and `uv` using the distro package manager. Hyprland's **Lua API** and the running Omarchy shell are required; this implementation was checked on **Hyprland 0.56.2**.
+The required native packages were already installed during development. For another Arch/Omarchy machine, install `python`, `python-gobject`, `python-cairo`, `gtk4`, `gtk4-layer-shell`, `portaudio`, `wl-clipboard`, `libnotify`, and `uv` using the distro package manager. The native integration requires Hyprland's **Lua API**; Omarchy lock feedback is used when available, otherwise logind is used; this implementation was checked on **Hyprland 0.56.2**.
 
 ```bash
 ./scripts/setup.sh

@@ -1,0 +1,25 @@
+# Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
+pkgname=caelum
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Private dictation for Linux desktops'
+arch=('x86_64')
+url='https://github.com/Parth-Jadhav-2004/caelum'
+license=('custom')
+depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libnotify' 'glib2' 'systemd')
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+depends+=('python-dbus-next' 'python-httpx' 'python-numpy' 'python-sounddevice')
+optdepends=('gtk4-layer-shell: Hyprland recording overlay' 'wl-clipboard: Hyprland automatic paste')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('RELEASE_SOURCE_SHA256')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 packaging/caelum.desktop "$pkgdir/usr/share/applications/caelum.desktop"
+}

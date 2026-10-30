@@ -1,6 +1,7 @@
 """Desktop entries point at the existing private-environment launcher."""
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -36,9 +37,10 @@ def install(config, autostart=False, enabled=True):
         return destination
     launcher = Path(__file__).resolve().parents[2] / "scripts/run.sh"
     if not launcher.is_file():
-        raise RuntimeError(
-            "Desktop installation needs the source checkout's scripts/run.sh launcher"
-        )
+        executable = shutil.which("caelum")
+        if not executable:
+            raise RuntimeError("Install Caelum or run it from a source checkout")
+        launcher = Path(executable).resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     arguments = [launcher, "--config", config, "serve" if autostart else "app"]
     text = "\n".join(

@@ -121,3 +121,13 @@ def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
     assert activations, "Smoke test must activate its own application instance"
     if failures:
         raise failures[0]
+
+
+def test_packaged_launcher_does_not_require_source_checkout(tmp_path, monkeypatch):
+    from caelum import launcher
+
+    monkeypatch.setattr(launcher, "__file__", "/opt/caelum/lib/caelum/launcher.py")
+    monkeypatch.setattr(launcher.shutil, "which", lambda _: "/usr/bin/caelum")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    result = launcher.install(tmp_path / "config.toml")
+    assert 'Exec="/usr/bin/caelum" "--config"' in result.read_text()

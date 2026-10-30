@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Caelum
+Comment=Private dictation for Linux desktops
+Exec=caelum app
+Icon=audio-input-microphone
+Terminal=false
+Categories=Utility;Audio;
+StartupNotify=false

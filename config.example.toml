@@ -1,5 +1,6 @@
 # ~/.config/caelum/config.toml; credentials belong in environment variables.
 [app]
+backend = "auto" # auto, hyprland, or portable (GNOME/KDE/X11/manual copy)
 hotkey = "SUPER + ALT + V"
 # Modifier-only shortcuts such as "CTRL + SUPER" also work in either press order.
 strategy = "single" # "chunked" is experimental; benchmark before enabling

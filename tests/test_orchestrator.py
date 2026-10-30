@@ -184,3 +184,37 @@ async def test_release_before_start_is_an_accidental_press(core, monkeypatch):
     assert core.state == "hidden"
     core.provider.stt.assert_not_awaited()
     assert "reordered" not in core.early_stops
+
+
+async def test_portable_delivery_waits_for_storage_and_never_injects(core, monkeypatch):
+    core.bindings.save_only = True
+    completed = AsyncMock(return_value=True)
+    core.on_completed = completed
+    insertion = AsyncMock()
+    monkeypatch.setattr("caelum.orchestrator.insert", insertion)
+    await core.finalize(core.session)
+    insertion.assert_not_awaited()
+    completed.assert_awaited_once()
+    assert completed.call_args.args[-1] is False  # not claimed as clipboard recovery
+    assert core.state == "saved"
+    assert core.pcm is None
+    assert core.recent_metrics[-1]["manual_copy"]
+
+
+async def test_portable_storage_failure_keeps_audio_for_retry(core, monkeypatch):
+    core.bindings.save_only = True
+    core.on_completed = AsyncMock(return_value=False)
+    insertion = AsyncMock()
+    monkeypatch.setattr("caelum.orchestrator.insert", insertion)
+    await core.finalize(core.session)
+    assert core.state == "error"
+    assert core.pcm is not None
+    insertion.assert_not_awaited()
+    await core.cancel()
+
+
+async def test_toggle_stops_current_recording_inside_control_lock(core):
+    core.capture = object()
+    core.release = AsyncMock()
+    await core.handle("toggle")
+    core.release.assert_awaited_once()

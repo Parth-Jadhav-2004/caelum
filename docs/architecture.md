@@ -35,3 +35,18 @@ Retries retain PCM until success, cancel, or a finite expiry; starting a new ses
 ## Limits
 
 The application targets the installed Omarchy shell and Lua-capable Hyprland, rather than all Linux compositors. It checks native 16 kHz capture support rather than implementing arbitrary hardware resampling. Missing configured microphones fail closed instead of recording an unintended device. A system-tray indicator, cross-platform shell, keyring-backed database encryption, automatic upgrades, and cloud sync are not included. Desktop entries currently require the source checkout's launcher. Chunking is deliberately conservative and may fall back frequently. No universal caret/visible-text observation API exists across Wayland applications; dispatch timings and visibility evidence are reported separately.
+
+## Portable Linux backend
+
+`portable.py` provides desktop-neutral recording, optional XDG GlobalShortcuts
+portal sessions, logind lock feedback, and notification feedback. `app.backend`
+selects `auto`, `hyprland`, or `portable`. The service and transcription pipeline
+are shared. Portable completion awaits successful local history storage before
+showing Saved; it never claims clipboard or synthetic-paste success. The GTK
+application performs clipboard writes only through the explicit Copy text action.
+The native Hyprland backend retains target-addressed insertion and layer shell.
+
+Native distribution packages install application and locked Python dependencies
+under `/opt/caelum/lib`, leaving the OS's GI/Cairo modules untouched. A Python
+minor-version dependency prevents loading extension wheels under a mismatched
+interpreter. Release CI installs each built package in its target distro image.

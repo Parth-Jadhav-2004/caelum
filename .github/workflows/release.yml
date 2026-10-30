@@ -1,0 +1,126 @@
+name: Linux release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Test ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:12', 'debian:13', 'archlinux:latest', 'fedora:43']
+    steps:
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin xvfb xauth
+          elif command -v pacman >/dev/null; then
+            pacman -Syu --noconfirm git curl python python-gobject python-cairo gtk4 portaudio libnotify glib2 xorg-server-xvfb xorg-xauth
+          else
+            dnf install -y git curl python3 python3-gobject python3-cairo gtk4 portaudio libnotify glib2 xorg-x11-server-Xvfb xorg-x11-xauth
+          fi
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+      - name: Unit and GTK integration tests
+        shell: bash
+        run: |
+          uv venv --python /usr/bin/python3 --system-site-packages
+          uv sync --locked --extra dev --python /usr/bin/python3
+          uv run ruff check src tests scripts/build_package.py
+          xvfb-run -a env GDK_BACKEND=x11 CAELUM_DESKTOP_TESTS=1 .venv/bin/pytest -q
+  package:
+    name: Package ${{ matrix.target }}
+    needs: test
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: ubuntu-24.04, image: 'ubuntu:24.04'}
+          - {target: ubuntu-26.04, image: 'ubuntu:26.04'}
+          - {target: debian-12, image: 'debian:12'}
+          - {target: debian-13, image: 'debian:13'}
+          - {target: arch, image: 'archlinux:latest'}
+          - {target: fedora-43, image: 'fedora:43'}
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 zstd
+          elif command -v pacman >/dev/null; then
+            pacman -Syu --noconfirm git curl python zstd
+          else
+            dnf install -y git curl python3 zstd rpm-build
+          fi
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+      - name: Validate release version and build
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            python3 -c 'import os,tomllib; assert os.environ["GITHUB_REF_NAME"] == "v" + tomllib.load(open("pyproject.toml","rb"))["project"]["version"]'
+          fi
+          python3 scripts/build_package.py '${{ matrix.target }}'
+      - name: Install package and verify entry point
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb
+          elif command -v pacman >/dev/null; then
+            pacman -U --noconfirm ./dist/*.pkg.tar.zst
+          else
+            dnf install -y ./dist/*.rpm
+          fi
+          caelum --help
+          python3 -c 'import gi; gi.require_version("Gtk","4.0"); import cairo'
+          PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caelum-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+  draft-release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Build verified Arch source recipe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          # PKGBUILD uses the public archive URL, so hash those exact bytes.
+          curl --fail --location --retry 3 "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz" -o source.tar.gz
+          source_hash=$(sha256sum source.tar.gz | cut -d' ' -f1)
+          sed "s/RELEASE_SOURCE_SHA256/$source_hash/" packaging/arch/PKGBUILD > release-assets/PKGBUILD
+          cd release-assets
+          sha256sum PKGBUILD > PKGBUILD.sha256
+      - name: Create draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --prerelease --verify-tag --title "Caelum $GITHUB_REF_NAME — Linux preview" --notes-file docs/release-0.2.0.md
+          gh release upload "$GITHUB_REF_NAME" release-assets/*

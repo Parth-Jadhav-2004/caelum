@@ -15,7 +15,7 @@ from .config import config_path, load
 def control(action, token=None, address=None):
     root = os.environ.get("XDG_RUNTIME_DIR")
     if not root:
-        raise RuntimeError("Run inside a Wayland login")
+        raise RuntimeError("Run inside a Linux desktop login")
     payload = {"action": action, "token": token or ""}
     if address:
         payload["address"] = address
@@ -34,28 +34,50 @@ def control(action, token=None, address=None):
 
 async def doctor(config):
     from .linux import command, hypr_json, wayland_env
+    from .portable import SHORTCUTS, backend_name, session_locked
 
+    backend = backend_name(config)
+    native = backend == "hyprland"
     checks = {}
-    for binary in ("hyprctl", "wl-copy", "notify-send", "gdbus"):
-        checks[binary] = bool(shutil.which(binary))
-    checks["wayland"] = bool(os.environ.get("WAYLAND_DISPLAY"))
-    for name, provider in (("stt", config.stt), ("cleanup", config.cleanup)):
-        checks[f"{name}_credential_present"] = bool(os.environ.get(provider.key_env))
-    checks["cleanup_model_configured"] = bool(config.cleanup.model)
-    try:
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "caelum.hud",
-            "--check",
-            env=wayland_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+    binaries = (
+        ("hyprctl", "wl-copy", "notify-send", "gdbus")
+        if native
+        else (
+            "notify-send",
+            "gdbus",
+            "loginctl",
         )
-        await asyncio.wait_for(process.communicate(), 5)
-        checks["gtk4_layer_shell"] = process.returncode == 0
-    except (OSError, ValueError, RuntimeError, TimeoutError):
-        checks["gtk4_layer_shell"] = False
+    )
+    for binary in binaries:
+        checks[binary] = bool(shutil.which(binary))
+    checks["desktop_session"] = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
+    checks["runtime_directory"] = bool(os.environ.get("XDG_RUNTIME_DIR"))
+    for name, provider in (("stt", config.stt), ("cleanup", config.cleanup)):
+        if name == "cleanup" and not config.cleanup.model:
+            continue
+        checks[f"{name}_credential_present"] = bool(os.environ.get(provider.key_env))
+    try:
+        if native:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "caelum.hud",
+                "--check",
+                env=wayland_env(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(process.communicate(), 5)
+            checks["gtk4_layer_shell"] = process.returncode == 0
+        else:
+            from gi import require_version
+
+            require_version("Gtk", "4.0")
+            checks["gtk4"] = True
+            await session_locked()
+            checks["session_lock_feedback"] = True
+    except (ImportError, OSError, ValueError, RuntimeError, TimeoutError):
+        checks["desktop_integration"] = False
     try:
         import sounddevice as sd
 
@@ -66,28 +88,47 @@ async def doctor(config):
         checks["microphone_16khz"] = True
     except Exception:
         checks["microphone_16khz"] = False
-    try:
-        checks["hyprland_lua"] = (await hypr_json("status")).get("configProvider") == "lua"
-        checks["hyprland_config_clean"] = not bool(await command("hyprctl", "configerrors"))
-        pieces = [p.strip() for p in config.app.hotkey.split("+")]
-        mask = sum(
-            {"SUPER": 64, "ALT": 8, "CTRL": 4, "SHIFT": 1}.get(p, 0) for p in set(pieces[:-1])
-        )
-        binds = await hypr_json("binds")
-        checks["hotkey_available"] = not any(
-            b["key"].upper() == pieces[-1]
-            and b["modmask"] == mask
-            and not b.get("description", "").startswith("Caelum")
-            for b in binds
-        )
-    except Exception:
-        checks["hyprland_lua"] = False
-    print(json.dumps(checks, indent=2))
+    capabilities = {"automatic_paste": native, "manual_recording": not native}
+    if native:
+        try:
+            checks["hyprland_lua"] = (await hypr_json("status")).get("configProvider") == "lua"
+            checks["hyprland_config_clean"] = not bool(await command("hyprctl", "configerrors"))
+            from .linux import shortcut_keys
+
+            starts, _ = shortcut_keys(config.app.hotkey)
+            binds = await hypr_json("binds")
+            checks["hotkey_available"] = not any(
+                b["key"].upper() == key.upper()
+                and b["modmask"] == mask
+                and not b.get("description", "").startswith("Caelum")
+                for _, key, mask in starts
+                for b in binds
+            )
+        except (OSError, ValueError, RuntimeError, TimeoutError):
+            checks["hyprland_lua"] = False
+    else:
+        try:
+            xml = await command(
+                "gdbus",
+                "introspect",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+                "--xml",
+            )
+            capabilities["global_shortcuts_portal"] = SHORTCUTS in xml
+        except (OSError, RuntimeError, TimeoutError):
+            capabilities["global_shortcuts_portal"] = False
+    print(
+        json.dumps({"backend": backend, "checks": checks, "capabilities": capabilities}, indent=2)
+    )
     return 0 if all(checks.values()) else 1
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Caelum · push-to-talk dictation for Hyprland")
+    parser = argparse.ArgumentParser(description="Caelum · private dictation for Linux desktops")
     parser.add_argument("--config", type=Path)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("serve", help="Start the native HUD and dictation service")
@@ -98,6 +139,7 @@ def main():
         choices=[
             "start",
             "stop",
+            "toggle",
             "cancel",
             "retry",
             "status",

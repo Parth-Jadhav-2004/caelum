@@ -1,6 +1,7 @@
 """One authoritative session, bounded retry memory, cancellable asynchronous work."""
 
 import asyncio
+import inspect
 import json
 import time
 import uuid
@@ -105,6 +106,9 @@ class Orchestrator:
 
     async def handle(self, action, token="", address=None):
         async with self.control_lock:
+            if action == "toggle":
+                action = "stop" if self.capture else "start"
+                token = ""
             if action == "start":
                 if self.paused:
                     return
@@ -122,7 +126,7 @@ class Orchestrator:
                     self.accepted_tokens = {token}
                 if self.capture or self.work and not self.work.done() or self.pcm is not None:
                     return
-                if await session_locked():
+                if await getattr(self.bindings, "locked", session_locked)():
                     await self.bindings.active(False)
                     return
                 self.session = uuid.uuid4().hex
@@ -130,7 +134,7 @@ class Orchestrator:
                 self.token = token
                 self.started = time.monotonic()
                 self.failed_at = None
-                self.target = await target_at_press(address)
+                self.target = await getattr(self.bindings, "target", target_at_press)(address)
                 self.provider.reset_metrics()
                 self.metrics = {}
                 await self.event("starting")
@@ -267,8 +271,29 @@ class Orchestrator:
                     return
                 await self.event("processing")
                 began = time.monotonic()
-                if await session_locked():
+                if await getattr(self.bindings, "locked", session_locked)():
                     await self.cancel()
+                    return
+                if getattr(self.bindings, "save_only", False):
+                    self.metrics.update(self.provider.metrics)
+                    self.metrics["release_to_dispatch_ms"] = (
+                        time.monotonic() - self.released
+                    ) * 1000
+                    self.metrics["manual_copy"] = True
+                    self.metrics["clipboard_fallback"] = False
+                    self.metrics["visible_insertion_observed"] = False
+                    if not self.on_completed:
+                        raise RuntimeError("History storage is required for portable delivery")
+                    result = self.on_completed(session, text, self.metrics.copy(), refined, False)
+                    if inspect.isawaitable(result):
+                        result = await result
+                    if result is False:
+                        raise RuntimeError("Could not save dictation")
+                    self.recent_metrics.append(self.metrics.copy())
+                    self.recent_metrics = self.recent_metrics[-100:]
+                    self.pcm = self.chunker = self.failed_at = None
+                    await self.bindings.active(False)
+                    await self.event("saved")
                     return
                 try:
                     dispatched = await insert(text, self.target)
@@ -291,7 +316,9 @@ class Orchestrator:
                 )
                 if self.on_completed:
                     with suppress(Exception):
-                        self.on_completed(session, text, self.metrics.copy(), refined, not dispatched)
+                        self.on_completed(
+                            session, text, self.metrics.copy(), refined, not dispatched
+                        )
                 if not dispatched:
                     await notify(
                         "Target focus changed. Text copied; paste manually in the intended application."

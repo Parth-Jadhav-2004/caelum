@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
-# Use Arch's Python so PyGObject/cairo match the installed GTK typelib ABI.
-for dependency in /usr/bin/python uv hyprctl wl-copy; do
-  command -v "$dependency" >/dev/null || { echo "Missing dependency: $dependency"; exit 1; }
+# Use the distro Python so PyGObject/cairo match its installed GTK typelib ABI.
+python_bin="${CAELUM_PYTHON:-/usr/bin/python3}"
+for dependency in "$python_bin" uv; do
+  command -v "$dependency" >/dev/null || { echo "Missing dependency: $dependency; see docs/linux.md"; exit 1; }
 done
-/usr/bin/python -c 'import gi; gi.require_version("Gtk", "4.0"); gi.require_version("Gtk4LayerShell", "1.0"); import cairo'
-uv venv --python /usr/bin/python --system-site-packages --allow-existing .venv
-uv sync --locked --extra dev --python /usr/bin/python
-echo 'Installed. Run .venv/bin/caelum init, configure credentials/model, then .venv/bin/caelum serve.'
+"$python_bin" -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"; import gi; gi.require_version("Gtk", "4.0"); import cairo'
+uv venv --python "$python_bin" --system-site-packages --allow-existing .venv
+uv sync --locked --extra dev --python "$python_bin"
+echo 'Installed. Run .venv/bin/caelum init, configure credentials, then .venv/bin/caelum app.'
