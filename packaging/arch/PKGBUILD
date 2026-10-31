@@ -1,6 +1,6 @@
 # Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
 pkgname=caelum
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Private dictation for Linux desktops'
 arch=('x86_64')
