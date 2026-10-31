@@ -172,7 +172,8 @@ def test_native_desktop_pages_and_rail(tmp_path, monkeypatch):
                     app.navigate(page)
                     assert app.stack.get_visible_child_name() == page
                     maximum = 1100 if page == "home" else 640
-                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= maximum
+                    minimum = app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum
+                    assert minimum <= maximum, (page, minimum, maximum)
                 assert not hasattr(app, "sidebar_toggle")
                 assert set(app.nav_buttons) == {"home", "history", "settings"}
                 assert app.nav_buttons["settings"].has_css_class("selected")

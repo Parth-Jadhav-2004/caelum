@@ -769,7 +769,7 @@ def run(path=None, *, on_activate=None):
             ):
                 panel = self.box(spacing=8)
                 panel.add_css_class("panel")
-                panel.append(self.label(title, "muted"))
+                panel.append(self.label(title, "muted", True))
                 label = self.label("—", "metric")
                 self.stats_labels[key] = label
                 panel.append(label)
