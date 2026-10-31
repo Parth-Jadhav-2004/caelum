@@ -919,7 +919,13 @@ def run(path=None, *, on_activate=None):
             .caelum levelbar trough { background: #232323; border-radius: 4px; min-height: 6px; }
             .caelum levelbar block { border: none; border-radius: 4px; }
             .caelum levelbar block.filled { background: #a1a1a1; }
-            .caelum *:focus-visible { outline: 2px solid #d8d8d8; outline-offset: 2px; }
+            /* GTK propagates focus-visible to ancestors when Alt reveals focus.
+               Only controls should draw an outline, never layout containers. */
+            .caelum button:focus-visible, .caelum entry:focus-visible,
+            .caelum spinbutton:focus-visible, .caelum checkbutton:focus-visible,
+            .caelum textview:focus-visible {
+              outline: 2px solid #d8d8d8; outline-offset: 2px;
+            }
             """
             if hasattr(self, "css"):
                 Gtk.StyleContext.remove_provider_for_display(Gdk.Display.get_default(), self.css)
