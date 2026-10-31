@@ -88,12 +88,28 @@ def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
                 )
                 dialog.response(Gtk.ResponseType.ACCEPT)
                 assert downloads == [update]
-                assert "ready" in app.update_status.get_text()
+                assert len(restarts) == 1
                 assert not app.update_check.get_sensitive()
                 assert app.update_discard.get_sensitive()
+                assert restarts[0][-3:] == ["--config", str(path), "app"]
+                app.restarting_update = False
+                app.stack.set_sensitive(True)
+
+                def cancelled_install():
+                    raise RuntimeError("Authorization cancelled; retry the queued update.")
+
+                monkeypatch.setattr("caelum.desktop.install_queued_update", cancelled_install)
                 app.begin_updates()
                 assert len(restarts) == 1
-                assert restarts[0][-3:] == ["--config", str(path), "app"]
+                assert "Authorization cancelled" in app.update_status.get_text()
+                assert app.stack.get_sensitive() and app.theme_button.get_sensitive()
+                assert app.update_download.get_sensitive() and app.update_download.get_visible()
+                assert (updates.cache_dir() / "pending").is_dir()
+                monkeypatch.setattr("caelum.desktop.install_queued_update", lambda: False)
+                app.prompt_update()  # A queued update retries directly; no second download.
+                assert len(restarts) == 2 and downloads == [update]
+                app.restarting_update = False
+                app.stack.set_sensitive(True)
                 app.discard_update()
                 assert not (updates.cache_dir() / "pending").exists()
                 assert app.update_check.get_sensitive()
@@ -305,7 +321,8 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
     gi.require_version("Gtk", "4.0")
     from unittest.mock import AsyncMock
 
-    from gi.repository import GLib
+    gi.require_version("Gdk", "4.0")
+    from gi.repository import Gdk, GLib, Gtk
 
     from caelum.desktop import run
     from caelum.onboarding import Progress
@@ -325,6 +342,7 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
         "caelum.onboarding_ui.practice", AsyncMock(return_value=("Practice words.", True))
     )
     stored = []
+    monkeypatch.setattr("caelum.credentials.get", lambda name: "test-key" if stored else None)
     monkeypatch.setattr(
         "caelum.credentials.store", lambda name, value: stored.append((name, value)) or "keyring"
     )
@@ -341,20 +359,22 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 app.work = lambda operation, done=None: done(operation()) if done else operation()
                 assert app.setup_window is not None  # first launch opens setup automatically
                 setup = show(app)
-                # Hidden setup pages must not push welcome navigation below the viewport.
+                assert isinstance(setup, Gtk.Box)
+                assert not isinstance(setup, Gtk.Window)
+                assert setup.get_root() is app.window
+                assert app.stack.get_visible_child_name() == "setup"
+                assert all(not button.get_active() for button in app.nav_buttons.values())
+                assert sum(window.get_application() is app
+                           for window in Gtk.Window.list_toplevels()) == 1
+                # Hidden steps must not push navigation below the viewport.
                 allocated, bounds = setup.next.compute_bounds(setup)
                 assert allocated
                 assert bounds.get_y() + bounds.get_height() <= setup.get_height()
                 assert not setup.next.get_sensitive()
                 setup.advance()
-                assert setup.stage == 0
-                setup.consent.set_active(True)
-                setup.advance()
                 assert setup.stage == 1
+                setup.consent.set_active(True)
                 setup.key_entry.set_text("test-key")
-                setup.save_key()
-                assert stored == [("GROQ_API_KEY", "test-key")]
-                assert not setup.key_entry.get_text()
                 if contributor:
                     setup.advance()
                     assert setup.stage == 1
@@ -377,19 +397,31 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 )
                 assert setup.stage == 2
                 setup.advance()
-                assert setup.stage == 2  # no skipping the local test
+                assert setup.stage == 2 and setup.tested
+                assert stored == [("GROQ_API_KEY", "test-key")]
+                assert not setup.key_entry.get_text()
+                setup.stage = 2
                 setup.mic.set_selected(1)
                 setup.test_mic()
                 assert setup.tested
                 setup.advance()
                 assert setup.stage == 3
+                old_hotkey = setup.hotkey.get_text()
+                setup.begin_shortcut()
+                setup.capture_shortcut(None, Gdk.KEY_Control_L, 0, Gdk.ModifierType(0))
+                setup.capture_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK)
+                assert setup.hotkey.get_text() == old_hotkey
+                setup.release_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK)
+                assert setup.hotkey.get_text() == "CTRL + SUPER"
                 setup.advance()
                 assert setup.stage == 4
                 assert not setup.next.get_sensitive()
                 setup.run_practice()
                 assert not setup.succeeded  # explicit upload consent is required
                 setup.upload.set_active(True)
-                setup.run_practice()
+                assert setup.practice_pressed(
+                    None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK
+                )
                 assert setup.succeeded and setup.next.get_sensitive()
                 assert not Progress.load(path).complete
                 assert not app.history.path.exists()
@@ -397,17 +429,101 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 assert Progress.load(path).complete
                 assert app.config.app.microphone == "USB mic"
                 assert app.setup_window is None
+                assert app.stack.get_child_by_name("setup") is None
+                assert app.stack.get_visible_child_name() == "home"
                 setup = show(app)
+                assert show(app) is setup  # Reopening reuses the embedded page.
                 setup.preset.set_selected(0)
                 setup.stage = 3
                 setup.render()
-                setup.close()
+                setup.resume_later()
                 assert Progress.load(path).stage == 3
                 setup = show(app)
                 assert setup.stage == 1  # resume validates provider access again
                 assert not setup.validated and not setup.succeeded
                 assert setup.preset.get_selected() == 0  # draft selection survives resume
-                setup.close()
+                setup.key_entry.set_text("discard-this-draft")
+                app.navigate("settings")  # Leaving the page cancels work and clears secrets.
+                assert setup.closed and setup.cancelled.is_set()
+                assert setup.key_entry.get_text() == ""
+                assert app.setup_window is None
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                app.quit()
+            return False
+
+        GLib.timeout_add(300, verify)
+
+    run(path, on_activate=activated)
+    if failures:
+        raise failures[0]
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK setup test"
+)
+def test_setup_collects_distinct_custom_keys_before_validation(tmp_path, monkeypatch):
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from unittest.mock import AsyncMock
+
+    from gi.repository import GLib, Gtk
+
+    from caelum.desktop import run
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
+    monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden"})
+    keys = {}
+    monkeypatch.setattr("caelum.credentials.get", keys.get)
+    monkeypatch.setattr(
+        "caelum.credentials.store", lambda name, value: keys.update({name: value}) or "file"
+    )
+    monkeypatch.setattr("caelum.credentials.delete", lambda name: keys.pop(name, None))
+    monkeypatch.setattr(
+        "caelum.credentials.describe",
+        lambda name: "key saved in private file (not encrypted)" if name in keys else "key missing",
+    )
+    checked = AsyncMock()
+    monkeypatch.setattr("caelum.onboarding_ui.validate_providers", checked)
+    config = Config()
+    config.cleanup.model = "custom-model"
+    config.cleanup.key_env = "REFINEMENT_KEY"
+    path = tmp_path / "config.toml"
+    save(config, path)
+    failures = []
+
+    def activated(app):
+        def verify():
+            try:
+                app.work = lambda operation, done=None: done(operation()) if done else operation()
+                setup = app.setup_window
+                assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 640
+                assert not setup.remove_key.get_visible()
+                setup.consent.set_active(True)
+                setup.key_entry.set_text("first-test-key")
+                setup.advance()
+                assert setup.stage == 1
+                assert setup.key_name == "REFINEMENT_KEY"
+                assert not setup.key_entry.get_text()
+                checked.assert_not_awaited()
+                setup.key_entry.set_text("second-test-key")
+                setup.advance()
+                assert setup.stage == 2 and setup.validated
+                checked.assert_awaited_once()
+                assert keys == {"GROQ_API_KEY": "first-test-key", "REFINEMENT_KEY": "second-test-key"}
+                assert "not encrypted" in app.notice.get_text()
+                setup.go_back()
+                assert setup.remove_key.get_visible()
+                setup.delete_key()
+                assert "REFINEMENT_KEY" not in keys
+                assert not setup.remove_key.get_visible()
+                setup.open_settings()
+                assert app.stack.get_visible_child_name() == "advanced"
+                assert app.setup_window is None
             except BaseException as error:
                 failures.append(error)
             finally:

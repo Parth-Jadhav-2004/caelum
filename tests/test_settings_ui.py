@@ -67,6 +67,11 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 app.retention.set_value(45)
                 app.retention.set_value(46)
                 app.update_automatic.set_active(False)
+                assert app.brand.get_text() == "Caelum"
+                app.theme.set_selected(1)
+                assert app.hotkey_color == "#1B1B1A"
+                app.theme.set_selected(2)
+                assert app.hotkey_color == "#F2F2F3"
                 app.navigate("advanced")
                 assert app.stack.get_visible_child_name() == "advanced"
                 assert app.nav_buttons["settings"].has_css_class("selected")
@@ -89,6 +94,7 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert saved.desktop.retention_days == 46
                 assert saved.stt.language == "en"
                 assert not saved.desktop.check_updates
+                assert saved.desktop.theme == "dark"
                 assert "reload" in requests
                 assert app.save_status.get_text() == "Saved"
                 app.show_provider_status("Transcription: Invalid provider key")

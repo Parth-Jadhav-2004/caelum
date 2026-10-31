@@ -49,7 +49,7 @@ class Cleanup:
 class Desktop:
     history_enabled: bool = True
     check_updates: bool = True
-    theme: str = "dark"
+    theme: str = "system"
     retention_days: int = 30
     stt_usd_per_hour: float = 0.0
 
@@ -95,8 +95,8 @@ def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
     if a.backend not in ("auto", "hyprland", "portable"):
         raise ValueError("backend must be auto, hyprland, or portable")
-    if config.desktop.theme not in ("light", "dark"):
-        raise ValueError("Theme must be light or dark")
+    if config.desktop.theme not in ("system", "light", "dark"):
+        raise ValueError("Theme must be system, light, or dark")
     if not 1 <= config.desktop.retention_days <= 3650:
         raise ValueError("Retention must be between 1 and 3650 days")
     if not 0 <= config.desktop.stt_usd_per_hour <= 1000:

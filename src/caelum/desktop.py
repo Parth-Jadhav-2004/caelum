@@ -304,6 +304,7 @@ def run(path=None, *, on_activate=None):
                 return False
 
             future.add_done_callback(lambda _: GLib.idle_add(deliver))
+            return future
 
         def label(self, text, style=None, wrap=False):
             widget = Gtk.Label(label=text, xalign=0)
@@ -349,13 +350,10 @@ def run(path=None, *, on_activate=None):
             self.navigation = self.box(spacing=0)
             self.navigation.add_css_class("navigation")
             self.navigation.set_size_request(76, -1)
-            logo = self.box()
-            logo.add_css_class("logo")
-            logo.set_size_request(36, 36)
-            logo.set_halign(Gtk.Align.CENTER)
-            logo.set_margin_bottom(24)
-            logo.update_property([Gtk.AccessibleProperty.LABEL], ["Caelum"])
-            self.navigation.append(logo)
+            self.brand = self.label("Caelum", "wordmark")
+            self.brand.set_halign(Gtk.Align.CENTER)
+            self.brand.set_margin_bottom(24)
+            self.navigation.append(self.brand)
             self.stack = Gtk.Stack()
             self.stack.set_hexpand(True)
             self.stack.set_vexpand(True)
@@ -376,6 +374,18 @@ def run(path=None, *, on_activate=None):
                 button.connect("clicked", lambda _, name=name: self.navigate(name))
                 self.nav_buttons[name] = button
                 self.navigation.append(button)
+            spacer = self.box()
+            spacer.set_vexpand(True)
+            self.navigation.append(spacer)
+            self.theme = Gtk.DropDown.new_from_strings(["System", "Light", "Dark"])
+            self.theme.set_selected(("system", "light", "dark").index(self.config.desktop.theme))
+            self.theme_button = self.token_menu(self.theme, lambda: ["System", "Light", "Dark"])
+            self.theme_button.remove_css_class("token")
+            self.theme_button.add_css_class("theme-menu")
+            self.theme_button.set_tooltip_text("Appearance: System, Light or Dark")
+            self.theme_button.update_property([Gtk.AccessibleProperty.LABEL], ["Appearance"])
+            self.navigation.append(self.theme_button)
+            self.theme.connect("notify::selected", self.change_theme)
             outer.append(self.navigation)
             content = self.box(spacing=0)
             content.set_hexpand(True)
@@ -418,6 +428,10 @@ def run(path=None, *, on_activate=None):
             return body
 
         def navigate(self, name):
+            if name != "setup" and self.stack.get_visible_child_name() == "setup":
+                setup = getattr(self, "setup_window", None)
+                if setup:
+                    setup.finish_setup()
             self.window.set_size_request(900 if name == "home" else 480, 480)
             self.stack.set_visible_child_name(name)
             if name == "advanced":
@@ -974,6 +988,16 @@ def run(path=None, *, on_activate=None):
             self.update_automatic.set_valign(Gtk.Align.CENTER)
             automatic.append(self.update_automatic)
             rows.append(automatic)
+            key_row = self.box(False, 8)
+            key_row.add_css_class("advanced-row")
+            key_label = self.label("Key to manage", wrap=True)
+            key_label.set_hexpand(True)
+            key_row.append(key_label)
+            self.setup_key_choice = Gtk.DropDown()
+            key_row.append(self.setup_key_choice)
+            key_row.append(self.button("Manage key", self.manage_key, "text-link"))
+            rows.append(key_row)
+            self.refresh_key_choices()
             actions = self.flow()
             actions.append(self.button("Add to app launcher", lambda: self.work(
                 lambda: install(self.path),
@@ -994,6 +1018,23 @@ def run(path=None, *, on_activate=None):
             self.history_enabled.connect("toggled", lambda *_: self.queue_autosave())
             self.update_automatic.connect("notify::active", lambda *_: self.queue_autosave())
             self.show_provider_status(self.key_status(self.config))
+
+        def refresh_key_choices(self):
+            draft = self.provider_draft()
+            self.setup_key_names = list(dict.fromkeys(
+                [draft.stt.key_env] + ([draft.cleanup.key_env] if draft.cleanup.model else [])
+            ))
+            self.setup_key_choice.set_model(Gtk.StringList.new(self.setup_key_names))
+            self.setup_key_choice.set_selected(0)
+
+        def manage_key(self):
+            # Use current Advanced edits when opening provider setup.
+            try:
+                self.config = self.settings_draft()
+            except ValueError as error:
+                self.message(str(error))
+                return
+            self.open_setup(self.setup_key_names[self.setup_key_choice.get_selected()])
 
         def edit_inline(self, value):
             value.set_visible_child_name("edit")
@@ -1033,7 +1074,7 @@ def run(path=None, *, on_activate=None):
             self.update_check.set_sensitive(bool(installed()))
             version.append(self.update_check)
             self.update_download = self.button(
-                "Install on next launch", self.prompt_update, "text-link"
+                "Update & restart", self.prompt_update, "text-link"
             )
             self.update_download.set_visible(False)
             version.append(self.update_download)
@@ -1049,6 +1090,8 @@ def run(path=None, *, on_activate=None):
             if pending:
                 self.update_status.set_text("Update queued")
                 self.update_check.set_sensitive(False)
+                self.update_download.set_visible(True)
+                self.update_download.set_sensitive(True)
 
         def update_work(self, operation, done):
             if self.update_busy:
@@ -1077,13 +1120,16 @@ def run(path=None, *, on_activate=None):
                 self.update_busy = False
                 pending = (cache_dir() / "pending").is_dir()
                 self.update_check.set_sensitive(bool(installed()) and not pending)
-                self.update_download.set_sensitive(bool(self.available_update) and not pending)
+                self.update_download.set_sensitive(bool(self.available_update) or pending)
                 self.update_discard.set_sensitive(pending)
                 self.update_discard.set_visible(pending)
-                self.update_download.set_visible(bool(self.available_update) and not pending)
+                self.update_download.set_visible(bool(self.available_update) or pending)
                 self.update_check.set_visible(not self.available_update and not pending)
                 value, error = result
                 if error:
+                    self.restarting_update = False
+                    self.stack.set_sensitive(True)
+                    self.theme_button.set_sensitive(True)
                     self.update_status.set_text(error)
                     return
                 done(value)
@@ -1119,7 +1165,33 @@ def run(path=None, *, on_activate=None):
                         [sys.executable, "-m", "caelum.cli", "--config", str(self.path), "app"],
                     )
 
-                self.update_work(install_queued_update, applied)
+                if getattr(self, "setup_window", None):
+                    self.setup_window.finish_setup()
+                    self.navigate("home")
+                if self.autosave_source:
+                    GLib.source_remove(self.autosave_source)
+                    self.autosave_source = 0
+                try:
+                    draft = self.settings_draft()
+                except ValueError as error:
+                    self.update_status.set_text(f"Fix settings before restarting: {error}")
+                    return
+
+                login = self.login_button.get_active()
+                self.restarting_update = True
+                self.stack.set_sensitive(False)
+                self.theme_button.set_sensitive(False)
+
+                def install_update():
+                    # Wait for an already-running autosave before the final draft write.
+                    if getattr(self, "settings_future", None):
+                        self.settings_future.result()
+                    save(draft, self.path)
+                    if entry_path(True).exists() != login:
+                        install(self.path, autostart=True, enabled=login)
+                    return install_queued_update()
+
+                self.update_work(install_update, applied)
             elif self.config.desktop.check_updates:
                 self.check_updates()
 
@@ -1140,6 +1212,11 @@ def run(path=None, *, on_activate=None):
             self.update_work(check, checked)
 
         def prompt_update(self):
+            from .updates import cache_dir
+
+            if (cache_dir() / "pending").is_dir() and not self.update_busy:
+                self.begin_updates()
+                return
             if not self.available_update or self.update_busy:
                 return
             dialog = Gtk.MessageDialog(
@@ -1149,13 +1226,13 @@ def run(path=None, *, on_activate=None):
                 buttons=Gtk.ButtonsType.NONE,
                 text=f"Download Caelum {self.available_update['version']}?",
                 secondary_text=(
-                    "The signed package will be downloaded from GitHub. Installation happens "
-                    "the next time you open Caelum and requires administrator authorization. "
-                    "Your settings, keys, and history are kept."
+                    "The signed package will be downloaded and installed with administrator "
+                    "authorization, then Caelum will restart automatically. "
+                    "Finish any active dictation first. Your settings, keys, and history are kept."
                 ),
             )
             dialog.add_button("Later", Gtk.ResponseType.CANCEL)
-            dialog.add_button("Download update", Gtk.ResponseType.ACCEPT)
+            dialog.add_button("Update & restart", Gtk.ResponseType.ACCEPT)
             dialog.set_default_response(Gtk.ResponseType.CANCEL)
 
             def responded(window, response):
@@ -1166,9 +1243,7 @@ def run(path=None, *, on_activate=None):
                     self.update_status.set_text("Downloading and verifying update…")
                     self.update_work(
                         lambda: stage(self.available_update),
-                        lambda version: self.update_status.set_text(
-                            f"Caelum {version} is ready. Close and reopen this window to install."
-                        ),
+                        lambda version: self.begin_updates(),
                     )
 
             dialog.connect("response", responded)
@@ -1183,11 +1258,11 @@ def run(path=None, *, on_activate=None):
                 lambda _: self.update_status.set_text("Queued update discarded."),
             )
 
-        def open_setup(self):
+        def open_setup(self, key_name=None):
             from .onboarding_ui import show
 
             try:
-                show(self)
+                show(self, key_name=key_name)
             except (OSError, RuntimeError, ValueError):
                 self.message(
                     "Could not open setup. Check permissions on your Caelum config directory."
@@ -1213,6 +1288,7 @@ def run(path=None, *, on_activate=None):
             self.syncing_setup = False
             self.show_provider_status(self.key_status(self.config))
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
+            self.refresh_key_choices()
 
         def key_status(self, config):
             for title, provider in (("Transcription", config.stt), ("Refinement", config.cleanup)):
@@ -1257,6 +1333,7 @@ def run(path=None, *, on_activate=None):
             self.selecting_preset = False
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
             self.show_provider_status(self.key_status(self.provider_draft()))
+            self.refresh_key_choices()
             self.queue_autosave()
 
         def select_preset(self, *_):
@@ -1276,6 +1353,7 @@ def run(path=None, *, on_activate=None):
             self.selecting_preset = False
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
             self.show_provider_status(self.key_status(updated))
+            self.refresh_key_choices()
             self.queue_autosave()
 
         def check_connection(self):
@@ -1401,7 +1479,7 @@ def run(path=None, *, on_activate=None):
             self.work(test)
 
         def queue_autosave(self):
-            if self.selecting_preset or self.closed:
+            if self.selecting_preset or self.closed or getattr(self, "restarting_update", False):
                 return
             self.settings_revision += 1
             if self.autosave_source:
@@ -1416,6 +1494,7 @@ def run(path=None, *, on_activate=None):
             updated.desktop.history_enabled = self.history_enabled.get_active()
             updated.desktop.retention_days = self.retention.get_value_as_int()
             updated.desktop.check_updates = self.update_automatic.get_active()
+            updated.desktop.theme = ("system", "light", "dark")[self.theme.get_selected()]
             return validate(updated)
 
         def save_settings(self):
@@ -1455,6 +1534,8 @@ def run(path=None, *, on_activate=None):
                     self.config = updated
                     if not self.portable:
                         self.shortcut_label.set_text(updated.app.hotkey)
+                if getattr(self, "restarting_update", False):
+                    return
                 if self.save_again or revision != self.settings_revision:
                     self.save_again = False
                     self.save_settings()
@@ -1468,16 +1549,24 @@ def run(path=None, *, on_activate=None):
                     GLib.timeout_add(1800, reset)
                 self.refresh()
 
-            self.work(persist, saved)
+            self.settings_future = self.work(persist, saved)
             return False
+
+        def change_theme(self, *_):
+            self.config.desktop.theme = ("system", "light", "dark")[self.theme.get_selected()]
+            self.apply_theme()
+            self.queue_autosave()
 
         def apply_theme(self, *_):
             settings = Gtk.Settings.get_default()
             scheme = settings.find_property("gtk-interface-color-scheme")
-            dark = (
+            system_dark = (
                 settings.get_property("gtk-interface-color-scheme") == Gtk.InterfaceColorScheme.DARK
                 if scheme else settings.get_property("gtk-theme-name").lower().endswith("-dark")
             )
+            selected = self.config.desktop.theme
+            dark = selected == "dark" or selected == "system" and system_dark
+            self.theme_button.set_tooltip_text(f"Appearance: {selected.title()}")
             palette = (
                 ("#0B0B0D", "#151517", "#F2F2F3", "#9A9AA3", "#26262B", "#26262B", "#252528", "#202023", "#6FD3A4", "#CDA764")
                 if dark else
@@ -1785,6 +1874,9 @@ def run(path=None, *, on_activate=None):
             dialog.show()
 
         def shutdown(self, _):
+            self.closed = True
+            if getattr(self, "setup_window", None):
+                self.setup_window.finish_setup()
             # Drain a pending debounce before the window exits. Wait for older writes first.
             if hasattr(self, "autosave_source"):
                 if self.autosave_source:
@@ -1808,8 +1900,6 @@ def run(path=None, *, on_activate=None):
                     Gtk.Settings.get_default().disconnect(handler)
             if hasattr(self, "service_menu"):
                 self.service_menu.unparent()
-            if getattr(self, "setup_window", None):
-                self.setup_window.close()
             if hasattr(self, "timer"):
                 GLib.source_remove(self.timer)
             self.pool.shutdown(wait=False, cancel_futures=True)

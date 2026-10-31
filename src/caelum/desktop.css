@@ -116,3 +116,51 @@ window.caelum, .caelum headerbar, .caelum .background {
   outline: 2px solid @caelum_accent;
   outline-offset: 2px;
 }
+
+/* Embedded setup shares the main window and its appearance controls. */
+.caelum .wordmark { font-size: 17px; font-weight: 650; color: @caelum_ink; }
+.caelum menubutton.theme-menu > button { background: transparent; color: @caelum_muted;
+  min-height: 44px; padding: 0 2px; font-size: 12px; }
+.caelum .setup-page { padding: 28px 40px; }
+.caelum .setup-page > box { margin: 0; }
+.caelum .setup-page .setup-headline,
+.caelum .setup-page .setup-headline button.token,
+.caelum .setup-page .setup-headline menubutton.token > button {
+  font-size: 36px; font-weight: 600;
+}
+.caelum .setup-progress { background: #DAD8D1; border-radius: 2px; }
+.caelum .setup-progress.active { background: @caelum_accent; }
+.caelum .setup-note { color: @caelum_muted; font-size: 14px; }
+.caelum .setup-page entry.setup-key,
+.caelum .setup-page entry.setup-key text {
+  background: transparent; background-image: none; border: none;
+  border-radius: 0; box-shadow: none; padding: 0; color: @caelum_ink;
+}
+.caelum .setup-page entry.setup-key {
+  border-bottom: 2px solid @caelum_accent; min-height: 52px; font-size: 20px;
+}
+.caelum .setup-page entry.setup-key:focus-within {
+  outline: 2px solid @caelum_accent; outline-offset: 4px;
+}
+.caelum .setup-page entry.setup-key image { padding: 10px; }
+.caelum .setup-page button.setup-primary {
+  background: @caelum_ink; color: @caelum_page; border: none;
+  border-radius: 14px; min-height: 52px; padding: 0 24px;
+}
+.caelum .setup-card { background: @caelum_surface; border-radius: 20px; padding: 24px; }
+.caelum .setup-meter { min-height: 104px; }
+.caelum .setup-card textview, .caelum .setup-card textview text {
+  background: transparent; color: @caelum_ink; border: none; padding: 0;
+  font-size: 18px;
+}
+.caelum .setup-page button.icon-button { background: transparent; }
+.caelum .setup-page checkbutton { min-height: 44px; }
+.caelum .setup-page menubutton.token > button:focus-visible {
+  outline: 2px solid @caelum_accent; outline-offset: 2px;
+}
+
+.caelum .sentence-page button.text-link label { text-decoration-line: underline; }
+.caelum .setup-page checkbutton check { background: @caelum_surface;
+  border: 1px solid @caelum_muted; box-shadow: none; }
+.caelum .setup-page checkbutton check:checked { background: @caelum_accent;
+  border-color: @caelum_accent; color: @caelum_page; }
