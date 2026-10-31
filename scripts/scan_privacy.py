@@ -66,11 +66,13 @@ def main():
             file for root in args.paths for file in (root.rglob("*") if root.is_dir() else [root])
         ]
     else:
-        paths = [
-            Path(p)
-            for p in subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
-            if p
-        ]
+        root = Path(__file__).resolve().parents[1]
+        # CI containers can have a different UID from the checked-out workspace.
+        # Trust only this script's repository, only for this command.
+        tracked = subprocess.check_output(
+            ["git", "-c", f"safe.directory={root}", "-C", str(root), "ls-files", "-z"]
+        )
+        paths = [root / p for p in tracked.decode().split("\0") if p]
     check(paths)
     print("Privacy scan passed (private filenames and recognizable credential patterns).")
 

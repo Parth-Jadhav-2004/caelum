@@ -1,4 +1,7 @@
 import importlib.util
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
@@ -26,3 +29,15 @@ def test_examples_and_public_key_are_allowed(tmp_path):
     public = tmp_path / "update-public.pem"
     public.write_text("-----BEGIN PUBLIC KEY-----\npublic data")
     assert scanner.scan([example, public]) == []
+
+
+def test_repository_scan_handles_container_ownership_and_other_working_directory(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(Path(scanner.__file__).resolve())],
+        cwd=tmp_path,
+        env={**os.environ, "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Privacy scan passed" in result.stdout

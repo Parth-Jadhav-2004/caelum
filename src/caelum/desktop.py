@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import os
 import socket
 import subprocess
@@ -63,6 +64,20 @@ def install_queued_update():
                 time.sleep(0.1)
         apply_pending()
     return running
+
+
+def display_version():
+    from importlib.metadata import PackageNotFoundError, version
+
+    from .updates import installed
+
+    info = installed()
+    if info:
+        return info["version"]
+    try:
+        return version("caelum-dictation")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def microphones():
@@ -132,7 +147,7 @@ async def connection_status(config):
                 )
             except ProviderError as error:
                 results.append(
-                    f"{title}: key missing; add {settings.key_env} to the launch environment"
+                    f"{title}: key missing; open Settings → provider status → Manage keys"
                     if error.kind == "missing_key"
                     else f"{title}: {error}"
                 )
@@ -150,8 +165,8 @@ def service_presentation(status):
     if state == "error":
         if status.get("pending_audio"):
             guidance = {
-                "invalid_key": "Update the key in the launch environment and restart Caelum.",
-                "missing_key": "Add the provider key to the launch environment and restart Caelum.",
+                "invalid_key": "Replace the key in Settings → provider status → Manage keys, then retry.",
+                "missing_key": "Add the key in Settings → provider status → Manage keys, then retry.",
                 "quota": "Check provider usage or billing before retrying.",
                 "rate_limit": "Wait for the provider rate limit to reset, then retry.",
                 "offline": "Check your network connection, then retry.",
@@ -197,7 +212,52 @@ def run(path=None, *, on_activate=None):
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Gdk", "4.0")
-    from gi.repository import Gdk, Gio, GLib, Gtk
+    gi.require_version("Graphene", "1.0")
+    from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango
+
+    class SentenceLayout(Gtk.LayoutManager):
+        """Wrap native controls and words in reading order, without FlowBox's columns."""
+
+        def do_get_request_mode(self, widget):
+            return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
+
+        def children(self, widget):
+            child = widget.get_first_child()
+            while child:
+                if child.get_visible():
+                    yield child
+                child = child.get_next_sibling()
+
+        def lines(self, widget, width):
+            x, y, line_height = 0, 0, 0
+            placed = []
+            for child in self.children(widget):
+                minimum, natural, _, _ = child.measure(Gtk.Orientation.HORIZONTAL, -1)
+                w = min(natural, max(minimum, width))
+                _, h, _, _ = child.measure(Gtk.Orientation.VERTICAL, w)
+                h = max(55, h)
+                if x and x + w > width:
+                    x, y, line_height = 0, y + line_height, 0
+                placed.append((child, x, y, w, h))
+                x += w + 9
+                line_height = max(line_height, h)
+            return placed, y + line_height
+
+        def do_measure(self, widget, orientation, for_size):
+            if orientation == Gtk.Orientation.HORIZONTAL:
+                sizes = [child.measure(orientation, -1) for child in self.children(widget)]
+                return (max((size.minimum for size in sizes), default=0),
+                        sum(size.natural for size in sizes) + max(0, len(sizes) - 1) * 9,
+                        -1, -1)
+            _, height = self.lines(widget, max(1, for_size))
+            return height, height, -1, -1
+
+        def do_allocate(self, widget, width, height, baseline):
+            placed, _ = self.lines(widget, width)
+            for child, x, y, w, h in placed:
+                point = Graphene.Point()
+                point.init(x, y)
+                child.allocate(w, h, -1, Gsk.Transform().translate(point))
 
     class Desktop(Gtk.Application):
         def __init__(self):
@@ -209,7 +269,6 @@ def run(path=None, *, on_activate=None):
             )
             self.path = Path(path) if path else config_path()
             self.config = load(self.path)
-            self.config.desktop.theme = "dark"
             self.history = History(self.path)
             self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="caelum-desktop")
             self.process = None
@@ -280,60 +339,44 @@ def run(path=None, *, on_activate=None):
                 self.window.present()
                 return
             self.window = Gtk.ApplicationWindow(application=self, title="Caelum")
-            self.window.set_default_size(1080, 760)
+            self.window.set_default_size(1100, 700)
             self.window.set_size_request(480, 480)
             self.window.add_css_class("caelum")
             header = Gtk.HeaderBar()
-            # Keep the brand above the sidebar, independent of the centered title slot.
             header.set_title_widget(Gtk.Box())
-            self.brand = self.label("Caelum", "wordmark")
-            header.pack_start(self.brand)
             self.window.set_titlebar(header)
             outer = self.box(False, 0)
-            self.navigation = self.box(spacing=6)
-            navigation = self.navigation
-            navigation.add_css_class("navigation")
-            navigation.set_size_request(208, -1)
-            self.sidebar_toggle = Gtk.ToggleButton(active=True)
-            self.sidebar_toggle.set_icon_name("sidebar-show-symbolic")
-            self.sidebar_toggle.add_css_class("sidebar-toggle")
-            self.sidebar_toggle.set_halign(Gtk.Align.START)
-            self.sidebar_toggle.set_tooltip_text("Collapse sidebar")
-            self.sidebar_toggle.update_property(
-                [Gtk.AccessibleProperty.LABEL], ["Collapse sidebar"]
-            )
-            self.sidebar_toggle.connect("toggled", self.toggle_sidebar)
-            navigation.append(self.sidebar_toggle)
+            self.navigation = self.box(spacing=0)
+            self.navigation.add_css_class("navigation")
+            self.navigation.set_size_request(76, -1)
+            logo = self.box()
+            logo.add_css_class("logo")
+            logo.set_size_request(36, 36)
+            logo.set_halign(Gtk.Align.CENTER)
+            logo.set_margin_bottom(24)
+            logo.update_property([Gtk.AccessibleProperty.LABEL], ["Caelum"])
+            self.navigation.append(logo)
             self.stack = Gtk.Stack()
             self.stack.set_hexpand(True)
             self.stack.set_vexpand(True)
             self.nav_buttons = {}
-            self.nav_labels = []
             for name, title, icon in (
-                ("home", "Overview", "go-home-symbolic"),
-                ("history", "History", "document-open-recent-symbolic"),
-                ("stats", "Statistics", "view-grid-symbolic"),
-                ("settings", "Settings", "preferences-system-symbolic"),
+                ("home", "Home", "home"),
+                ("history", "History", "clock"),
+                ("settings", "Settings", "gear"),
             ):
                 button = Gtk.ToggleButton()
                 button.add_css_class("nav-item")
-                button.connect("clicked", lambda _, name=name: self.navigate(name))
-                row = self.box(False, 12)
-                row.append(Gtk.Image.new_from_icon_name(icon))
-                label = self.label(title)
-                row.append(label)
-                button.set_child(row)
+                button.set_size_request(44, 44)
+                button.set_halign(Gtk.Align.CENTER)
+                button.set_margin_bottom(8)
+                button.set_child(self.line_icon(icon))
                 button.set_tooltip_text(title)
                 button.update_property([Gtk.AccessibleProperty.LABEL], [title])
-                self.nav_labels.append(label)
+                button.connect("clicked", lambda _, name=name: self.navigate(name))
                 self.nav_buttons[name] = button
-                navigation.append(button)
-            spacer = self.box()
-            spacer.set_vexpand(True)
-            navigation.append(spacer)
-            self.sidebar_footer = self.label("Your voice.\nYour workspace.", "muted", True)
-            navigation.append(self.sidebar_footer)
-            outer.append(navigation)
+                self.navigation.append(button)
+            outer.append(self.navigation)
             content = self.box(spacing=0)
             content.set_hexpand(True)
             self.notice = self.label("", "notice", True)
@@ -342,24 +385,12 @@ def run(path=None, *, on_activate=None):
             content.append(self.stack)
             outer.append(content)
             self.window.set_child(outer)
-            self.compact_window = False
-
-            def adapt_layout(widget, _clock):
-                compact = 0 < widget.get_width() < 800
-                if compact and not self.compact_window:
-                    self.sidebar_toggle.set_active(False)
-                self.compact_window = compact
-                return True
-
-            self.window.add_tick_callback(adapt_layout)
             self.build_home()
             self.build_history()
             self.build_stats()
             self.build_settings()
             self.apply_theme()
             self.navigate("home")
-            if Gdk.Display.get_default().get_monitors().get_item(0).get_geometry().width < 1000:
-                self.sidebar_toggle.set_active(False)
             self.window.present()
             self.refresh()
             self.timer = GLib.timeout_add_seconds(1, self.refresh)
@@ -386,19 +417,11 @@ def run(path=None, *, on_activate=None):
             self.stack.add_named(scroll, name)
             return body
 
-        def toggle_sidebar(self, toggle):
-            expanded = toggle.get_active()
-            self.navigation.set_size_request(208 if expanded else 88, -1)
-            for label in self.nav_labels:
-                label.set_visible(expanded)
-            self.sidebar_footer.set_visible(expanded)
-            action = "Collapse sidebar" if expanded else "Expand sidebar"
-            toggle.set_tooltip_text(action)
-            toggle.update_property([Gtk.AccessibleProperty.LABEL], [action])
-            toggle.set_icon_name("sidebar-show-symbolic" if expanded else "sidebar-hide-symbolic")
-
         def navigate(self, name):
+            self.window.set_size_request(900 if name == "home" else 480, 480)
             self.stack.set_visible_child_name(name)
+            if name == "advanced":
+                name = "settings"
             for key, button in self.nav_buttons.items():
                 button.set_active(key == name)
                 if key == name:
@@ -410,94 +433,240 @@ def run(path=None, *, on_activate=None):
             self.notice.set_text(text)
             self.notice.set_visible(bool(text))
 
+        def line_icon(self, name):
+            icon = Gtk.DrawingArea()
+            icon.icon_name = name
+            icon.set_content_width(22)
+            icon.set_content_height(22)
+            icon.set_halign(Gtk.Align.CENTER)
+            icon.set_valign(Gtk.Align.CENTER)
+
+            def draw(area, context, width, height):
+                color = area.get_style_context().get_color()
+                context.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+                context.translate((width - 22) / 2, (height - 22) / 2)
+                context.scale(22 / 24, 22 / 24)
+                context.set_line_width(1.7 * 24 / 22)
+                context.set_line_cap(1)
+                context.set_line_join(1)
+                kind = area.icon_name
+                if kind == "home":
+                    for x, y in ((3, 10), (12, 3), (21, 10), (21, 21), (3, 21), (3, 10)):
+                        context.line_to(x, y)
+                elif kind == "clock":
+                    context.arc(12, 12, 9, 0, math.tau)
+                    context.stroke()
+                    context.move_to(12, 6)
+                    context.line_to(12, 12)
+                    context.line_to(16, 15)
+                elif kind == "gear":
+                    for i in range(32):
+                        angle = math.tau * i / 32 - math.pi / 2
+                        radius = 10 if i % 4 in (0, 1) else 7.7
+                        context.line_to(12 + radius * math.cos(angle), 12 + radius * math.sin(angle))
+                    context.close_path()
+                    context.stroke()
+                    context.arc(12, 12, 3.2, 0, math.tau)
+                elif kind == "copy":
+                    context.move_to(8, 16)
+                    context.line_to(5, 16)
+                    context.line_to(5, 4)
+                    context.line_to(16, 4)
+                    context.stroke()
+                    context.rectangle(9, 8, 11, 13)
+                elif kind == "check":
+                    context.move_to(5, 12)
+                    context.line_to(10, 17)
+                    context.line_to(20, 7)
+                elif kind == "microphone":
+                    context.arc(12, 7, 3, math.pi, math.tau)
+                    context.line_to(15, 12)
+                    context.arc(12, 12, 3, 0, math.pi)
+                    context.close_path()
+                    context.stroke()
+                    context.move_to(6, 10)
+                    context.line_to(6, 12)
+                    context.arc_negative(12, 12, 6, math.pi, 0)
+                    context.move_to(12, 18)
+                    context.line_to(12, 22)
+                    context.move_to(9, 22)
+                    context.line_to(15, 22)
+                elif kind == "stop":
+                    context.rectangle(6, 6, 12, 12)
+                elif kind == "cancel":
+                    context.move_to(6, 6)
+                    context.line_to(18, 18)
+                    context.move_to(18, 6)
+                    context.line_to(6, 18)
+                elif kind == "retry":
+                    context.arc(12, 12, 8, -math.pi / 2, math.pi)
+                    context.move_to(4, 5)
+                    context.line_to(4, 12)
+                    context.line_to(10, 12)
+                context.stroke()
+
+            icon.set_draw_func(draw)
+            return icon
+
+        def icon_button(self, name, label, callback):
+            button = Gtk.Button()
+            button.add_css_class("icon-button")
+            button.set_size_request(44, 44)
+            button.set_child(self.line_icon(name))
+            button.set_tooltip_text(label)
+            button.update_property([Gtk.AccessibleProperty.LABEL], [label])
+            button.connect("clicked", lambda _: callback())
+            return button
+
+        def display_hotkey(self, hotkey):
+            names = {"CTRL": "Ctrl", "SUPER": "Super", "ALT": "Alt", "SHIFT": "Shift"}
+            return " + ".join(names.get(key.strip(), key.strip()) for key in hotkey.split("+"))
+
+        def update_hotkey(self, hotkey):
+            self.current_hotkey = hotkey
+            escaped = GLib.markup_escape_text(hotkey)
+            self.shortcut_label.set_markup(
+                f'Hold <span foreground="{self.hotkey_color}"><b>{escaped}</b></span> to dictate'
+            )
+
         def build_home(self):
-            page = self.page(
-                "home",
-                "Overview",
-                "Record your voice, then copy your words into any app."
-                if self.portable
-                else "Hold your shortcut to speak. Release to insert your words.",
+            scroll = Gtk.ScrolledWindow()
+            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            page = self.box(spacing=40)
+            page.add_css_class("overview")
+            scroll.set_child(page)
+            self.stack.add_named(scroll, "home")
+            top = self.box(False, 24)
+            top.set_valign(Gtk.Align.START)
+            self.service_running = False
+            self.status_button = Gtk.Button()
+            self.status_button.add_css_class("status-pill")
+            self.status_button.connect(
+                "clicked", lambda _: self.stop_service() if self.service_running else self.start_service()
             )
-            hero = self.box(spacing=18)
-            hero.add_css_class("panel")
-            self.status_label = self.label("Checking dictation service…", "section-title")
-            hero.append(self.status_label)
-            self.status_label.set_wrap(True)
-            self.status_detail = self.label("", "muted", True)
-            hero.append(self.status_detail)
-            self.delivery_note = self.label(
-                "Manual paste: completed text appears here. Choose Copy text, then paste."
-                if self.portable
-                else "Automatic paste on this Hyprland session. If focus changes, copy and paste manually.",
-                "muted",
-                True,
-            )
-            hero.append(self.delivery_note)
-            self.shortcut_label = self.label(
-                "Record. Copy. Paste." if self.portable else self.config.app.hotkey, "shortcut"
-            )
-            self.shortcut_label.set_wrap(True)
-            hero.append(self.shortcut_label)
-            hero.append(
-                self.label(
-                    "Use Record, then Finish recording. Copy your completed text below."
-                    if self.portable
-                    else "Hold to speak. Release to insert. Escape to cancel.",
-                    "muted",
-                    True,
-                )
-            )
-            actions = self.flow()
-            self.start_button = self.button("Start service", self.start_service, "primary")
-            actions.append(self.start_button)
-            self.stop_button = self.button("Stop service", self.stop_service)
-            self.stop_button.set_visible(False)
-            actions.append(self.stop_button)
-            self.pause_button = self.button("Pause", self.toggle_pause)
+            pill = self.box(False, 10)
+            self.status_dot = self.box()
+            self.status_dot.add_css_class("status-dot")
+            self.status_dot.set_size_request(9, 9)
+            self.status_dot.set_valign(Gtk.Align.CENTER)
+            self.status_label = self.label("Stopped")
+            pill.append(self.status_dot)
+            pill.append(self.status_label)
+            self.status_button.set_child(pill)
+            top.append(self.status_button)
+            self.service_menu = Gtk.Popover()
+            self.service_menu.set_parent(self.status_button)
+            self.service_menu.set_position(Gtk.PositionType.BOTTOM)
+            self.service_menu.set_has_arrow(False)
+            menu = self.box(spacing=4)
+            def pause_from_menu():
+                self.service_menu.popdown()
+                self.toggle_pause()
+
+            self.pause_button = self.button("Pause", pause_from_menu)
             self.pause_button.set_sensitive(False)
-            actions.append(self.pause_button)
-            self.record_button = self.button("Record", self.toggle_recording, "primary")
+            menu.append(self.pause_button)
+            self.service_menu.set_child(menu)
+            context = Gtk.GestureClick(button=3)
+            context.connect("pressed", lambda *_: self.service_menu.popup())
+            self.status_button.add_controller(context)
+            keyboard = Gtk.EventControllerKey()
+
+            def context_key(_, key, code, modifiers):
+                if key == Gdk.KEY_Menu or (key == Gdk.KEY_F10 and modifiers & Gdk.ModifierType.SHIFT_MASK):
+                    self.service_menu.popup()
+                    return True
+                return False
+
+            keyboard.connect("key-pressed", context_key)
+            self.status_button.add_controller(keyboard)
+            self.shortcut_label = self.label("", "hotkey")
+            self.shortcut_label.set_hexpand(True)
+            self.shortcut_label.set_xalign(1)
+            self.shortcut_label.set_wrap(True)
+            self.shortcut_label.set_valign(Gtk.Align.CENTER)
+            top.append(self.shortcut_label)
+            page.append(top)
+            self.recovery = self.box(spacing=12)
+            self.recovery.set_visible(False)
+            self.status_detail = self.label("", "muted", True)
+            self.recovery.append(self.status_detail)
+            controls = self.box(False, 8)
+            self.retry_button = self.icon_button(
+                "retry", "Retry dictation", lambda: self.work(lambda: request("retry"), lambda _: self.refresh())
+            )
+            self.cancel_button = self.icon_button(
+                "cancel", "Cancel recording", lambda: self.work(lambda: request("cancel"), lambda _: self.refresh())
+            )
+            self.record_button = self.icon_button("microphone", "Record", self.toggle_recording)
             self.record_button.set_visible(self.portable)
             self.record_button.set_sensitive(False)
-            actions.append(self.record_button)
-            self.retry_button = self.button(
-                "Retry",
-                lambda: self.work(lambda: request("retry"), lambda _: self.refresh()),
-                "primary",
-            )
-            self.retry_button.set_visible(False)
-            actions.append(self.retry_button)
-            self.cancel_button = self.button(
-                "Cancel recording",
-                lambda: self.work(lambda: request("cancel"), lambda _: self.refresh()),
-            )
-            self.cancel_button.set_visible(False)
-            actions.append(self.cancel_button)
-            self.settings_action = self.button("Open Settings", lambda: self.navigate("settings"))
-            self.settings_action.set_visible(False)
-            actions.append(self.settings_action)
-            hero.append(actions)
-            page.append(hero)
-            metrics = self.flow()
+            # Portable recording and recovery remain available without extra text buttons.
+            self.session_controls = controls
+            for button in (self.record_button, self.retry_button, self.cancel_button):
+                controls.append(button)
+            controls.set_valign(Gtk.Align.CENTER)
+            top.insert_child_after(controls, self.status_button)
+            page.append(self.recovery)
+            metrics = self.box(False, 72)
+            metrics.add_css_class("overview-metrics")
             self.home_metrics = []
-            for title in ("Words today", "Recording minutes", "Saved sessions"):
-                card = self.box(spacing=8)
-                card.add_css_class("metric-panel")
-                card.set_hexpand(True)
-                card.append(self.label(title, "muted"))
-                value = self.label("—", "metric")
+            for title in ("words today", "sessions", "minutes"):
+                item = self.box(spacing=8)
+                value = self.label("0", "overview-number")
                 self.home_metrics.append(value)
-                card.append(value)
-                metrics.append(card)
+                item.append(value)
+                item.append(self.label(title, "overview-caption"))
+                metrics.append(item)
             page.append(metrics)
-            row = self.box(False)
-            title = self.label("Recent dictations", "section-title")
-            title.set_hexpand(True)
-            row.append(title)
-            row.append(self.button("View history", lambda: self.navigate("history")))
-            page.append(row)
-            self.recent = self.box()
+            self.recent = self.box(spacing=0)
+            self.recent.add_css_class("recent-list")
+            self.recent.set_overflow(Gtk.Overflow.HIDDEN)
+            seat = Gdk.Display.get_default().get_default_seat()
+            if seat and seat.get_capabilities() & Gdk.SeatCapabilities.TOUCH:
+                self.recent.add_css_class("touch")
             page.append(self.recent)
+
+        def recent_row(self, row):
+            item = self.box(False, 20)
+            item.add_css_class("recent-row")
+            date = datetime.fromisoformat(row["created_at"]).astimezone()
+            timestamp = self.label(date.strftime("%H:%M"), "recent-time")
+            timestamp.set_size_request(44, -1)
+            timestamp.set_tooltip_text(date.strftime("%b %d, %H:%M"))
+            item.append(timestamp)
+            text = row["final_transcript"]
+            label = self.label(text, "recent-text")
+            label.set_hexpand(True)
+            label.set_ellipsize(Pango.EllipsizeMode.END)
+            label.set_width_chars(1)
+            label.set_tooltip_text(text)
+            item.append(label)
+            button = self.icon_button("copy", "Copy dictation", lambda: copied())
+            button.add_css_class("recent-copy")
+            item.append(button)
+            button.feedback_timer = None
+
+            def copied():
+                self.copy_text(text, announce=False)
+                button.get_child().icon_name = "check"
+                button.get_child().queue_draw()
+                button.update_property([Gtk.AccessibleProperty.LABEL], ["Copied"])
+                button.set_tooltip_text("Copied")
+                if button.feedback_timer:
+                    GLib.source_remove(button.feedback_timer)
+
+                def restore():
+                    button.get_child().icon_name = "copy"
+                    button.get_child().queue_draw()
+                    button.update_property([Gtk.AccessibleProperty.LABEL], ["Copy dictation"])
+                    button.set_tooltip_text("Copy dictation")
+                    button.feedback_timer = None
+                    return False
+
+                button.feedback_timer = GLib.timeout_add(1400, restore)
+
+            return item
 
         def build_history(self):
             page = self.page(
@@ -512,6 +681,7 @@ def run(path=None, *, on_activate=None):
             self.search.set_hexpand(True)
             self.search.connect("search-changed", lambda _: self.refresh())
             row.append(self.search)
+            row.append(self.button("Statistics", lambda: self.navigate("stats")))
             row.append(self.button("Export…", self.export_history))
             row.append(self.button("Delete all", self.confirm_delete_all))
             page.append(row)
@@ -555,7 +725,7 @@ def run(path=None, *, on_activate=None):
             page.append(self.chart)
 
         def draw_chart(self, _, context, width, height):
-            foreground = 0.72
+            foreground = self.chart.get_style_context().get_color()
             maximum = max([1, *self.daily.values()])
             column = width / 7
             context.select_font_face("Adwaita Sans")
@@ -563,12 +733,12 @@ def run(path=None, *, on_activate=None):
             for index, (day, words) in enumerate(self.daily.items()):
                 left = index * column + 10
                 top = (height - 46) * words / maximum
-                context.set_source_rgb(foreground, foreground, foreground)
+                context.set_source_rgba(foreground.red, foreground.green, foreground.blue, foreground.alpha)
                 context.rectangle(left, height - 28 - top, max(1, column - 22), max(1, top))
                 context.fill()
                 context.move_to(left, height - 34 - top)
                 context.show_text(str(words))
-                context.set_source_rgb(0.5, 0.5, 0.5)
+                context.set_source_rgba(foreground.red, foreground.green, foreground.blue, foreground.alpha)
                 context.move_to(left, height - 8)
                 context.show_text(datetime.fromisoformat(day).strftime("%a"))
 
@@ -587,199 +757,298 @@ def run(path=None, *, on_activate=None):
             widget.set_text(str(text))
             return widget
 
+        def settings_page(self, name):
+            scroll = Gtk.ScrolledWindow()
+            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            body = self.box(spacing=40)
+            body.add_css_class("sentence-page")
+            def adapt(widget, _clock):
+                if widget.get_width() < 760:
+                    widget.add_css_class("compact-settings")
+                else:
+                    widget.remove_css_class("compact-settings")
+                return True
+            body.add_tick_callback(adapt)
+            scroll.set_child(body)
+            self.stack.add_named(scroll, name)
+            return body
+
+        def sentence(self, parent, *parts):
+            flow = self.box(False, 0)
+            flow.set_layout_manager(SentenceLayout())
+            flow.add_css_class("sentence")
+            for part in parts:
+                if isinstance(part, str):
+                    for word in part.split():
+                        label = self.label(word)
+                        label.set_valign(Gtk.Align.CENTER)
+                        flow.append(label)
+                else:
+                    part.set_valign(Gtk.Align.CENTER)
+                    flow.append(part)
+            parent.append(flow)
+
+        def token_menu(self, model, names):
+            button = Gtk.MenuButton()
+            button.set_direction(Gtk.ArrowType.NONE)
+            button.add_css_class("token")
+            popover = Gtk.Popover()
+            items = self.box(spacing=0)
+            popover.set_child(items)
+            button.set_popover(popover)
+
+            def populate(*_):
+                child = items.get_first_child()
+                while child:
+                    items.remove(child)
+                    child = items.get_first_child()
+                for index, name in enumerate(names()):
+                    def choose(index=index):
+                        model.set_selected(index)
+                        popover.popdown()
+                    items.append(self.button(name, choose, "menu-choice"))
+                values = names()
+                index = model.get_selected()
+                button.set_label(values[index] + " ▾" if index < len(values) else "Choose ▾")
+
+            model.connect("notify::selected", populate)
+            model.connect("notify::model", populate)
+            populate()
+            return button
+
         def build_settings(self):
-            page = self.page(
-                "settings",
-                "Settings",
-                "Tune your recording, text cleanup, and local history.",
-            )
-            page.append(self.button("Open setup / Manage keys", self.open_setup))
+            page = self.settings_page("settings")
             self.entries = {}
-
-            def settings_section(title):
-                group = self.box(spacing=20)
-                group.add_css_class("panel")
-                group.append(self.label(title, "section-title"))
-                page.append(group)
-                return group
-
-            input_settings = settings_section("Recording")
+            self.selecting_preset = True
+            self.autosave_source = 0
+            self.save_in_flight = False
+            self.save_again = False
+            self.settings_revision = 0
             self.hotkey = self.entry(self.config.app.hotkey)
-            hotkey_row = self.box()
-            self.hotkey.set_hexpand(True)
-            hotkey_row.append(self.hotkey)
-            self.record_key = self.button("Record shortcut", self.begin_shortcut)
-            hotkey_row.append(self.record_key)
-            self.field(
-                input_settings,
-                "Push-to-talk shortcut",
-                hotkey_row,
-                "Your desktop may ask you to approve or change this shortcut. Restart the service "
-                "after changing a portal shortcut. Modifier-only shortcuts require Hyprland.",
+            self.record_key = self.button(
+                self.config.app.hotkey.title(), self.begin_shortcut, "token"
             )
             controller = Gtk.EventControllerKey()
             controller.connect("key-pressed", self.capture_shortcut)
             controller.connect("key-released", self.release_shortcut)
-            self.hotkey.add_controller(controller)
+            self.record_key.add_controller(controller)
             self.recording_key = False
             self.pending_modifiers = []
             self.mic = Gtk.DropDown.new_from_strings(["System default"])
-            self.field(input_settings, "Microphone", self.mic)
-            mic_test = self.box(False)
-            self.meter = Gtk.LevelBar(min_value=0, max_value=1)
-            self.meter.set_hexpand(True)
-            self.meter.set_valign(Gtk.Align.CENTER)
-            mic_test.append(self.meter)
-            self.test_button = self.button("Test input · 3 seconds", self.test_microphone)
+            microphone = self.token_menu(self.mic, lambda: [name for name, _ in self.devices])
+            recording = self.box(spacing=12)
+            self.sentence(recording, "Hold", self.record_key,
+                          "to talk, and listen through", microphone)
+            mic_test = self.box(False, 14)
+            self.meter_bars = []
+            bars = self.box(False, 4)
+            bars.set_valign(Gtk.Align.CENTER)
+            for height in (6, 12, 17, 10, 22, 16, 9, 19):
+                bar = self.box(spacing=0)
+                bar.add_css_class("mic-bar")
+                bar.set_size_request(3, height)
+                bar.set_valign(Gtk.Align.CENTER)
+                bars.append(bar)
+                self.meter_bars.append(bar)
+            mic_test.append(bars)
+            self.test_button = self.button("Test mic", self.test_microphone, "text-link")
             mic_test.append(self.test_button)
-            input_settings.append(mic_test)
-            input_settings.append(
-                self.label(
-                    "The test stays in memory; it is not uploaded, played, or saved.", "muted", True
-                )
-            )
-            providers = settings_section("Providers")
+            recording.append(mic_test)
+            page.append(recording)
+
+            providers = self.box(spacing=12)
             self.preset = Gtk.DropDown.new_from_strings(PRESETS)
             self.preset.set_selected(provider_preset(self.config))
-            self.field(providers, "Provider preset", self.preset)
-            providers.append(
-                self.label(
-                    "Groq uses one GROQ_API_KEY for transcription and refinement. Free usage has "
-                    "provider limits. Refinement is optional; its quality and speed still need live "
-                    "qualification. Transcription only sends no text to a refinement provider.",
-                    "muted",
-                    True,
-                )
+            provider = self.token_menu(self.preset, lambda: list(PRESETS))
+            self.tidy = Gtk.DropDown.new_from_strings(["off", "lightly", "thoroughly"])
+            self.tidy.set_selected(
+                0 if not self.config.cleanup.model else
+                2 if self.config.cleanup.reasoning_effort in ("medium", "high", "xhigh", "max")
+                else 1
             )
-            self.connection_label = self.label(self.key_status(self.config), "muted", True)
-            providers.append(self.connection_label)
-            self.check_button = self.button("Check connection", self.check_connection)
-            self.check_button.set_halign(Gtk.Align.START)
-            providers.append(self.check_button)
-            providers.append(
-                self.label(
-                    "Connection checks contact the provider's model list, without audio or transcript. "
-                    "A listed model does not guarantee available quota. Keys come from the launch "
-                    "environment; restart the app after replacing a key.",
-                    "muted",
-                    True,
-                )
-            )
-            self.advanced = Gtk.Expander(label="Advanced provider settings")
-            advanced_body = self.box(spacing=16)
-            self.advanced.set_child(advanced_body)
-            providers.append(self.advanced)
-            for section, key, title in (
-                ("stt", "language", "Language · blank for automatic detection"),
-                ("stt", "base_url", "Transcription API URL"),
-                ("stt", "model", "Transcription model"),
-                ("stt", "key_env", "Transcription credential environment variable"),
-                ("cleanup", "base_url", "Refinement API URL"),
-                ("cleanup", "model", "Refinement model · blank to disable"),
-                ("cleanup", "key_env", "Refinement credential environment variable"),
-                ("cleanup", "reasoning_effort", "Refinement reasoning effort"),
-            ):
-                widget = self.entry(getattr(getattr(self.config, section), key))
-                self.entries[(section, key)] = widget
-                self.field(advanced_body, title, widget)
-                widget.connect("changed", self.provider_edited)
-            self.advanced.set_expanded(self.preset.get_selected() == 2)
-            self.preset.connect("notify::selected", self.select_preset)
-            providers.append(
-                self.label(
-                    "Changing provider sends future recordings or text to that provider. "
-                    "Save settings to apply your selection.",
-                    "muted",
-                    True,
-                )
-            )
-            storage_settings = self.box(spacing=20)
-            storage_settings.add_css_class("panel")
-            storage_settings.append(self.label("History & desktop", "section-title"))
-            page.append(storage_settings)
-            from .onboarding import PRIVACY
+            tidy = self.token_menu(self.tidy, lambda: ["off", "lightly", "thoroughly"])
+            self.sentence(providers, "Transcribe with", provider, "and tidy the text", tidy)
+            status = self.flow()
+            self.provider_status_dot = self.label("●", "provider-dot")
+            status.append(self.provider_status_dot)
+            self.connection_label = self.label("", "settings-muted", True)
+            status.append(self.connection_label)
+            self.key_setup = self.button("Manage keys", self.open_setup, "text-link")
+            status.append(self.key_setup)
+            self.check_button = self.button("Check connection", self.check_connection, "text-link")
+            status.append(self.check_button)
+            providers.append(status)
+            page.append(providers)
 
-            storage_settings.append(self.label(PRIVACY, "muted", True))
-            self.history_enabled = Gtk.CheckButton(label="Save dictation history on this device")
-            self.history_enabled.set_active(self.config.desktop.history_enabled)
-            storage_settings.append(self.history_enabled)
-            storage_settings.append(self.label(
-                "Turning this off keeps existing entries. Use History → Delete all to remove them. "
-                "On portable desktops, new text is copied directly to the clipboard when history is off. "
-                "Contributor models require training consent in setup for each endpoint and model.",
-                "muted", True,
-            ))
             self.retention = Gtk.SpinButton.new_with_range(1, 3650, 1)
             self.retention.set_value(self.config.desktop.retention_days)
-            self.field(storage_settings, "Keep history for this many days", self.retention)
-            self.save_button = self.button("Save settings", self.save_settings, "primary")
-            self.save_button.set_halign(Gtk.Align.START)
-            desktop_actions = self.flow()
-            desktop_actions.append(
-                self.button(
-                    "Add to app launcher",
-                    lambda: self.work(
-                        lambda: install(self.path),
-                        lambda _: self.message("Caelum added to your app launcher."),
-                    ),
-                )
-            )
-            self.login_button = self.button("", self.toggle_login)
-            self.login_label()
-            desktop_actions.append(self.login_button)
-            storage_settings.append(desktop_actions)
-            storage_settings.append(
-                self.label(
-                    "Starting at login runs the dictation service, not this window. "
-                    "Closing the window leaves dictation running. Use Stop service to stop it.",
-                    "muted",
-                    True,
-                )
-            )
+            self.retention_token = Gtk.MenuButton()
+            self.retention_token.set_direction(Gtk.ArrowType.NONE)
+            self.retention_token.add_css_class("token")
+            days = Gtk.Popover()
+            days.set_child(self.retention)
+            self.retention_token.set_popover(days)
+            self.retention_token.set_label(f"{self.config.desktop.retention_days} days")
+            self.login_button = Gtk.Switch()
+            self.login_button.add_css_class("settings-switch")
+            self.login_button.set_active(entry_path(True).exists())
+            self.login_button.update_property([Gtk.AccessibleProperty.LABEL], ["Start at login"])
+            self.login_button.connect("notify::active", lambda *_: self.queue_autosave())
+            self.sentence(page, "Keep dictations for", self.retention_token,
+                          ", and start Caelum at login", self.login_button)
 
-            page.append(self.save_button)
+            advanced = self.settings_page("advanced")
+            back = self.button("← Settings", lambda: self.navigate("settings"), "text-link")
+            back.set_halign(Gtk.Align.START)
+            advanced.append(back)
+            advanced.append(self.label("Advanced", "advanced-title"))
+            rows = self.box(spacing=0)
+            rows.set_halign(Gtk.Align.FILL)
+            # A clamp keeps the list at 720px without imposing a minimum window width.
+            clamp = self.box(False, 0)
+            clamp.append(rows)
+            rows.set_hexpand(False)
+            advanced.append(clamp)
+            def clamp_width(widget, _clock):
+                rows.set_size_request(min(720, max(180, widget.get_width())), -1)
+                return True
+            clamp.add_tick_callback(clamp_width)
+            self.inline_values = {}
+            for section, key, title in (
+                ("stt", "language", "Language"),
+                ("stt", "base_url", "Transcription URL"),
+                ("stt", "model", "Transcription model"),
+                ("stt", "key_env", "Transcription key variable"),
+                ("cleanup", "base_url", "Refinement URL"),
+                ("cleanup", "model", "Refinement model"),
+                ("cleanup", "key_env", "Refinement key variable"),
+                ("cleanup", "reasoning_effort", "Reasoning effort"),
+            ):
+                row = self.box(False, 16)
+                row.add_css_class("advanced-row")
+                label = self.label(title, wrap=True)
+                label.set_hexpand(True)
+                row.append(label)
+                widget = self.entry(getattr(getattr(self.config, section), key))
+                widget.set_width_chars(12)
+                widget.set_max_width_chars(32)
+                widget.add_css_class("inline-input")
+                widget.update_property([Gtk.AccessibleProperty.LABEL], [title])
+                self.entries[(section, key)] = widget
+                value = Gtk.Stack()
+                value.set_valign(Gtk.Align.CENTER)
+                display = self.button("", lambda value=value: self.edit_inline(value), "inline-value")
+                display.get_child().set_ellipsize(3)
+                display.get_child().set_max_width_chars(30)
+                value.add_named(display, "value")
+                value.add_named(widget, "edit")
+                self.inline_values[(section, key)] = display
+                def changed(entry, display=display, key=key):
+                    display.set_label(entry.get_text() or ("auto-detect" if key == "language" else "off"))
+                    self.provider_edited(entry)
+                widget.connect("changed", changed)
+                display.set_label(widget.get_text() or ("auto-detect" if key == "language" else "off"))
+                widget.connect("activate", lambda _, value=value: value.set_visible_child_name("value"))
+                focus = Gtk.EventControllerFocus()
+                focus.connect("leave", lambda _, value=value: value.set_visible_child_name("value"))
+                widget.add_controller(focus)
+                row.append(value)
+                rows.append(row)
+            self.history_enabled = Gtk.CheckButton(label="Save dictation history")
+            self.history_enabled.set_active(self.config.desktop.history_enabled)
+            history_row = self.box(False)
+            history_row.add_css_class("advanced-row")
+            history_row.append(self.history_enabled)
+            rows.append(history_row)
+            self.update_automatic = Gtk.Switch()
+            self.update_automatic.set_active(self.config.desktop.check_updates)
+            self.update_automatic.add_css_class("settings-switch")
+            self.update_automatic.update_property(
+                [Gtk.AccessibleProperty.LABEL], ["Check for updates when Caelum opens"]
+            )
+            automatic = self.box(False, 16)
+            automatic.add_css_class("advanced-row")
+            label = self.label("Check for updates when Caelum opens", wrap=True)
+            label.set_hexpand(True)
+            automatic.append(label)
+            self.update_automatic.set_valign(Gtk.Align.CENTER)
+            automatic.append(self.update_automatic)
+            rows.append(automatic)
+            actions = self.flow()
+            actions.append(self.button("Add to app launcher", lambda: self.work(
+                lambda: install(self.path),
+                lambda _: self.message("Caelum added to your app launcher.")), "text-link"))
+            self.update_discard = self.button("Discard queued update", self.discard_update, "text-link")
+            actions.append(self.update_discard)
+            advanced.append(actions)
+            spacer = self.box()
+            spacer.set_vexpand(True)
+            page.append(spacer)
             self.build_updates(page)
+            self.selecting_preset = False
+            self.preset.connect("notify::selected", self.select_preset)
+            self.tidy.connect("notify::selected", self.select_tidy)
+            self.mic.connect("notify::selected", lambda *_: self.queue_autosave())
+            self.hotkey.connect("changed", lambda *_: self.queue_autosave())
+            self.retention.connect("value-changed", self.retention_changed)
+            self.history_enabled.connect("toggled", lambda *_: self.queue_autosave())
+            self.update_automatic.connect("notify::active", lambda *_: self.queue_autosave())
+            self.show_provider_status(self.key_status(self.config))
+
+        def edit_inline(self, value):
+            value.set_visible_child_name("edit")
+            value.get_visible_child().grab_focus()
+
+        def retention_changed(self, *_):
+            self.retention_token.set_label(f"{self.retention.get_value_as_int()} days")
+            self.queue_autosave()
+
+        def select_tidy(self, *_):
+            if self.selecting_preset:
+                return
+            selected = self.tidy.get_selected()
+            self.selecting_preset = True
+            model = self.entries[("cleanup", "model")]
+            if not selected:
+                self.refinement_model = model.get_text() or getattr(self, "refinement_model", "")
+                model.set_text("")
+            elif not model.get_text():
+                model.set_text(getattr(self, "refinement_model", "") or "openai/gpt-oss-20b")
+            self.entries[("cleanup", "reasoning_effort")].set_text(
+                ("", "minimal", "high")[selected]
+            )
+            self.selecting_preset = False
+            self.provider_edited(None)
 
         def build_updates(self, page):
             from .updates import cache_dir, installed
 
-            panel = self.box(spacing=12)
-            panel.add_css_class("panel")
-            panel.append(self.label("Updates", "section-title"))
-            info = installed()
-            pending = (cache_dir() / "pending").is_dir()
-            description = (
-                f"Caelum {info['version']}. Checks GitHub when this window opens. "
-                "Downloads require your approval. Signed updates install on the next app "
-                "launch with administrator authorization; active dictation is never interrupted."
-                if info
-                else "This installation is managed by your package manager or source checkout. "
-                "In-app updates require an official native package with a pinned release key."
-            )
-            panel.append(self.label(description, "muted", True))
-            self.update_automatic = Gtk.CheckButton(label="Check for updates when Caelum opens")
-            self.update_automatic.set_active(self.config.desktop.check_updates)
-            self.update_automatic.set_sensitive(bool(info))
-            panel.append(self.update_automatic)
-            self.update_status = self.label(
-                "Update queued. Close and reopen Caelum to install it." if pending else "",
-                wrap=True,
-            )
-            panel.append(self.update_status)
-            actions = self.flow()
-            self.update_check = self.button("Check for updates", self.check_updates)
-            self.update_check.set_sensitive(bool(info) and not pending)
-            actions.append(self.update_check)
+            footer = self.flow()
+            footer.add_css_class("settings-footer")
+            version = self.box(False, 4)
+            version.append(self.label(f"Caelum {display_version()} ·", "settings-muted"))
+            self.update_status = self.label("up to date", "settings-muted", True)
+            version.append(self.update_status)
+            self.update_check = self.button("Check", self.check_updates, "text-link")
+            self.update_check.set_sensitive(bool(installed()))
+            version.append(self.update_check)
             self.update_download = self.button(
-                "Download & install on next launch", self.prompt_update
+                "Install on next launch", self.prompt_update, "text-link"
             )
-            self.update_download.set_sensitive(False)
-            actions.append(self.update_download)
-            self.update_discard = self.button("Discard queued update", self.discard_update)
+            self.update_download.set_visible(False)
+            version.append(self.update_download)
+            footer.append(version)
+            self.save_status = self.label("Saved automatically", "settings-muted", True)
+            self.save_status.set_hexpand(True)
+            footer.append(self.save_status)
+            footer.append(self.button("Advanced →", lambda: self.navigate("advanced"), "text-link"))
+            page.append(footer)
+            pending = (cache_dir() / "pending").is_dir()
+            self.update_discard.set_visible(pending)
             self.update_discard.set_sensitive(pending)
-            actions.append(self.update_discard)
-            panel.append(actions)
-            page.append(panel)
+            if pending:
+                self.update_status.set_text("Update queued")
+                self.update_check.set_sensitive(False)
 
         def update_work(self, operation, done):
             if self.update_busy:
@@ -810,6 +1079,9 @@ def run(path=None, *, on_activate=None):
                 self.update_check.set_sensitive(bool(installed()) and not pending)
                 self.update_download.set_sensitive(bool(self.available_update) and not pending)
                 self.update_discard.set_sensitive(pending)
+                self.update_discard.set_visible(pending)
+                self.update_download.set_visible(bool(self.available_update) and not pending)
+                self.update_check.set_visible(not self.available_update and not pending)
                 value, error = result
                 if error:
                     self.update_status.set_text(error)
@@ -860,12 +1132,10 @@ def run(path=None, *, on_activate=None):
                 self.available_update = update
                 self.update_download.set_sensitive(bool(update))
                 self.update_status.set_text(
-                    f"Caelum {update['version']} is available."
-                    if update
-                    else "Caelum is up to date."
+                    "Update available" if update else "up to date"
                 )
-                if update:
-                    self.prompt_update()
+                self.update_download.set_visible(bool(update))
+                self.update_check.set_visible(not update)
 
             self.update_work(check, checked)
 
@@ -907,6 +1177,7 @@ def run(path=None, *, on_activate=None):
         def discard_update(self):
             from .updates import discard_pending
 
+            self.available_update = None
             self.update_work(
                 discard_pending,
                 lambda _: self.update_status.set_text("Queued update discarded."),
@@ -927,26 +1198,45 @@ def run(path=None, *, on_activate=None):
             for (section, key), widget in self.entries.items():
                 widget.set_text(str(getattr(getattr(self.config, section), key)))
             self.preset.set_selected(provider_preset(self.config))
+            self.tidy.set_selected(
+                0 if not self.config.cleanup.model else
+                2 if self.config.cleanup.reasoning_effort in ("medium", "high", "xhigh", "max")
+                else 1
+            )
             self.selecting_preset = False
             self.history_enabled.set_active(self.config.desktop.history_enabled)
             self.hotkey.set_text(self.config.app.hotkey)
+            self.record_key.set_label(self.config.app.hotkey.title())
+            self.retention.set_value(self.config.desktop.retention_days)
+            self.syncing_setup = True
             self.set_devices([(name, value) for name, value in self.devices if value is not None])
-            self.connection_label.set_text(self.key_status(self.config))
+            self.syncing_setup = False
+            self.show_provider_status(self.key_status(self.config))
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
 
         def key_status(self, config):
-            return "\n".join(
-                f"{title}: "
-                + (
-                    "off (raw transcription)"
-                    if not provider.model
-                    else credential_status(provider.key_env) + "; check connection"
-                )
-                for title, provider in (
-                    ("Transcription", config.stt),
-                    ("Refinement", config.cleanup),
-                )
-            )
+            for title, provider in (("Transcription", config.stt), ("Refinement", config.cleanup)):
+                if not provider.model:
+                    continue
+                status = credential_status(provider.key_env)
+                if "missing" in status or "unavailable" in status:
+                    return f"{title}: {provider.key_env} {status.split(';')[0]}"
+            return "Key found"
+
+        def show_provider_status(self, text):
+            # Keep the first actionable failure; successful checks fit on one short line.
+            lines = text.splitlines()
+            problem = next((line for line in lines if "connected" not in line
+                            and "off (raw" not in line), None)
+            text = problem or "Connected"
+            missing = "missing" in text or "key unavailable" in text
+            okay = text in ("Key found", "Connected")
+            self.connection_label.set_text(text)
+            self.provider_status_dot.remove_css_class("warning")
+            self.provider_status_dot.remove_css_class("error")
+            if not okay:
+                self.provider_status_dot.add_css_class("warning" if missing or "Checking" in text else "error")
+            self.key_setup.set_visible(missing)
 
         def provider_draft(self):
             updated = deepcopy(self.config)
@@ -958,37 +1248,46 @@ def run(path=None, *, on_activate=None):
             if getattr(self, "selecting_preset", False):
                 return
             self.selecting_preset = True
-            self.preset.set_selected(2)
-            self.advanced.set_expanded(True)
+            self.preset.set_selected(provider_preset(self.provider_draft()))
+            self.tidy.set_selected(
+                0 if not self.entries[("cleanup", "model")].get_text() else
+                2 if self.entries[("cleanup", "reasoning_effort")].get_text()
+                in ("medium", "high", "xhigh", "max") else 1
+            )
             self.selecting_preset = False
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
-            self.connection_label.set_text(self.key_status(self.provider_draft()))
+            self.show_provider_status(self.key_status(self.provider_draft()))
+            self.queue_autosave()
 
         def select_preset(self, *_):
             if getattr(self, "selecting_preset", False):
                 return
             selected = self.preset.get_selected()
             if selected == 2:
-                self.advanced.set_expanded(True)
+                self.navigate("advanced")
                 return
             updated = apply_provider_preset(self.provider_draft(), selected)
+            if updated.cleanup.model:
+                updated.cleanup.reasoning_effort = "minimal"
             self.selecting_preset = True
             for (section, key), widget in self.entries.items():
                 widget.set_text(str(getattr(getattr(updated, section), key)))
+            self.tidy.set_selected(0 if not updated.cleanup.model else 1)
             self.selecting_preset = False
             self.connection_generation = getattr(self, "connection_generation", 0) + 1
-            self.connection_label.set_text(self.key_status(updated))
+            self.show_provider_status(self.key_status(updated))
+            self.queue_autosave()
 
         def check_connection(self):
             updated = self.provider_draft()
             generation = getattr(self, "connection_generation", 0)
             self.check_button.set_sensitive(False)
-            self.connection_label.set_text("Checking connection…")
+            self.show_provider_status("Checking connection…")
 
             def checked(text):
                 self.check_button.set_sensitive(True)
                 if generation == getattr(self, "connection_generation", 0):
-                    self.connection_label.set_text(text)
+                    self.show_provider_status(text)
 
             def check():
                 try:
@@ -999,10 +1298,15 @@ def run(path=None, *, on_activate=None):
             self.work(check, checked)
 
         def set_devices(self, devices):
-            selected = self.config.app.microphone
+            index = self.mic.get_selected()
+            selected = self.devices[index][1] if index < len(self.devices) else self.config.app.microphone
+            if getattr(self, "syncing_setup", False):
+                selected = self.config.app.microphone
             self.devices = [("System default", None), *dict.fromkeys(devices)]
             if selected is not None and not any(value == selected for _, value in self.devices):
                 self.devices.append((f"{selected} · configured, not detected", selected))
+            was_selecting = self.selecting_preset
+            self.selecting_preset = True
             self.mic.set_model(Gtk.StringList.new([name for name, _ in self.devices]))
             self.mic.set_selected(
                 next(
@@ -1010,18 +1314,21 @@ def run(path=None, *, on_activate=None):
                 )
             )
 
+            self.selecting_preset = was_selecting
+
         def begin_shortcut(self):
             self.recording_key = True
             self.pending_modifiers = []
-            self.record_key.set_label("Press shortcut…")
-            self.hotkey.grab_focus()
+            self.pending_shortcut = None
+            self.record_key.set_label("Press keys…")
+            self.record_key.grab_focus()
 
         def capture_shortcut(self, _, keyval, keycode, state):
             if not self.recording_key:
                 return False
             if keyval == Gdk.KEY_Escape:
                 self.recording_key = False
-                self.record_key.set_label("Record shortcut")
+                self.record_key.set_label(self.hotkey.get_text().title())
                 return True
             name = Gdk.keyval_name(keyval) or ""
             modifiers = [
@@ -1044,16 +1351,25 @@ def run(path=None, *, on_activate=None):
                 self.pending_modifiers = list(dict.fromkeys([*modifiers, modifier_key]))
                 return True
             if modifiers:
-                self.hotkey.set_text(" + ".join([*modifiers, name.upper()]))
-                self.recording_key = False
-                self.record_key.set_label("Record shortcut")
+                self.pending_shortcut = " + ".join([*modifiers, name.upper()])
             return True
 
         def release_shortcut(self, _, keyval, keycode, state):
-            if self.recording_key and len(self.pending_modifiers) >= 2:
-                self.hotkey.set_text(" + ".join(self.pending_modifiers))
+            if not self.recording_key:
+                return
+            combo = self.pending_shortcut or (
+                " + ".join(self.pending_modifiers) if len(self.pending_modifiers) >= 2 else None
+            )
+            if combo:
                 self.recording_key = False
-                self.record_key.set_label("Record shortcut")
+                self.hotkey.set_text(combo)
+                self.record_key.set_label(combo.title())
+
+        def set_mic_level(self, value):
+            for index, bar in enumerate(self.meter_bars):
+                height = 4 + int(value * (12 + ((index * 7) % 19)))
+                bar.set_size_request(3, height)
+            return False
 
         def test_microphone(self):
             self.test_button.set_sensitive(False)
@@ -1067,7 +1383,7 @@ def run(path=None, *, on_activate=None):
 
                 def level(data, frames, timing, status):
                     value = min(1, float(np.sqrt(np.mean(data**2))) * 8)
-                    GLib.idle_add(self.meter.set_value, value)
+                    GLib.idle_add(self.set_mic_level, value)
 
                 try:
                     try:
@@ -1080,103 +1396,107 @@ def run(path=None, *, on_activate=None):
                         time.sleep(3)
                 finally:
                     GLib.idle_add(self.test_button.set_sensitive, True)
-                    GLib.idle_add(self.meter.set_value, 0)
+                    GLib.idle_add(self.set_mic_level, 0)
 
             self.work(test)
 
-        def save_settings(self):
-            updated = deepcopy(self.config)
+        def queue_autosave(self):
+            if self.selecting_preset or self.closed:
+                return
+            self.settings_revision += 1
+            if self.autosave_source:
+                GLib.source_remove(self.autosave_source)
+            self.save_status.set_text("Saving…")
+            self.autosave_source = GLib.timeout_add(400, self.save_settings)
+
+        def settings_draft(self):
+            updated = self.provider_draft()
             updated.app.hotkey = self.hotkey.get_text().strip().upper()
             updated.app.microphone = self.devices[self.mic.get_selected()][1]
-            for (section, key), widget in self.entries.items():
-                setattr(getattr(updated, section), key, widget.get_text().strip())
             updated.desktop.history_enabled = self.history_enabled.get_active()
             updated.desktop.retention_days = self.retention.get_value_as_int()
             updated.desktop.check_updates = self.update_automatic.get_active()
-            self.save_button.set_sensitive(False)
+            return validate(updated)
+
+        def save_settings(self):
+            if self.autosave_source:
+                GLib.source_remove(self.autosave_source)
+                self.autosave_source = 0
+            if self.save_in_flight:
+                self.save_again = True
+                return False
+            try:
+                updated = self.settings_draft()
+            except ValueError as error:
+                self.save_status.set_text(f"Not saved: {error}")
+                return False
+            revision = self.settings_revision
+            login = self.login_button.get_active()
+            self.save_in_flight = True
 
             def persist():
                 try:
                     save(updated, self.path)
+                    if entry_path(True).exists() != login:
+                        install(self.path, autostart=True, enabled=login)
                     try:
                         request("reload")
                     except (FileNotFoundError, ConnectionRefusedError):
-                        return "Settings saved. They will apply when dictation starts."
-                    except (RuntimeError, OSError):
-                        return (
-                            "Settings saved, but not applied to the running service. Finish or "
-                            "cancel dictation, check shortcut conflicts, then save again."
-                        )
-                    return "Settings saved and applied."
-                finally:
-                    GLib.idle_add(self.save_button.set_sensitive, True)
+                        pass
+                    except (RuntimeError, OSError) as error:
+                        return f"Saved; service not updated: {error}"
+                    return None
+                except (ValueError, RuntimeError, OSError) as error:
+                    return f"Could not save: {error}"
 
-            def saved(message):
-                self.config = updated
-                if not self.portable:
-                    self.shortcut_label.set_text(updated.app.hotkey)
-                self.message(message)
+            def saved(error):
+                self.save_in_flight = False
+                if not error or error.startswith("Saved;"):
+                    self.config = updated
+                    if not self.portable:
+                        self.shortcut_label.set_text(updated.app.hotkey)
+                if self.save_again or revision != self.settings_revision:
+                    self.save_again = False
+                    self.save_settings()
+                    return
+                self.save_status.set_text(error or "Saved")
+                if not error:
+                    def reset():
+                        if revision == self.settings_revision:
+                            self.save_status.set_text("Saved automatically")
+                        return False
+                    GLib.timeout_add(1800, reset)
                 self.refresh()
 
             self.work(persist, saved)
+            return False
 
-        def apply_theme(self):
-            css = """
-            window.caelum, .caelum headerbar, .caelum .background {
-              background: #000000; color: #e7e7e7; background-image: none;
-            }
-            .caelum { font-family: 'Adwaita Sans', 'Noto Sans', sans-serif; font-size: 1em; }
-            .caelum headerbar { min-height: 52px; padding: 0 20px;
-              box-shadow: none; border: none; }
-            .caelum .wordmark { font-weight: 700; font-size: 1.4em; letter-spacing: -0.6px; }
-            .caelum .navigation { padding: 8px 16px 24px; background: #000000; }
-            .caelum .sidebar-toggle { margin-bottom: 24px; }
-            .caelum .page { padding: 24px 20px 32px; }
-            .caelum .title { font-size: 2em; font-weight: 600; letter-spacing: -0.8px; }
-            .caelum .section-title { font-size: 1.15em; font-weight: 600; }
-            .caelum .muted { color: #b3b3b3; font-size: 0.95em; }
-            .caelum .metric { font-size: 2em; font-weight: 500; }
-            .caelum .shortcut { font-size: 2em; font-weight: 500; letter-spacing: -0.6px; }
-            .caelum .field-title { font-size: 1em; font-weight: 600; }
-            .caelum .panel { background: #111111; border: none; border-radius: 16px;
-              box-shadow: none; padding: 22px; }
-            .caelum .metric-panel { padding: 8px 0 12px; }
-            .caelum button, .caelum button:hover, .caelum button:active {
-              background: #232323; color: #e7e7e7; background-image: none;
-              box-shadow: none; text-shadow: none; border: none;
-              border-radius: 10px; padding: 10px 14px; }
-            .caelum button:disabled { opacity: 0.4; }
-            .caelum button.nav-item, .caelum button.nav-item:hover,
-            .caelum button.sidebar-toggle, .caelum button.sidebar-toggle:hover,
-            .caelum headerbar button, .caelum headerbar button:hover {
-              background: transparent; color: #a1a1a1; }
-            .caelum button.nav-item { padding: 12px; }
-            .caelum button.nav-item.selected, .caelum button.nav-item.selected:hover {
-              background: #1b1b1b; color: #e7e7e7; font-weight: 600; }
-            .caelum button.primary, .caelum button.primary:hover,
-            .caelum button.primary:active { background: #d8d8d8; color: #111111; }
-            .caelum entry, .caelum entry:hover, .caelum entry:focus-within,
-            .caelum dropdown, .caelum dropdown:hover,
-            .caelum spinbutton, .caelum spinbutton:hover {
-              background: #202020; color: #e7e7e7; background-image: none;
-              border: none; border-radius: 10px; box-shadow: none; padding: 8px; }
-            .caelum dropdown button, .caelum dropdown button:hover,
-            .caelum spinbutton button, .caelum spinbutton button:hover,
-            .caelum spinbutton entry, .caelum spinbutton entry:hover {
-              background: transparent; border: none; box-shadow: none; }
-            .caelum .notice { background: #1b1b1b; border-radius: 10px;
-              margin: 12px 36px 0; padding: 12px 16px; }
-            .caelum levelbar trough { background: #232323; border-radius: 4px; min-height: 6px; }
-            .caelum levelbar block { border: none; border-radius: 4px; }
-            .caelum levelbar block.filled { background: #a1a1a1; }
-            /* GTK propagates focus-visible to ancestors when Alt reveals focus.
-               Only controls should draw an outline, never layout containers. */
-            .caelum button:focus-visible, .caelum entry:focus-visible,
-            .caelum spinbutton:focus-visible, .caelum checkbutton:focus-visible,
-            .caelum textview:focus-visible {
-              outline: 2px solid #d8d8d8; outline-offset: 2px;
-            }
-            """
+        def apply_theme(self, *_):
+            settings = Gtk.Settings.get_default()
+            scheme = settings.find_property("gtk-interface-color-scheme")
+            dark = (
+                settings.get_property("gtk-interface-color-scheme") == Gtk.InterfaceColorScheme.DARK
+                if scheme else settings.get_property("gtk-theme-name").lower().endswith("-dark")
+            )
+            palette = (
+                ("#0B0B0D", "#151517", "#F2F2F3", "#9A9AA3", "#26262B", "#26262B", "#252528", "#202023", "#6FD3A4", "#CDA764")
+                if dark else
+                ("#F6F5F2", "#FFFFFF", "#1B1B1A", "#5E5D58", "#E4E2DC", "#EEECE6", "#E9E7E0", "#F1F0EC", "#2F6F57", "#9A6A23")
+            )
+            self.hotkey_color = palette[2]
+            if hasattr(self, "current_hotkey"):
+                self.update_hotkey(self.current_hotkey)
+            names = ("page", "surface", "ink", "muted", "border", "divider", "active", "fill", "accent", "amber")
+            css = "\n".join(f"@define-color caelum_{name} {value};" for name, value in zip(names, palette, strict=True))
+            css += "\n" + Path(__file__).with_name("desktop.css").read_text()
+            if dark:
+                css += """
+                .caelum .sentence-page button.token,
+                .caelum .sentence-page menubutton.token > button {
+                  background: #16251E; color: #6FD3A4;
+                }
+                .caelum .sentence-page .provider-dot.error { color: #FF8E8E; }
+                """
             if hasattr(self, "css"):
                 Gtk.StyleContext.remove_provider_for_display(Gdk.Display.get_default(), self.css)
             self.css = Gtk.CssProvider()
@@ -1187,14 +1507,10 @@ def run(path=None, *, on_activate=None):
             Gtk.StyleContext.add_provider_for_display(
                 Gdk.Display.get_default(), self.css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
-            settings = Gtk.Settings.get_default()
-            if settings.find_property("gtk-interface-color-scheme"):
-                settings.set_property(
-                    "gtk-interface-color-scheme",
-                    Gtk.InterfaceColorScheme.DARK,
-                )
-            else:
-                settings.set_property("gtk-application-prefer-dark-theme", True)
+            if not hasattr(self, "theme_signals"):
+                self.theme_signals = [settings.connect("notify::gtk-theme-name", self.apply_theme)]
+                if scheme:
+                    self.theme_signals.append(settings.connect("notify::gtk-interface-color-scheme", self.apply_theme))
             self.chart.queue_draw()
 
         def toggle_recording(self):
@@ -1264,40 +1580,37 @@ def run(path=None, *, on_activate=None):
 
         def render_data(self, data):
             status, rows, recent, summary = data
-            if self.portable:
-                self.delivery_note.set_text(
-                    "Manual paste: completed text appears here. Choose Copy text, then paste."
-                    if self.config.desktop.history_enabled else
-                    "Manual paste: history is off. Text is copied directly to the clipboard; paste it."
-                )
-            if status:
-                self.paused = status.get("paused", False)
-                title, detail = service_presentation(status)
-                self.status_label.set_text(title)
-                self.status_detail.set_text(detail)
-                if status.get("backend", "hyprland") == "portable":
-                    self.shortcut_label.set_text(
-                        status.get("shortcut_description", "Record. Copy. Paste.")
-                        if status.get("shortcut_mode") == "portal"
-                        else "Record. Copy. Paste."
-                    )
-                else:
-                    self.shortcut_label.set_text(status.get("hotkey", self.config.app.hotkey))
-                if status.get("storage_error"):
-                    self.message(
-                        "Dictation works, but history could not be saved. Check disk permissions."
-                    )
+            self.service_running = bool(status)
+            self.paused = bool(status and status.get("paused", False))
+            state = status.get("state", "hidden") if status else "stopped"
+            title, detail = service_presentation(status)
+            if not status:
+                pill_title = "Stopped"
+            elif self.paused:
+                pill_title = "Paused"
+            elif state in ("starting", "listening", "recording"):
+                pill_title = "Listening"
+            elif state in ("processing", "refining"):
+                pill_title = "Processing"
+            elif state == "error":
+                pill_title = title
             else:
-                title, detail = service_presentation(None)
-                self.status_label.set_text(title)
-                self.status_detail.set_text(detail)
-                if self.process and self.process.poll() is not None and self.process.returncode:
-                    self.message(
-                        "Service could not start. Run caelum doctor to check credentials, "
-                        "models, shortcut conflicts, and desktop access."
-                    )
-            self.start_button.set_visible(not bool(status))
-            self.stop_button.set_visible(bool(status))
+                pill_title = "Ready"
+            self.status_label.set_text(pill_title)
+            for name in ("ready", "paused", "stopped"):
+                self.status_dot.remove_css_class(name)
+            self.status_dot.add_css_class("paused" if self.paused else "ready" if status and state != "error" else "stopped")
+            action = "Stop service" if status else "Start service"
+            self.status_button.set_tooltip_text(f"{action} · Right-click or Shift+F10 for pause/resume")
+            self.status_button.update_property([Gtk.AccessibleProperty.LABEL], [f"{action} · {pill_title}"])
+            self.status_detail.set_text(detail if state == "error" else "")
+            self.status_detail.set_visible(state == "error")
+            hotkey = self.display_hotkey(status.get("hotkey", self.config.app.hotkey) if status else self.config.app.hotkey)
+            self.update_hotkey(hotkey)
+            if status and status.get("storage_error"):
+                self.message("Dictation works, but history could not be saved. Check disk permissions.")
+            elif not status and self.process and self.process.poll() is not None and self.process.returncode:
+                self.message("Service could not start. Open Settings to check credentials and desktop access.")
             retry_available = (
                 bool(status) and status["state"] == "error" and status.get("pending_audio", False)
             )
@@ -1310,10 +1623,6 @@ def run(path=None, *, on_activate=None):
                     in ("starting", "listening", "recording", "processing", "refining")
                 )
             )
-            self.cancel_button.set_label(
-                "Discard recording" if retry_available else "Cancel recording"
-            )
-            self.settings_action.set_visible(not status or status["state"] == "error")
             self.record_button.set_visible(self.portable and not retry_available)
             self.record_button.set_sensitive(
                 bool(status)
@@ -1321,11 +1630,15 @@ def run(path=None, *, on_activate=None):
                 and status["state"] not in ("processing", "refining")
                 and not status.get("pending_audio", False)
             )
-            self.record_button.set_label(
-                "Finish recording"
-                if status and status["state"] in ("listening", "recording", "starting")
-                else "Record"
-            )
+            record_label = "Finish recording" if state in ("listening", "recording", "starting") else "Record"
+            self.record_button.get_child().icon_name = "stop" if record_label == "Finish recording" else "microphone"
+            self.record_button.get_child().queue_draw()
+            self.record_button.set_tooltip_text(record_label)
+            self.record_button.update_property([Gtk.AccessibleProperty.LABEL], [record_label])
+            self.cancel_button.update_property([Gtk.AccessibleProperty.LABEL], ["Discard recording" if retry_available else "Cancel recording"])
+            self.cancel_button.set_tooltip_text("Discard recording" if retry_available else "Cancel recording")
+            self.session_controls.set_visible(self.portable or self.cancel_button.get_visible() or retry_available)
+            self.recovery.set_visible(state == "error")
             self.pause_button.set_sensitive(bool(status))
             self.pause_button.set_label("Resume" if self.paused else "Pause")
             self.history_note.set_text(
@@ -1337,13 +1650,13 @@ def run(path=None, *, on_activate=None):
                 self.home_metrics,
                 (
                     summary["today_words"],
-                    f"{summary['duration_ms'] / 60000:.1f}",
                     summary["sessions"],
+                    f"{summary['duration_ms'] / 60000:.1f}",
                 ),
                 strict=True,
             ):
                 widget.set_text(str(value))
-            signature = (rows, recent, self.search.get_text(), self.config.desktop.history_enabled)
+            signature = (rows, recent, self.search.get_text(), self.config.desktop.history_enabled, hotkey)
             changed = signature != self.history_signature
             if changed:
                 self.history_signature = signature
@@ -1358,16 +1671,10 @@ def run(path=None, *, on_activate=None):
                 )
                 self.history_rows.append(self.label(message, "muted", True))
             for row in recent if changed else []:
-                self.recent.append(self.history_card(row, compact=True))
+                self.recent.append(self.recent_row(row))
             if changed and not recent:
-                self.recent.append(
-                    self.label(
-                        "Your next completed dictation will appear here."
-                        if self.config.desktop.history_enabled else "History saving is off.",
-                        "muted",
-                        True,
-                    )
-                )
+                empty = self.label(f"Nothing yet. Hold {hotkey} and start talking.", "recent-empty", True)
+                self.recent.append(empty)
             for row in rows if changed else []:
                 self.history_rows.append(self.history_card(row))
             for key, widget in self.stats_labels.items():
@@ -1425,9 +1732,10 @@ def run(path=None, *, on_activate=None):
             card.append(actions)
             return card
 
-        def copy_text(self, text):
+        def copy_text(self, text, announce=True):
             self.window.get_clipboard().set(text)
-            self.message("Copied to clipboard. Clipboard managers may retain this text.")
+            if announce:
+                self.message("Copied to clipboard. Clipboard managers may retain this text.")
 
         def confirm_delete_all(self):
             dialog = Gtk.MessageDialog(
@@ -1435,7 +1743,7 @@ def run(path=None, *, on_activate=None):
                 modal=True,
                 text="Delete all saved dictations?",
                 secondary_text="This permanently deletes local transcripts and "
-                "recalculates all statistics. Clipboard copies are not erased.",
+                "recalculates all statistics. Clipboard copies and exports are not erased.",
                 buttons=Gtk.ButtonsType.CANCEL,
             )
             dialog.add_button("Delete all", Gtk.ResponseType.ACCEPT)
@@ -1476,22 +1784,30 @@ def run(path=None, *, on_activate=None):
             dialog.connect("response", response)
             dialog.show()
 
-        def login_label(self):
-            self.login_button.set_label(
-                "Disable start at login" if entry_path(True).exists() else "Enable start at login"
-            )
-
-        def toggle_login(self):
-            enabled = not entry_path(True).exists()
-
-            def saved(_):
-                self.login_label()
-                self.message("Start at login enabled." if enabled else "Start at login disabled.")
-
-            self.work(lambda: install(self.path, autostart=True, enabled=enabled), saved)
-
         def shutdown(self, _):
+            # Drain a pending debounce before the window exits. Wait for older writes first.
+            if hasattr(self, "autosave_source"):
+                if self.autosave_source:
+                    GLib.source_remove(self.autosave_source)
+                self.pool.shutdown(wait=True)
+                try:
+                    updated = self.settings_draft()
+                    save(updated, self.path)
+                    login = self.login_button.get_active()
+                    if entry_path(True).exists() != login:
+                        install(self.path, autostart=True, enabled=login)
+                    try:
+                        request("reload")
+                    except (OSError, RuntimeError):
+                        pass
+                except (ValueError, OSError, RuntimeError):
+                    pass  # Invalid inline drafts never replace the last valid configuration.
             self.closed = True
+            if hasattr(self, "theme_signals"):
+                for handler in self.theme_signals:
+                    Gtk.Settings.get_default().disconnect(handler)
+            if hasattr(self, "service_menu"):
+                self.service_menu.unparent()
             if getattr(self, "setup_window", None):
                 self.setup_window.close()
             if hasattr(self, "timer"):

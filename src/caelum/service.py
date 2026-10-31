@@ -123,7 +123,10 @@ async def reload_settings(core, bindings, provider, path=None):
 
 async def serve(config, config_path=None):
     if not await asyncio.to_thread(credential, config.stt.key_env):
-        raise ValueError(f"Export {config.stt.key_env} before starting Caelum; run caelum doctor")
+        raise ValueError(
+            "Add the transcription key in Settings → Open setup / Manage keys "
+            "before starting Caelum; run caelum doctor"
+        )
     directory = runtime_dir()
     lock = (directory / "daemon.lock").open("w")
     try:

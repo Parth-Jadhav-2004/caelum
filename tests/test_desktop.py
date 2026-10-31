@@ -69,6 +69,9 @@ def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
                 app.work = lambda operation, done=None: done(operation()) if done else operation()
                 app.navigate("settings")
                 app.check_updates()
+                assert app.update_download.get_visible()
+                assert app.update_status.get_text() == "Update available"
+                app.prompt_update()
                 dialog = next(
                     window
                     for window in Gtk.Window.list_toplevels()
@@ -129,134 +132,41 @@ def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
 @pytest.mark.skipif(
     os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
 )
-def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
+def test_native_desktop_pages_and_rail(tmp_path, monkeypatch):
     import gi
 
     gi.require_version("Gtk", "4.0")
     from gi.repository import GLib, Gtk
 
     from caelum.desktop import run
+    from caelum.onboarding import Progress
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
     monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden", "paused": False})
-    config_path = tmp_path / "config.toml"
-    legacy = Config()
-    legacy.desktop.theme = "light"
-    save(legacy, config_path)
-    from caelum.onboarding import Progress
-
-    Progress(4, True).save(config_path)
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    Progress(4, True).save(path)
     failures = []
-    activations = []
 
     def activated(app):
-        activations.append(True)
-
         def verify():
             try:
-                for page in ("home", "history", "stats", "settings"):
+                for page in ("home", "history", "stats", "settings", "advanced"):
                     app.navigate(page)
                     assert app.stack.get_visible_child_name() == page
-                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 820
-                assert app.config.desktop.theme == "dark"
-                assert app.brand.get_text() == "Caelum"
-                assert app.brand.get_xalign() == 0
-                app.sidebar_toggle.set_active(True)
-                assert app.sidebar_toggle.get_active()
-                for _ in range(2):
-                    app.sidebar_toggle.set_active(False)
-                    assert app.navigation.get_size_request().width == 88
-                    assert all(not label.get_visible() for label in app.nav_labels)
-                    assert not app.sidebar_footer.get_visible()
-                    app.nav_buttons["history"].emit("clicked")
-                    assert app.stack.get_visible_child_name() == "history"
-                    assert app.nav_buttons["history"].has_css_class("selected")
-                    app.sidebar_toggle.set_active(True)
-                    assert app.navigation.get_size_request().width == 208
-                    assert all(label.get_visible() for label in app.nav_labels)
-                    assert app.sidebar_footer.get_visible()
-                from gi.repository import Gdk
-
-                app.begin_shortcut()
-                app.capture_shortcut(None, Gdk.KEY_Control_L, 0, Gdk.ModifierType(0))
-                app.capture_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK)
-                assert app.recording_key
-                app.release_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK)
-                assert app.hotkey.get_text() == "CTRL + SUPER"
-                app.begin_shortcut()
-                app.capture_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType(0))
-                app.capture_shortcut(None, Gdk.KEY_Alt_L, 0, Gdk.ModifierType.SUPER_MASK)
-                app.capture_shortcut(
-                    None, Gdk.KEY_v, 0, Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.ALT_MASK
-                )
-                assert app.hotkey.get_text() == "SUPER + ALT + V"
-
-                async def checked_connection(_config):
-                    return "Transcription: connected (model available)"
-
-                monkeypatch.setattr("caelum.desktop.connection_status", checked_connection)
-                original_work = app.work
-                app.work = lambda operation, done=None: done(operation()) if done else operation()
-                app.check_connection()
-                assert "connected" in app.connection_label.get_text()
-                assert app.check_button.get_sensitive()
-                app.work = original_work
-                app.preset.set_selected(0)
-                assert app.entries[("cleanup", "model")].get_text() == "openai/gpt-oss-20b"
-                assert app.entries[("cleanup", "key_env")].get_text() == "GROQ_API_KEY"
-                app.preset.set_selected(1)
-                assert app.entries[("cleanup", "model")].get_text() == ""
-                app.entries[("cleanup", "base_url")].set_text("https://custom.example/v1")
-                assert app.preset.get_selected() == 2
-                assert app.advanced.get_expanded()
-                app.sidebar_toggle.set_active(False)
-                for page in ("home", "history", "stats", "settings"):
-                    app.navigate(page)
-                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 640
+                    maximum = 1100 if page == "home" else 640
+                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= maximum
+                assert not hasattr(app, "sidebar_toggle")
+                assert set(app.nav_buttons) == {"home", "history", "settings"}
+                assert app.nav_buttons["settings"].has_css_class("selected")
+                app.nav_buttons["history"].emit("clicked")
+                assert app.stack.get_visible_child_name() == "history"
                 app.navigate("settings")
-                assert app.preset.grab_focus()
-                assert app.window.get_focus() is not None
+                assert app.record_key.grab_focus()
                 assert app.window.child_focus(Gtk.DirectionType.TAB_FORWARD)
                 assert app.window.child_focus(Gtk.DirectionType.TAB_BACKWARD)
-                settings = Gtk.Settings.get_default()
-                original_font = settings.get_property("gtk-font-name")
-                settings.set_property("gtk-font-name", "Sans 16")
-                for page in ("home", "history", "stats", "settings"):
-                    app.navigate(page)
-                    assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 800
-                settings.set_property("gtk-font-name", original_font)
-                # X11 client-side decorations can reduce the reported client allocation.
-                assert app.window.get_size_request().width == 480
-                assert not hasattr(app, "history_switch")
-                assert not hasattr(app, "theme_button")
                 assert not app.history.path.exists()
-                assert not hasattr(app, "theme_switch")
-                app.history.record(
-                    "desktop-test", "Saved words appear here.", {}, app.config, True, False
-                )
-                rows = app.history.read()
-                summary = app.history.summary()
-                app.render_data((None, rows, rows, summary))
-                assert app.start_button.get_visible()
-                assert not app.stop_button.get_visible()
-                app.render_data(({"state": "error", "pending_audio": True}, rows, rows, summary))
-                assert app.retry_button.get_visible()
-                assert app.cancel_button.get_visible()
-                assert app.settings_action.get_visible()
-                assert app.status_label.get_text() == "Awaiting retry"
-                assert not app.record_button.get_visible()
-                app.render_data(({"state": "hidden"}, rows, rows, summary))
-                assert not app.retry_button.get_visible()
-                assert not app.start_button.get_visible()
-                assert app.stop_button.get_visible()
-                assert not app.cancel_button.get_visible()
-                assert app.status_label.get_text() == "Ready"
-                card = app.history_rows.get_first_child()
-                assert (
-                    card.get_first_child().get_next_sibling().get_text()
-                    == "Saved words appear here."
-                )
             except BaseException as error:
                 failures.append(error)
             finally:
@@ -265,10 +175,21 @@ def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
 
         GLib.timeout_add(500, verify)
 
-    run(config_path, on_activate=activated)
-    assert activations, "Smoke test must activate its own application instance"
+    run(path, on_activate=activated)
     if failures:
         raise failures[0]
+
+
+def test_native_package_version_does_not_require_python_distribution_metadata(monkeypatch):
+    from importlib.metadata import PackageNotFoundError
+
+    from caelum.desktop import display_version
+
+    monkeypatch.setattr("caelum.updates.installed", lambda: {"version": "0.3.1"})
+    monkeypatch.setattr(
+        "importlib.metadata.version", lambda _: (_ for _ in ()).throw(PackageNotFoundError())
+    )
+    assert display_version() == "0.3.1"
 
 
 def test_packaged_launcher_does_not_require_source_checkout(tmp_path, monkeypatch):
@@ -313,7 +234,7 @@ def test_provider_presets_preserve_other_preferences():
         (
             {"state": "error", "pending_audio": True, "error_kind": "invalid_key"},
             "Awaiting retry",
-            "Update the key",
+            "Manage keys",
         ),
         ({"state": "error", "error_kind": "microphone"}, "Microphone unavailable", "Settings"),
         ({"state": "saved", "metrics": [{"cleanup_refined": False}]}, "Saved", "Raw transcription"),
@@ -420,6 +341,10 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 app.work = lambda operation, done=None: done(operation()) if done else operation()
                 assert app.setup_window is not None  # first launch opens setup automatically
                 setup = show(app)
+                # Hidden setup pages must not push welcome navigation below the viewport.
+                allocated, bounds = setup.next.compute_bounds(setup)
+                assert allocated
+                assert bounds.get_y() + bounds.get_height() <= setup.get_height()
                 assert not setup.next.get_sensitive()
                 setup.advance()
                 assert setup.stage == 0

@@ -1,6 +1,6 @@
 # Linux installation and compatibility
 
-Caelum 0.2 is a **cross-distro preview**, not a claim that every desktop has been
+Caelum 0.3 is a **cross-distro preview**, not a claim that every desktop has been
 qualified. The native Hyprland path has been exercised on this development machine.
 The portable backend is covered by automated integration tests; Ubuntu, Debian,
 Fedora, and their GNOME/KDE sessions still need hardware acceptance testing.
@@ -17,10 +17,10 @@ The vendored dependencies do not replace distro Python modules.
 Install downloaded packages with the native package manager:
 
 ```sh
-sudo apt install ./caelum_0.2.0-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.3.1-1_ubuntu-24.04_amd64.deb
 # Debian: select the debian-12 or debian-13 file instead.
-sudo pacman -U ./caelum-0.2.0-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.2.0-1.fedora43.x86_64.rpm
+sudo pacman -U ./caelum-0.3.1-1-x86_64.pkg.tar.zst
+sudo dnf install ./caelum-0.3.1-1.fedora43.x86_64.rpm
 ```
 
 Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Open setup / Manage keys.
@@ -81,11 +81,11 @@ Install uv using its official instructions, then install system prerequisites:
 
 ```sh
 # Ubuntu 24.04+/Debian 12+
-sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin
+sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin libsecret-tools wl-clipboard xclip
 # Arch
-sudo pacman -S python python-gobject python-cairo gtk4 portaudio libnotify glib2
+sudo pacman -S python python-gobject python-cairo gtk4 portaudio libnotify glib2 libsecret wl-clipboard xclip
 # Fedora
-sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2
+sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2 libsecret wl-clipboard xclip
 
 ./scripts/setup.sh
 .venv/bin/caelum init
@@ -94,7 +94,9 @@ sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk
 
 Install your desktop's appropriate `xdg-desktop-portal` backend for optional global
 shortcuts; older portal versions may not implement this interface. The base app
-does not depend on Hyprland, gtk4-layer-shell, or wl-clipboard.
+does not depend on Hyprland or gtk4-layer-shell. History-off delivery uses
+`wl-copy` (`wl-clipboard`) on Wayland or `xclip` on X11. Install these clipboard
+tools before using history-off dictation from a source checkout.
 
 ## Release process
 

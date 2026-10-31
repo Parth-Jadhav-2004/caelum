@@ -50,6 +50,7 @@ def show(host):
             self.heading = host.label("", "title", True)
             root.append(self.heading)
             self.pages = Gtk.Stack()
+            self.pages.set_vhomogeneous(False)
             root.append(self.pages)
             self.notice = host.label("", "notice", True)
             root.append(self.notice)
