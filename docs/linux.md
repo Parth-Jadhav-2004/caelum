@@ -8,8 +8,8 @@ Fedora, and their GNOME/KDE sessions still need hardware acceptance testing.
 ## Download the package for your OS
 
 The GitHub release contains x86-64 packages for Ubuntu 24.04 (Python 3.12),
-Ubuntu 26.04 (Python 3.14), Debian 12 (Python 3.11), Debian 13 (Python 3.13),
-Arch (Python 3.14), and Fedora 43 (Python 3.14). Choose your exact OS/version.
+Ubuntu 26.04 (Python 3.14), Arch (Python 3.14), and Fedora 43 (Python 3.14).
+Debian is not currently packaged. Choose your exact OS/version.
 Packages declare their Python minor-version requirements and include locked
 Python dependencies; GTK, PyGObject, Cairo, and PortAudio come from the OS.
 The vendored dependencies do not replace distro Python modules.
@@ -18,7 +18,6 @@ Install downloaded packages with the native package manager:
 
 ```sh
 sudo apt install ./caelum_0.3.2-1_ubuntu-24.04_amd64.deb
-# Debian: select the debian-12 or debian-13 file instead.
 sudo pacman -U ./caelum-0.3.2-1-x86_64.pkg.tar.zst
 sudo dnf install ./caelum-0.3.2-1.fedora43.x86_64.rpm
 ```
@@ -27,9 +26,7 @@ Open **Caelum** from the app launcher, or run `caelum app`. First launch opens s
 No credentials, autostart entry, recording service, or system shortcuts are
 installed/enabled automatically. Configuration remains in `~/.config/caelum`;
 history remains in `~/.local/share/caelum`. Uninstalling does not erase these files.
-Verify the adjacent `.sha256` checksum before installing. The checksums are not
-cryptographic release signatures. AUR submission is separate from publishing a
-PKGBUILD; this project does not claim an AUR or Flathub listing.
+This project does not claim an AUR or Flathub listing.
 
 ## Desktop behavior
 
@@ -102,8 +99,8 @@ tools before using history-off dictation from a source checkout.
 
 Provision the pinned Ed25519 public key and protected release-environment secret
 as described in [signed releases and updates](updates.md) before pushing a stable
-`v<project version>` tag. CI tests Ubuntu 24.04/26.04, Debian 12/13, Arch, and
-Fedora 43, builds and smoke-installs every target package, signs the update
+`v<project version>` tag. CI tests Ubuntu 24.04/26.04, Arch, and Fedora 43,
+builds and smoke-installs every target package, signs the update
 manifest, uploads all assets to a draft, then publishes the complete stable
 release after environment approval. Missing or mismatched keys stop publication.
 Version and locked dependencies come from `pyproject.toml` and `uv.lock`.
@@ -111,10 +108,9 @@ Version and locked dependencies come from `pyproject.toml` and `uv.lock`.
 RPM additionally needs rpmbuild). The Settings footer handles signed downloads
 and next-app-launch installation for official updater-enabled native packages.
 
-The Arch source PKGBUILD in `packaging/arch` is a template until its source hash is
-filled from the published source archive. Release automation produces a separate
-ready-to-use PKGBUILD with the verified hash. It uses distro Python dependencies (python-sounddevice may require the AUR or Omarchy repository);
-the prebuilt Arch package instead vendors locked dependencies.
+The Arch recipe in `packaging/arch` stays in the repository and is not a release
+asset. It uses distro Python dependencies (python-sounddevice may require the AUR
+or Omarchy repository); the prebuilt Arch package instead vendors locked dependencies.
 
 Flatpak is intentionally not shipped in this preview: microphone routing,
 background service lifetime, credentials, and shortcut permissions need a tested

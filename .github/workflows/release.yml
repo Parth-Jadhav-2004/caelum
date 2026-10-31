@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'archlinux:latest', 'fedora:43']
+        image: ['ubuntu:24.04', 'ubuntu:26.04', 'archlinux:latest', 'fedora:43']
     steps:
       - name: Install system dependencies
         shell: bash
@@ -62,8 +62,6 @@ jobs:
         include:
           - {target: ubuntu-24.04, image: 'ubuntu:24.04'}
           - {target: ubuntu-26.04, image: 'ubuntu:26.04'}
-          - {target: debian-12, image: 'debian:12'}
-          - {target: debian-13, image: 'debian:13'}
           - {target: arch, image: 'archlinux:latest'}
           - {target: fedora-43, image: 'fedora:43'}
     steps:
@@ -113,7 +111,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: caelum-${{ matrix.target }}
-          path: dist/*
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
           if-no-files-found: error
   publish-release:
     if: github.ref_type == 'tag'
@@ -130,17 +131,6 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: Build verified Arch source recipe
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          # PKGBUILD uses the public archive URL, so hash those exact bytes.
-          curl --fail --location --retry 3 "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz" -o source.tar.gz
-          source_hash=$(sha256sum source.tar.gz | cut -d' ' -f1)
-          sed "s/RELEASE_SOURCE_SHA256/$source_hash/" packaging/arch/PKGBUILD > release-assets/PKGBUILD
-          cd release-assets
-          sha256sum PKGBUILD > PKGBUILD.sha256
       - name: Sign update metadata
         env:
           CAELUM_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_UPDATE_SIGNING_KEY }}
@@ -160,5 +150,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Caelum $GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" release-assets/*
+          gh release upload "$GITHUB_REF_NAME" \
+            release-assets/*.deb \
+            release-assets/*.rpm \
+            release-assets/*.pkg.tar.zst \
+            release-assets/update.json \
+            release-assets/update.json.sig
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest

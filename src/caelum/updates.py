@@ -19,8 +19,6 @@ MAX_PACKAGE = 512 * 1024 * 1024
 TARGETS = {
     "ubuntu-24.04": ("ubuntu", "24.04", ".deb"),
     "ubuntu-26.04": ("ubuntu", "26.04", ".deb"),
-    "debian-12": ("debian", "12", ".deb"),
-    "debian-13": ("debian", "13", ".deb"),
     "arch": ("arch", None, ".pkg.tar.zst"),
     "fedora-43": ("fedora", "43", ".rpm"),
 }

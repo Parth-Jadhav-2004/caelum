@@ -462,6 +462,13 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
         }[kind]
         (assets / name).write_bytes(release.payload)
     signer.sign(assets, release.private, now=release.now)
+    assert set(signer.TARGETS) == {
+        "ubuntu-24.04",
+        "ubuntu-26.04",
+        "arch",
+        "fedora-43",
+    }
+    assert set(updates.TARGETS) == set(signer.TARGETS)
     manifest, asset = updates.verify_manifest(
         (assets / "update.json").read_bytes(),
         (assets / "update.json.sig").read_bytes(),

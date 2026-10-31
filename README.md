@@ -8,10 +8,10 @@ Caelum is dictation for Linux desktops. You bring a [Groq](https://console.groq.
 
 ## Install
 
-Pick the package for your distribution. Check the `.sha256` file next to it before you install. Those checksums are integrity checks, not signed releases.
+Pick the package for your distribution. Debian is not currently packaged.
 
 ```sh
-# Ubuntu 24.04. Debian users: pick the debian-12 or debian-13 package.
+# Ubuntu 24.04
 sudo apt install ./caelum_0.3.2-1_ubuntu-24.04_amd64.deb
 
 # Arch
@@ -21,7 +21,7 @@ sudo pacman -U ./caelum-0.3.2-1-x86_64.pkg.tar.zst
 sudo dnf install ./caelum-0.3.2-1.fedora43.x86_64.rpm
 ```
 
-Packages are published for Ubuntu 24.04 and 26.04, Debian 12 and 13, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
+Packages are published for Ubuntu 24.04 and 26.04, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
 
 Open **Caelum** from the app launcher, or run `caelum app`. Installing the package does not start recording, enable autostart, or add a shortcut.
 

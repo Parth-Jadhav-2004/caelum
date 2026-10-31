@@ -88,12 +88,13 @@ tag publishing fails closed rather than producing unsigned updater metadata.
    alter release tags, workflow code, environment approvals, and secrets.
 4. Bump `pyproject.toml` to a new stable version and keep the Arch recipe's version
    aligned. Check the diff and release notes; push `v<version>` only when ready.
-5. CI tests all six distributions, builds and smoke-installs packages, and uploads
-   per-target artifacts. After release-environment approval, it creates the Arch
-   source recipe, signs a complete six-target manifest, verifies that the private
-   key matches the committed public key, uploads everything to a **draft**, and
-   only then publishes it as the latest stable release. No half-uploaded release
-   is offered to clients. Main-branch and pull-request builds do not publish.
+5. CI tests Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43, builds and
+   smoke-installs packages, and uploads per-target artifacts. After
+   release-environment approval, it signs a four-target manifest, verifies that
+   the private key matches the committed public key, uploads the packages and
+   signed update metadata to a **draft**, and only then publishes it as the
+   latest stable release. No half-uploaded release is offered to clients.
+   Main-branch and pull-request builds do not publish.
 
 `scripts/sign_release.py ASSET_DIRECTORY PRIVATE_KEY_PATH` reproduces manifest
 signing locally. The CI secret is written to a temporary mode-600 file and removed

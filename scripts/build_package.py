@@ -7,7 +7,6 @@ configuration, transcripts, virtualenv, or git metadata enter the payload.
 
 import argparse
 import gzip
-import hashlib
 import io
 import json
 import os
@@ -22,8 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
     "ubuntu-24.04": ("deb", "3.12"),
     "ubuntu-26.04": ("deb", "3.14"),
-    "debian-12": ("deb", "3.11"),
-    "debian-13": ("deb", "3.13"),
     "arch": ("arch", "3.14"),
     "fedora-43": ("rpm", "3.14"),
 }
@@ -259,10 +256,6 @@ cp -a {stage}/. %{{buildroot}}/
             )
             destination = output / f"caelum-{version}-1.fedora43.x86_64.rpm"
             shutil.copy2(next((rpmroot / "RPMS").rglob("*.rpm")), destination)
-        checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
-        write(
-            destination.with_name(destination.name + ".sha256"), f"{checksum}  {destination.name}\n"
-        )
         print(destination)
         return destination
 
