@@ -1,5 +1,7 @@
 name: Linux release
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     tags: ['v*']
@@ -24,11 +26,11 @@ jobs:
         run: |
           if command -v apt-get >/dev/null; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin xvfb xauth
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates openssl python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin xvfb xauth
           elif command -v pacman >/dev/null; then
-            pacman -Syu --noconfirm git curl python python-gobject python-cairo gtk4 portaudio libnotify glib2 xorg-server-xvfb xorg-xauth
+            pacman -Syu --noconfirm git curl openssl python python-gobject python-cairo gtk4 portaudio libnotify glib2 xorg-server-xvfb xorg-xauth
           else
-            dnf install -y git curl python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2 xorg-x11-server-Xvfb xorg-x11-xauth
+            dnf install -y git curl openssl python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2 xorg-x11-server-Xvfb xorg-x11-xauth
           fi
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -46,7 +48,7 @@ jobs:
           fi
           uv venv --python /usr/bin/python3 --system-site-packages
           uv sync --locked --extra dev --python /usr/bin/python3
-          uv run ruff check src tests scripts/build_package.py
+          uv run ruff check src tests scripts/build_package.py scripts/sign_release.py
           xvfb-run -a env GDK_BACKEND=x11 GSK_RENDERER=cairo CAELUM_DESKTOP_TESTS=1 .venv/bin/pytest -q
   package:
     name: Package ${{ matrix.target }}
@@ -112,14 +114,17 @@ jobs:
           name: caelum-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
-  draft-release:
+  publish-release:
     if: github.ref_type == 'tag'
     needs: package
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Require the pinned update verification key
+        run: test -s src/caelum/update-public.pem
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
@@ -135,10 +140,24 @@ jobs:
           sed "s/RELEASE_SOURCE_SHA256/$source_hash/" packaging/arch/PKGBUILD > release-assets/PKGBUILD
           cd release-assets
           sha256sum PKGBUILD > PKGBUILD.sha256
-      - name: Create draft prerelease
+      - name: Sign update metadata
+        env:
+          CAELUM_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_UPDATE_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$CAELUM_UPDATE_SIGNING_KEY" > "$key"
+          unset CAELUM_UPDATE_SIGNING_KEY
+          python3 scripts/sign_release.py release-assets "$key"
+      - name: Publish complete stable release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --prerelease --verify-tag --title "Caelum $GITHUB_REF_NAME — Linux preview" --notes-file docs/release-0.2.0.md
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Caelum $GITHUB_REF_NAME" --generate-notes
           gh release upload "$GITHUB_REF_NAME" release-assets/*
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

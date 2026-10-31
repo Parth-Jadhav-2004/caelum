@@ -80,6 +80,7 @@ class Orchestrator:
         self.poll_task = None
         self.on_completed = None
         self.paused = False
+        self.stopping = False
         self.error_kind = ""
 
     async def event(self, state=None, error_code=""):
@@ -108,6 +109,8 @@ class Orchestrator:
 
     async def handle(self, action, token="", address=None):
         async with self.control_lock:
+            if self.stopping and action != "status":
+                return
             if action == "toggle":
                 action = "stop" if self.capture else "start"
                 token = ""

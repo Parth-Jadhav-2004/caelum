@@ -23,7 +23,7 @@ sudo pacman -U ./caelum-0.2.0-1-x86_64.pkg.tar.zst
 sudo dnf install ./caelum-0.2.0-1.fedora43.x86_64.rpm
 ```
 
-Open **Caelum** from the app launcher, or run `caelum app`.
+Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Open setup / Manage keys.
 No credentials, autostart entry, recording service, or system shortcuts are
 installed/enabled automatically. Configuration remains in `~/.config/caelum`;
 history remains in `~/.local/share/caelum`. Uninstalling does not erase these files.
@@ -69,7 +69,7 @@ It never records or uploads audio. Optional portal availability is not a failure
 ## Configuration and credentials
 
 `caelum init` creates a config only when it does not already exist. Configure your
-providers there. Put provider credentials in your launch environment. The bundled
+providers there. Manage provider keys in setup; packaged installs include secret-tool for the desktop keyring, with a disclosed private-file fallback if unavailable. Environment keys are still supported. The bundled
 native-package launcher also loads `~/.config/caelum/environment` as a shell file;
 use permissions `600`. Never put credentials in release packages or the repository.
 Source checkouts use `scripts/run.sh` to load that same private file.
@@ -98,12 +98,16 @@ does not depend on Hyprland, gtk4-layer-shell, or wl-clipboard.
 
 ## Release process
 
-Tag `v<project version>` after tests pass. The release workflow runs tests on
-Ubuntu 24.04/26.04, Debian 12/13, Arch, and Fedora 43, then builds all target packages and
-uploads them to a **draft prerelease**. Inspect CI results and package metadata
-before publishing that draft. Version, Python dependencies, and hashes come from
-`pyproject.toml` and `uv.lock`. `scripts/build_package.py TARGET` builds the same
-payload locally (uv + zstd; RPM additionally needs rpmbuild).
+Provision the pinned Ed25519 public key and protected release-environment secret
+as described in [signed releases and updates](updates.md) before pushing a stable
+`v<project version>` tag. CI tests Ubuntu 24.04/26.04, Debian 12/13, Arch, and
+Fedora 43, builds and smoke-installs every target package, signs the update
+manifest, uploads all assets to a draft, then publishes the complete stable
+release after environment approval. Missing or mismatched keys stop publication.
+Version and locked dependencies come from `pyproject.toml` and `uv.lock`.
+`scripts/build_package.py TARGET` builds the same payload locally (uv + zstd;
+RPM additionally needs rpmbuild). Settings → Updates handles signed downloads
+and next-app-launch installation for official updater-enabled native packages.
 
 The Arch source PKGBUILD in `packaging/arch` is a template until its source hash is
 filled from the published source archive. Release automation produces a separate

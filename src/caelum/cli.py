@@ -55,7 +55,11 @@ async def doctor(config):
     for name, provider in (("stt", config.stt), ("cleanup", config.cleanup)):
         if name == "cleanup" and not config.cleanup.model:
             continue
-        checks[f"{name}_credential_present"] = bool(os.environ.get(provider.key_env))
+        from .credentials import get as credential
+
+        checks[f"{name}_credential_present"] = bool(
+            await asyncio.to_thread(credential, provider.key_env)
+        )
     try:
         if native:
             process = await asyncio.create_subprocess_exec(

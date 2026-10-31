@@ -6,12 +6,14 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
 from .config import config_path, load, save, validate
+from .credentials import describe as credential_status
 from .history import History
 from .launcher import entry_path, install
 from .portable import backend_name
@@ -29,6 +31,38 @@ def request(action):
         if "error" in result:
             raise RuntimeError(result["error"])
         return result
+
+
+def install_queued_update():
+    from .updates import apply_pending
+
+    running = False
+    try:
+        request("prepare-update")
+        running = True
+    except (FileNotFoundError, ConnectionRefusedError):
+        pass
+    import fcntl
+
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        raise RuntimeError("Open Caelum inside your desktop session to install updates")
+    lock_path = Path(runtime) / "caelum/daemon.lock"
+    lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    deadline = time.monotonic() + 10
+    with lock_path.open("a") as lock:
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "Dictation is still stopping. Restart Caelum to retry."
+                    ) from None
+                time.sleep(0.1)
+        apply_pending()
+    return running
 
 
 def microphones():
@@ -181,6 +215,8 @@ def run(path=None, *, on_activate=None):
             self.process = None
             self.refreshing = False
             self.closed = False
+            self.update_busy = False
+            self.available_update = None
             self.refresh_generation = 0
             self.devices = [("System default", None)]
             self.history_signature = None
@@ -328,8 +364,14 @@ def run(path=None, *, on_activate=None):
             self.refresh()
             self.timer = GLib.timeout_add_seconds(1, self.refresh)
             self.work(microphones, self.set_devices)
+            from .onboarding import Progress
+
+            if not Progress.load(self.path).complete:
+                self.open_setup()
             if on_activate:
                 on_activate(self)
+            else:
+                self.begin_updates()
 
         def page(self, name, title, description):
             scroll = Gtk.ScrolledWindow()
@@ -551,6 +593,7 @@ def run(path=None, *, on_activate=None):
                 "Settings",
                 "Tune your recording, text cleanup, and local history.",
             )
+            page.append(self.button("Open setup / Manage keys", self.open_setup))
             self.entries = {}
 
             def settings_section(title):
@@ -683,6 +726,200 @@ def run(path=None, *, on_activate=None):
             )
 
             page.append(self.save_button)
+            self.build_updates(page)
+
+        def build_updates(self, page):
+            from .updates import cache_dir, installed
+
+            panel = self.box(spacing=12)
+            panel.add_css_class("panel")
+            panel.append(self.label("Updates", "section-title"))
+            info = installed()
+            pending = (cache_dir() / "pending").is_dir()
+            description = (
+                f"Caelum {info['version']}. Checks GitHub when this window opens. "
+                "Downloads require your approval. Signed updates install on the next app "
+                "launch with administrator authorization; active dictation is never interrupted."
+                if info
+                else "This installation is managed by your package manager or source checkout. "
+                "In-app updates require an official native package with a pinned release key."
+            )
+            panel.append(self.label(description, "muted", True))
+            self.update_automatic = Gtk.CheckButton(label="Check for updates when Caelum opens")
+            self.update_automatic.set_active(self.config.desktop.check_updates)
+            self.update_automatic.set_sensitive(bool(info))
+            panel.append(self.update_automatic)
+            self.update_status = self.label(
+                "Update queued. Close and reopen Caelum to install it." if pending else "",
+                wrap=True,
+            )
+            panel.append(self.update_status)
+            actions = self.flow()
+            self.update_check = self.button("Check for updates", self.check_updates)
+            self.update_check.set_sensitive(bool(info) and not pending)
+            actions.append(self.update_check)
+            self.update_download = self.button(
+                "Download & install on next launch", self.prompt_update
+            )
+            self.update_download.set_sensitive(False)
+            actions.append(self.update_download)
+            self.update_discard = self.button("Discard queued update", self.discard_update)
+            self.update_discard.set_sensitive(pending)
+            actions.append(self.update_discard)
+            panel.append(actions)
+            page.append(panel)
+
+        def update_work(self, operation, done):
+            if self.update_busy:
+                return
+            self.update_busy = True
+            for button in (self.update_check, self.update_download, self.update_discard):
+                button.set_sensitive(False)
+
+            def perform():
+                try:
+                    return operation(), None
+                except Exception as error:
+                    message = (
+                        str(error)
+                        if isinstance(error, (ValueError, RuntimeError))
+                        else (
+                            "Update failed or authorization was cancelled. A queued update is kept; "
+                            "retry on next launch or discard it. Dictation may need starting again."
+                        )
+                    )
+                    return None, message
+
+            def finished(result):
+                from .updates import cache_dir, installed
+
+                self.update_busy = False
+                pending = (cache_dir() / "pending").is_dir()
+                self.update_check.set_sensitive(bool(installed()) and not pending)
+                self.update_download.set_sensitive(bool(self.available_update) and not pending)
+                self.update_discard.set_sensitive(pending)
+                value, error = result
+                if error:
+                    self.update_status.set_text(error)
+                    return
+                done(value)
+
+            self.work(perform, finished)
+
+        def begin_updates(self):
+            from .updates import cache_dir, installed
+
+            if not installed():
+                return
+            if (cache_dir() / "pending").is_dir():
+                self.update_status.set_text(
+                    "Installing queued update. Authorize the system prompt…"
+                )
+
+                def applied(running):
+                    if running:
+                        subprocess.Popen(
+                            [
+                                sys.executable,
+                                "-m",
+                                "caelum.cli",
+                                "--config",
+                                str(self.path),
+                                "serve",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    os.execv(
+                        sys.executable,
+                        [sys.executable, "-m", "caelum.cli", "--config", str(self.path), "app"],
+                    )
+
+                self.update_work(install_queued_update, applied)
+            elif self.config.desktop.check_updates:
+                self.check_updates()
+
+        def check_updates(self):
+            from .updates import check
+
+            self.update_status.set_text("Checking for updates…")
+
+            def checked(update):
+                self.available_update = update
+                self.update_download.set_sensitive(bool(update))
+                self.update_status.set_text(
+                    f"Caelum {update['version']} is available."
+                    if update
+                    else "Caelum is up to date."
+                )
+                if update:
+                    self.prompt_update()
+
+            self.update_work(check, checked)
+
+        def prompt_update(self):
+            if not self.available_update or self.update_busy:
+                return
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                modal=True,
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.NONE,
+                text=f"Download Caelum {self.available_update['version']}?",
+                secondary_text=(
+                    "The signed package will be downloaded from GitHub. Installation happens "
+                    "the next time you open Caelum and requires administrator authorization. "
+                    "Your settings, keys, and history are kept."
+                ),
+            )
+            dialog.add_button("Later", Gtk.ResponseType.CANCEL)
+            dialog.add_button("Download update", Gtk.ResponseType.ACCEPT)
+            dialog.set_default_response(Gtk.ResponseType.CANCEL)
+
+            def responded(window, response):
+                window.destroy()
+                if response == Gtk.ResponseType.ACCEPT:
+                    from .updates import stage
+
+                    self.update_status.set_text("Downloading and verifying update…")
+                    self.update_work(
+                        lambda: stage(self.available_update),
+                        lambda version: self.update_status.set_text(
+                            f"Caelum {version} is ready. Close and reopen this window to install."
+                        ),
+                    )
+
+            dialog.connect("response", responded)
+            dialog.present()
+
+        def discard_update(self):
+            from .updates import discard_pending
+
+            self.update_work(
+                discard_pending,
+                lambda _: self.update_status.set_text("Queued update discarded."),
+            )
+
+        def open_setup(self):
+            from .onboarding_ui import show
+
+            try:
+                show(self)
+            except (OSError, RuntimeError, ValueError):
+                self.message(
+                    "Could not open setup. Check permissions on your Caelum config directory."
+                )
+
+        def sync_setup_settings(self):
+            self.selecting_preset = True
+            for (section, key), widget in self.entries.items():
+                widget.set_text(str(getattr(getattr(self.config, section), key)))
+            self.preset.set_selected(provider_preset(self.config))
+            self.selecting_preset = False
+            self.hotkey.set_text(self.config.app.hotkey)
+            self.set_devices([(name, value) for name, value in self.devices if value is not None])
+            self.connection_label.set_text(self.key_status(self.config))
+            self.connection_generation = getattr(self, "connection_generation", 0) + 1
 
         def key_status(self, config):
             return "\n".join(
@@ -690,9 +927,7 @@ def run(path=None, *, on_activate=None):
                 + (
                     "off (raw transcription)"
                     if not provider.model
-                    else "key present; check connection"
-                    if os.environ.get(provider.key_env)
-                    else f"key missing; set {provider.key_env} and restart Caelum"
+                    else credential_status(provider.key_env) + "; check connection"
                 )
                 for title, provider in (
                     ("Transcription", config.stt),
@@ -843,6 +1078,7 @@ def run(path=None, *, on_activate=None):
             for (section, key), widget in self.entries.items():
                 setattr(getattr(updated, section), key, widget.get_text().strip())
             updated.desktop.retention_days = self.retention.get_value_as_int()
+            updated.desktop.check_updates = self.update_automatic.get_active()
             self.save_button.set_sensitive(False)
 
             def persist():
@@ -1232,6 +1468,8 @@ def run(path=None, *, on_activate=None):
 
         def shutdown(self, _):
             self.closed = True
+            if getattr(self, "setup_window", None):
+                self.setup_window.close()
             if hasattr(self, "timer"):
                 GLib.source_remove(self.timer)
             self.pool.shutdown(wait=False, cancel_futures=True)

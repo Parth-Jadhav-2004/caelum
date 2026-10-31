@@ -10,11 +10,28 @@ from contextlib import suppress
 from copy import deepcopy
 
 from .config import load
+from .credentials import get as credential
 from .history import History
 from .linux import Bindings, hypr_json, runtime_dir, session_locked
 from .orchestrator import HUD, Orchestrator
 from .portable import backend_name
 from .providers import Providers
+
+
+async def prepare_update(core, stop):
+    async with core.control_lock:
+        if (
+            core.capture
+            or core.pcm is not None
+            or core.work
+            and not core.work.done()
+            or core.state
+            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech"}
+        ):
+            raise RuntimeError("Finish dictation or discard pending audio before updating")
+        core.stopping = True
+        stop.set()
+        return {"ok": True}
 
 
 async def safety_monitor(core):
@@ -105,7 +122,7 @@ async def reload_settings(core, bindings, provider, path=None):
 
 
 async def serve(config, config_path=None):
-    if not os.environ.get(config.stt.key_env):
+    if not await asyncio.to_thread(credential, config.stt.key_env):
         raise ValueError(f"Export {config.stt.key_env} before starting Caelum; run caelum doctor")
     directory = runtime_dir()
     lock = (directory / "daemon.lock").open("w")
@@ -177,12 +194,15 @@ async def serve(config, config_path=None):
                 "status",
                 "reload",
                 "shutdown",
+                "prepare-update",
                 "pause",
                 "resume",
             }:
                 raise ValueError("Unknown command")
             token = str(message.get("token") or "")[:80]
-            if message["action"] == "shutdown":
+            if message["action"] == "prepare-update":
+                result = await prepare_update(core, stop)
+            elif message["action"] == "shutdown":
                 await core.handle("cancel")
                 stop.set()
                 result = {"ok": True}

@@ -9,6 +9,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -101,6 +102,10 @@ def build(target, output, epoch):
             ROOT / "src/caelum", library / "caelum", ignore=shutil.ignore_patterns("__pycache__")
         )
         shutil.copy2(ROOT / "config.example.toml", library / "caelum/config.example.toml")
+        write(
+            library / "caelum/release.json",
+            json.dumps({"version": version, "target": target, "python": python}),
+        )
         # Avoid metadata paths referring to the build machine.
         for bytecode in library.rglob("__pycache__"):
             shutil.rmtree(bytecode)
@@ -153,7 +158,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
-Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, systemd
+Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
 Description: Private dictation for Linux desktops
@@ -192,8 +197,11 @@ depend = python-cairo
 depend = gtk4
 depend = portaudio
 depend = libnotify
+depend = libsecret
 depend = glib2
 depend = systemd
+depend = openssl
+depend = polkit
 optdepend = gtk4-layer-shell: Hyprland recording overlay
 optdepend = wl-clipboard: Hyprland automatic paste
 """,
@@ -217,7 +225,7 @@ License: LicenseRef-Caelum-No-License-Declared
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
-Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, glib2, systemd
+Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, libsecret, glib2, systemd, openssl, polkit
 %description
 Dictation for Linux desktops. GNOME/KDE use explicit copy; Hyprland integration is optional.
 %install

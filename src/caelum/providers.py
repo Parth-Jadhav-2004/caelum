@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-import os
 import random
 import time
 from dataclasses import dataclass
@@ -11,6 +10,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .audio import RATE, wav_bytes
+from .credentials import get as credential
 from .quality import PROMPT, normalize, validate_cleanup
 
 
@@ -80,17 +80,24 @@ class Providers:
             "cleanup_refined": False,
         }
 
-    def headers(self, provider):
-        key = os.environ.get(provider.key_env)
+    async def headers(self, provider):
+        try:
+            key = await asyncio.to_thread(credential, provider.key_env)
+        except (RuntimeError, OSError):
+            raise ProviderError(
+                "Saved credential unavailable; open setup to repair key storage", "credential_store"
+            ) from None
         if not key:
-            raise ProviderError(f"Missing credential: {provider.key_env}; add the key", "missing_key")
+            raise ProviderError(
+                f"Missing credential: {provider.key_env}; add the key", "missing_key"
+            )
         return {"Authorization": f"Bearer {key}"}
 
     async def models(self, provider):
         try:
             response = await self.client.get(
                 provider.base_url.rstrip("/") + "/models",
-                headers=self.headers(provider),
+                headers=await self.headers(provider),
                 timeout=10,
             )
             if response.is_error:
@@ -125,7 +132,7 @@ class Providers:
                         self.metrics["uploaded_audio_bytes"] += len(payload)
                         response = await self.client.post(
                             cfg.base_url.rstrip("/") + "/audio/transcriptions",
-                            headers=self.headers(cfg),
+                            headers=await self.headers(cfg),
                             data=data,
                             files={"file": ("dictation.wav", payload, "audio/wav")},
                             timeout=cfg.timeout_seconds,
@@ -176,12 +183,12 @@ class Providers:
             return raw, False
         began = time.monotonic()
         try:
-            headers = self.headers(cfg)
-            indication = on_refining()
-            if inspect.isawaitable(indication):
-                await indication
-            self.metrics["http_calls"] += 1
             async with asyncio.timeout(cfg.timeout_seconds):
+                headers = await self.headers(cfg)
+                indication = on_refining()
+                if inspect.isawaitable(indication):
+                    await indication
+                self.metrics["http_calls"] += 1
                 response = await self.client.post(
                     cfg.base_url.rstrip("/") + "/chat/completions",
                     headers=headers,
@@ -199,7 +206,8 @@ class Providers:
                         ): max(256, min(8192, len(raw) * 2)),
                         **(
                             {"reasoning_effort": cfg.reasoning_effort}
-                            if cfg.reasoning_effort and (
+                            if cfg.reasoning_effort
+                            and (
                                 urlparse(cfg.base_url).hostname != "api.groq.com"
                                 or (
                                     cfg.model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b")

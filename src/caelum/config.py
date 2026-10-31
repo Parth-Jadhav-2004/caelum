@@ -46,6 +46,7 @@ class Cleanup:
 
 @dataclass
 class Desktop:
+    check_updates: bool = True
     theme: str = "dark"
     retention_days: int = 30
     stt_usd_per_hour: float = 0.0

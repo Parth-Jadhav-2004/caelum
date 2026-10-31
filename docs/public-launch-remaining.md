@@ -86,21 +86,21 @@ out below.
 
 ## 3. Onboarding
 
-None of this flow exists. First run is still “edit config and export a key”.
+Implemented as a resumable native setup window; live-provider and desktop/keyring acceptance remain release checks.
 
-- [ ] **P0 — First-launch setup:** welcome, privacy explanation, provider and key,
+- [x] **P0 — First-launch setup:** welcome, privacy explanation, provider and key,
   microphone, shortcut, practice dictation.
-- [ ] **P0 — Link to Groq key creation** and say that free usage has provider
+- [x] **P0 — Link to Groq key creation** and say that free usage has provider
   limits.
-- [ ] **P0 — Enter, replace, and delete the key inside the app**, stored securely.
-- [ ] **P0 — Validate the key and selected models** before setup is marked done.
-- [ ] **P0 — Local microphone test**, separate from a cloud transcription test.
+- [x] **P0 — Enter, replace, and delete the key inside the app**, stored securely.
+- [x] **P0 — Validate the key and selected models** before setup is marked done.
+- [x] **P0 — Local microphone test**, separate from a cloud transcription test.
   Settings already has a three-second local meter; the wizard should use that
   and label it as local-only.
-- [ ] **P0 — Detect shortcut conflicts** and explain desktop permission dialogs.
-- [ ] **P0 — Finish with one successful practice dictation** and show where the
+- [x] **P0 — Detect shortcut conflicts** and explain desktop permission dialogs.
+- [x] **P0 — Finish with one successful practice dictation** and show where the
   text went.
-- [ ] **P0 — Resume setup later**, and reopen it from Settings.
+- [x] **P0 — Resume setup later**, and reopen it from Settings.
 
 - [ ] **P1 — Optional autostart** offered only after setup succeeds. Launcher and
   start-at-login toggles already exist in Settings.
@@ -133,6 +133,16 @@ None of this flow exists. First run is still “edit config and export a key”.
 
 ## 5. Testing and release
 
+- [x] **Signed native updater implementation.** CI signs expiring per-target
+  manifests; the desktop prompts before download and installs verified packages
+  on the next app launch through polkit. Busy dictation and retry audio defer
+  installation. Security and GTK consent tests cover the implemented flow.
+- [ ] **Provision release signing before publishing.** Commit the public Ed25519
+  key and configure the protected `release` environment secret. The updater stays
+  disabled and publication fails closed until this is done. See `docs/updates.md`.
+- [ ] **Exercise a real two-version signed update on each target distro.** Check
+  polkit approval/cancellation, next-launch installation, service restart,
+  interrupted-package-manager recovery, and preservation of settings/keys/history.
 - [ ] **P0 — Run tests and lint on the release commit.**
   `pytest`, `ruff check`, and the desktop test job in `release.yml`.
 - [ ] **P0 — Call Groq for real.** Transcription and the chosen refinement model.
@@ -243,3 +253,32 @@ connection/inference checks remain release acceptance work.
 
 Rapid queued Retry clicks also have a regression check: only one finalization
 task is scheduled, preventing duplicate delivery before the UI refreshes.
+
+
+## Onboarding P0 implementation verification — 2026-10-30
+
+First launch opens setup, and Settings can reopen it for setup or key management.
+The flow covers privacy, provider/key/model validation, microphone selection and
+a three-second local test, shortcut preflight and desktop-permission guidance,
+and a five-second practice dictation with separate upload consent. Practice text
+appears in setup only; copying is explicit and practice writes no history.
+Completion requires successful model validation, microphone test, and practice.
+An incomplete setup resumes at provider validation so stale access cannot be
+assumed. Configured microphone, providers, and shortcut persist between launches.
+Custom endpoints can be configured in Settings and then validated in setup.
+
+Managed keys use secret-tool / Secret Service; packages declare the required
+libsecret tools. Unavailable keyrings fall back to an atomic mode-600 private
+JSON file with a visible unencrypted-storage notice. Deletion clears managed
+storage and disables legacy environment fallback. A locked keyring deletion
+fails visibly instead of claiming success. Secret lookup runs outside GTK and
+the event loop; cleanup key lookup shares the bounded cleanup deadline.
+
+Verification with GTK enabled: **138 passed, 4 native checks skipped**; lint and
+whitespace checks passed. Automated checks cover keyring/fallback storage, replacement, deletion, file
+permissions, environment precedence, all-model validation, native shortcut
+conflicts, portable permission guidance, recording disposal, cancellation,
+first-launch activation, resumability, and completion gates. The GTK workflow
+uses mocked microphone/provider/keyring operations; it does not upload or store
+real credentials. Real Groq practice, real keyring unlock dialogs, portable
+shortcut permissions, and fresh-machine installation remain acceptance checks.

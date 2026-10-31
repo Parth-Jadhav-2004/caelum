@@ -72,6 +72,20 @@ async def test_pause_discards_pending_audio_and_resume(core):
     assert not core.paused
 
 
+async def test_update_shutdown_blocks_already_queued_start_and_resume(core, monkeypatch):
+    from caelum.service import prepare_update
+
+    core.pcm = None
+    stop = asyncio.Event()
+    await prepare_update(core, stop)
+    monkeypatch.setattr("caelum.orchestrator.Capture", lambda _: pytest.fail("late capture"))
+    await core.handle("resume")
+    await core.handle("start", "queued-before-update")
+    assert core.stopping
+    assert core.capture is None
+    assert (await core.handle("status"))["state"] == "hidden"
+
+
 async def test_storage_hook_failure_never_retries_insertion(core, monkeypatch):
     def failure(*arguments):
         raise RuntimeError("Storage unavailable")

@@ -146,10 +146,12 @@ async def test_provider_failure_categories(config, monkeypatch, status, body, ki
 async def test_retry_after_is_honored(config, monkeypatch):
     sleep = AsyncMock()
     monkeypatch.setattr("caelum.providers.asyncio.sleep", sleep)
-    responses = iter([
-        httpx.Response(429, headers={"Retry-After": "2"}),
-        httpx.Response(200, json={"text": "ok"}),
-    ])
+    responses = iter(
+        [
+            httpx.Response(429, headers={"Retry-After": "2"}),
+            httpx.Response(200, json={"text": "ok"}),
+        ]
+    )
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: next(responses))
     ) as client:
@@ -157,10 +159,13 @@ async def test_retry_after_is_honored(config, monkeypatch):
     sleep.assert_awaited_once_with(2.0)
 
 
-@pytest.mark.parametrize("failure,kind", [
-    (httpx.ConnectError, "offline"),
-    (httpx.ReadTimeout, "timeout"),
-])
+@pytest.mark.parametrize(
+    "failure,kind",
+    [
+        (httpx.ConnectError, "offline"),
+        (httpx.ReadTimeout, "timeout"),
+    ],
+)
 async def test_transport_failure_categories(config, failure, kind):
     def respond(request):
         raise failure("sensitive details", request=request)
@@ -175,14 +180,18 @@ async def test_transport_failure_categories(config, failure, kind):
         assert provider.metrics["cleanup_error"] == kind
 
 
-@pytest.mark.parametrize("host,token_field,store", [
-    ("api.groq.com/openai", "max_tokens", False),
-    ("api.openai.com", "max_completion_tokens", True),
-    ("custom.example", "max_tokens", False),
-])
+@pytest.mark.parametrize(
+    "host,token_field,store",
+    [
+        ("api.groq.com/openai", "max_tokens", False),
+        ("api.openai.com", "max_completion_tokens", True),
+        ("custom.example", "max_tokens", False),
+    ],
+)
 async def test_cleanup_request_fields(config, host, token_field, store):
     config.cleanup.base_url = f"https://{host}/v1"
     config.cleanup.reasoning_effort = ""
+
     def respond(request):
         body = json.loads(request.content)
         assert token_field in body
@@ -227,3 +236,19 @@ async def test_retry_after_longer_than_deadline_does_not_retry_early(config):
             await Providers(config, client).stt(b"\0" * 100)
         assert error.value.kind == "timeout"
     assert respond.call_count == 1
+
+
+async def test_cleanup_key_lookup_is_bounded_by_cleanup_deadline(config, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    config.cleanup.timeout_seconds = 0.02
+
+    async def slow_lookup(_):
+        await asyncio.sleep(1)
+
+    async with httpx.AsyncClient() as client:
+        provider = Providers(config, client)
+        monkeypatch.setattr(provider, "headers", AsyncMock(side_effect=slow_lookup))
+        assert await provider.cleanup("hello") == ("hello", False)
+        assert provider.metrics["cleanup_error"] == "timeout"
+        assert provider.metrics["cleanup_ms"] < 200

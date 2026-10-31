@@ -29,19 +29,16 @@ Uninstalling the package leaves `~/.config/caelum` and `~/.local/share/caelum` i
 
 ## Get a key and dictate
 
-1. Create an API key in the [Groq console](https://console.groq.com/keys). Free accounts have provider rate limits.
-2. Save it where the launcher can read it:
+1. Open Caelum. First launch opens setup; Settings → **Open setup / Manage keys** reopens it.
+2. Read the privacy explanation, choose a provider, and follow **Create a Groq API key**. Free usage has provider limits.
+3. Enter the key and select **Save key**. Caelum uses the desktop keyring. If unavailable, it clearly reports an owner-only, unencrypted private-file fallback. Keys can be replaced or deleted here.
+4. Continue to validate the key and every selected model, run the three-second **local-only** microphone test, then choose a shortcut. Desktop permission dialogs may appear when the service starts; portable desktops also offer manual recording.
+5. Explicitly consent to upload a five-second practice sample. Practice text appears inside setup, with an optional Copy action; it is not pasted elsewhere or saved to history. A successful practice enables **Finish setup**. **Resume later** preserves your place; reopening rechecks provider access.
+6. Choose **Start service**, then dictate:
+   - **Hyprland:** hold **Super+Alt+V**, then release. Caelum pastes once into the original window.
+   - **Other desktops:** choose **Record**, then **Finish recording**. Copy the completed text from Caelum and paste it yourself.
 
-   ```sh
-   install -d -m 700 ~/.config/caelum
-   printf 'GROQ_API_KEY=%s\n' 'your-key' > ~/.config/caelum/environment
-   chmod 600 ~/.config/caelum/environment
-   ```
-
-3. Open Caelum and choose **Start dictation service**.
-4. Speak.
-   - **Hyprland:** hold **Super+Alt+V**, then release. Caelum pastes once into the window you were using.
-   - **GNOME, KDE, XFCE, and other desktops:** choose **Record**, then **Finish recording**. Copy the text from Caelum and paste it yourself. Where the desktop supports it, Caelum can also request a hold-to-record shortcut.
+Existing environment keys and mode-600 `~/.config/caelum/environment` files remain supported. Keys saved in setup take precedence. Deleting a key in setup disables legacy environment fallback for that key until you save a replacement; edit shell/environment files separately to remove their copies.
 
 Opening the window does not turn on the microphone. **Stop service** stops dictation and drops any audio still waiting. Closing the window leaves the service running. **Pause** ignores the shortcut until you resume.
 
@@ -78,14 +75,14 @@ History lives in `~/.local/share/caelum/history.sqlite3`. It is readable by your
 
 ## Privacy
 
-Caelum is built so the recording and the key stay out of the app’s saved files. The provider still receives what you send.
+Caelum keeps recorded audio out of saved files. Keys use the desktop keyring, with a private-file fallback when unavailable. The provider receives the audio and text you explicitly send.
 
 | What | Where it goes |
 | --- | --- |
 | Microphone audio | Your transcription provider, only while a dictation or an explicit retry is in progress |
 | Transcript text | Your refinement provider, when cleanup is turned on |
 | Finished text | Local history, and the desktop clipboard so you can paste or recover it |
-| API key | Your environment, or `~/.config/caelum/environment` with mode `600` |
+| API key | Desktop keyring; owner-only `credentials.json` fallback if unavailable. Legacy environment keys remain supported. |
 
 The local microphone test does not upload, play back, or save audio. Clipboard managers can keep a copy after Caelum is done with it. Exports are separate files and stay after you delete history. Contributor-tier models, if you point cleanup at one, can use submitted text for training under that provider’s policy. The default setup does not use one.
 
@@ -118,12 +115,17 @@ Python 3.11 or newer is required. Install GTK 4, PyGObject, Cairo, PortAudio, an
 ./scripts/run.sh app
 ```
 
-`init` creates `~/.config/caelum/config.toml` and will not overwrite it. See [config.example.toml](config.example.toml). Put secrets in the environment file, not in that TOML file. `.env` is not loaded automatically.
+`init` creates `~/.config/caelum/config.toml` and will not overwrite it. See [config.example.toml](config.example.toml). Manage keys in setup, or use the legacy environment file; never put them in TOML. `.env` is not loaded automatically.
 
 ```sh
 .venv/bin/pytest -q
 .venv/bin/ruff check src tests
 ```
+
+Official native builds with a pinned signing key include **Settings → Updates**:
+check GitHub for new versions, approve a verified download, and install on the
+next app launch with administrator authorization. Source/AUR installations keep
+using their package manager. [Updater behavior and release setup](docs/updates.md).
 
 Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.2.0](docs/release-0.2.0.md).
 

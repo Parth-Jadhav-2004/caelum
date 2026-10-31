@@ -34,6 +34,7 @@ reasoning_effort = "" # omit for custom providers unless supported
 timeout_seconds = 1.8
 
 [desktop]
+check_updates = true # Official native packages check GitHub on app launch; never auto-download.
 theme = "dark" # The desktop uses a pure black theme; legacy "light" values are accepted.
 retention_days = 30
 stt_usd_per_hour = 0.0 # 0 means unknown; configure your own rate for new-session estimates

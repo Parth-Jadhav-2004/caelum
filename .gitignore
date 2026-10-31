@@ -8,6 +8,7 @@ __pycache__/
 config.toml
 environment
 *.pem
+!src/caelum/update-public.pem
 *.key
 *credentials*.json
 *.sqlite

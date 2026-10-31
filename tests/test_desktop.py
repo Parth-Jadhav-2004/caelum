@@ -30,6 +30,103 @@ def test_desktop_quoting():
 @pytest.mark.skipif(
     os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
 )
+def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import GLib, Gtk
+
+    from caelum import updates
+    from caelum.config import load
+    from caelum.desktop import run
+    from caelum.onboarding import Progress
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
+    monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden", "paused": False})
+    monkeypatch.setattr(updates, "installed", lambda: {"version": "0.2.0"})
+    update = {"version": "0.3.0"}
+    monkeypatch.setattr(updates, "check", lambda: update)
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    Progress(4, True).save(path)
+    failures = []
+    downloads = []
+    restarts = []
+
+    def download(value):
+        downloads.append(value)
+        (updates.cache_dir() / "pending").mkdir(parents=True)
+        return value["version"]
+
+    monkeypatch.setattr(updates, "stage", download)
+    monkeypatch.setattr("caelum.desktop.install_queued_update", lambda: False)
+    monkeypatch.setattr("caelum.desktop.os.execv", lambda executable, args: restarts.append(args))
+
+    def activated(app):
+        def verify():
+            try:
+                app.work = lambda operation, done=None: done(operation()) if done else operation()
+                app.navigate("settings")
+                app.check_updates()
+                dialog = next(
+                    window
+                    for window in Gtk.Window.list_toplevels()
+                    if isinstance(window, Gtk.MessageDialog)
+                )
+                dialog.response(Gtk.ResponseType.CANCEL)
+                assert downloads == []
+                assert app.update_download.get_sensitive()
+                app.prompt_update()
+                dialog = next(
+                    window
+                    for window in Gtk.Window.list_toplevels()
+                    if isinstance(window, Gtk.MessageDialog)
+                )
+                dialog.response(Gtk.ResponseType.ACCEPT)
+                assert downloads == [update]
+                assert "ready" in app.update_status.get_text()
+                assert not app.update_check.get_sensitive()
+                assert app.update_discard.get_sensitive()
+                app.begin_updates()
+                assert len(restarts) == 1
+                assert restarts[0][-3:] == ["--config", str(path), "app"]
+                app.discard_update()
+                assert not (updates.cache_dir() / "pending").exists()
+                assert app.update_check.get_sensitive()
+
+                def offline():
+                    raise RuntimeError("Offline, try again")
+
+                monkeypatch.setattr(updates, "check", offline)
+                app.check_updates()
+                assert "Offline" in app.update_status.get_text()
+                assert app.update_check.get_sensitive()
+                assert not app.update_busy
+                app.update_automatic.set_active(False)
+                app.save_settings()
+                assert not load(path).desktop.check_updates
+                monkeypatch.setattr(updates, "check", lambda: pytest.fail("checks disabled"))
+                app.begin_updates()
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                for window in Gtk.Window.list_toplevels():
+                    if isinstance(window, Gtk.MessageDialog):
+                        window.destroy()
+                app.quit()
+            return False
+
+        GLib.timeout_add(300, verify)
+
+    run(path, on_activate=activated)
+    if failures:
+        raise failures[0]
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
+)
 def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
     import gi
 
@@ -45,6 +142,9 @@ def test_native_desktop_pages_and_sidebar(tmp_path, monkeypatch):
     legacy = Config()
     legacy.desktop.theme = "light"
     save(legacy, config_path)
+    from caelum.onboarding import Progress
+
+    Progress(4, True).save(config_path)
     failures = []
     activations = []
 
@@ -270,3 +370,107 @@ async def test_connection_check_validates_url_before_sending_key(monkeypatch):
     monkeypatch.setattr("caelum.providers.Providers.models", models)
     assert "HTTPS" in await connection_status(config)
     models.assert_not_awaited()
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK setup test"
+)
+def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch):
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from unittest.mock import AsyncMock
+
+    from gi.repository import GLib
+
+    from caelum.desktop import run
+    from caelum.onboarding import Progress
+    from caelum.onboarding_ui import show
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr("caelum.desktop.microphones", lambda: [("USB mic", "USB mic")])
+    monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden", "paused": False})
+    validate = AsyncMock()
+    monkeypatch.setattr("caelum.onboarding_ui.validate_providers", validate)
+    monkeypatch.setattr(
+        "caelum.onboarding_ui.check_shortcut", AsyncMock(return_value="Shortcut available")
+    )
+    monkeypatch.setattr("caelum.onboarding_ui.record_sample", lambda *_args: b"speech")
+    monkeypatch.setattr(
+        "caelum.onboarding_ui.practice", AsyncMock(return_value=("Practice words.", True))
+    )
+    stored = []
+    monkeypatch.setattr(
+        "caelum.credentials.store", lambda name, value: stored.append((name, value)) or "keyring"
+    )
+    path = tmp_path / "config.toml"
+    failures = []
+
+    def activated(app):
+        def verify():
+            try:
+                app.work = lambda operation, done=None: done(operation()) if done else operation()
+                assert app.setup_window is not None  # first launch opens setup automatically
+                setup = show(app)
+                assert not setup.next.get_sensitive()
+                setup.advance()
+                assert setup.stage == 0
+                setup.consent.set_active(True)
+                setup.advance()
+                assert setup.stage == 1
+                setup.key_entry.set_text("test-key")
+                setup.save_key()
+                assert stored == [("GROQ_API_KEY", "test-key")]
+                assert not setup.key_entry.get_text()
+                validate.side_effect = RuntimeError("Invalid provider key")
+                setup.advance()
+                assert setup.stage == 1 and not setup.validated
+                assert "Invalid provider key" in setup.notice.get_text()
+                validate.side_effect = None
+                setup.advance()
+                assert validate.await_count == 2
+                assert setup.stage == 2
+                setup.advance()
+                assert setup.stage == 2  # no skipping the local test
+                setup.mic.set_selected(1)
+                setup.test_mic()
+                assert setup.tested
+                setup.advance()
+                assert setup.stage == 3
+                setup.advance()
+                assert setup.stage == 4
+                assert not setup.next.get_sensitive()
+                setup.run_practice()
+                assert not setup.succeeded  # explicit upload consent is required
+                setup.upload.set_active(True)
+                setup.run_practice()
+                assert setup.succeeded and setup.next.get_sensitive()
+                assert not Progress.load(path).complete
+                assert not app.history.path.exists()
+                setup.advance()
+                assert Progress.load(path).complete
+                assert app.config.app.microphone == "USB mic"
+                assert app.setup_window is None
+                setup = show(app)
+                setup.preset.set_selected(0)
+                setup.stage = 3
+                setup.render()
+                setup.close()
+                assert Progress.load(path).stage == 3
+                setup = show(app)
+                assert setup.stage == 1  # resume validates provider access again
+                assert not setup.validated and not setup.succeeded
+                assert setup.preset.get_selected() == 0  # draft selection survives resume
+                setup.close()
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                app.quit()
+            return False
+
+        GLib.timeout_add(300, verify)
+
+    run(path, on_activate=activated)
+    if failures:
+        raise failures[0]
