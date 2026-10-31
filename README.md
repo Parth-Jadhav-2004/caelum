@@ -54,6 +54,8 @@ If cleanup is slow, unavailable, or not configured, you still get the transcript
 - **Settings** covers the provider, shortcut, microphone, a three-second local microphone check, language, and how long history is kept. The microphone check stays on your machine.
 - **Launcher and login** can be turned on from Settings. Neither is enabled by the installer.
 
+Turn off **Save dictation history on this device** in Settings → History & desktop to stop saving new transcripts (`desktop.history_enabled = false`). Existing entries remain until deleted or expired. With history off, portable desktops copy directly using `wl-copy` on Wayland or `xclip` on X11; paste manually.
+
 History lives in `~/.local/share/caelum/history.sqlite3`. It is readable by your user and is not encrypted by Caelum. Delete an entry, or delete all of them, from History. The default retention period is 30 days and is applied the next time history is read or written.
 
 ## If something fails
@@ -81,10 +83,10 @@ Caelum keeps recorded audio out of saved files. Keys use the desktop keyring, wi
 | --- | --- |
 | Microphone audio | Your transcription provider, only while a dictation or an explicit retry is in progress |
 | Transcript text | Your refinement provider, when cleanup is turned on |
-| Finished text | Local history, and the desktop clipboard so you can paste or recover it |
+| Finished text | Local history when enabled; clipboard for paste/recovery (portable history-on uses explicit Copy) |
 | API key | Desktop keyring; owner-only `credentials.json` fallback if unavailable. Legacy environment keys remain supported. |
 
-The local microphone test does not upload, play back, or save audio. Clipboard managers can keep a copy after Caelum is done with it. Exports are separate files and stay after you delete history. Contributor-tier models, if you point cleanup at one, can use submitted text for training under that provider’s policy. The default setup does not use one.
+The local microphone test does not upload, play back, or save audio. Clipboard managers can keep a copy after Caelum is done with it. Exports are separate files and stay after you delete history. Contributor-tier models, if you point cleanup at one, can use submitted text for training under that provider’s policy. The default setup does not use one. Contributor refinement requires explicit training consent in setup for the exact endpoint and model; without it, Caelum uses raw transcription. Custom aliases cannot reveal a provider’s training policy.
 
 Read the full [privacy notes](docs/privacy.md) before you dictate anything you would not want a provider, a clipboard manager, or an unlocked screen to hold.
 
@@ -94,12 +96,11 @@ Qualified Hyprland sessions paste into the original window. Other desktops copy 
 
 Also outside this preview:
 
-- A first-run setup wizard and in-app key storage
 - A system tray icon
 - Flatpak, Flathub, a published AUR package, and ARM builds
 - Windows and macOS
 - Offline speech recognition
-- Encrypted history and automatic upgrades
+- Encrypted history
 
 GNOME and KDE hardware checks are still open. Portal shortcuts depend on the desktop. App-specific paste behavior varies.
 

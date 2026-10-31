@@ -14,6 +14,15 @@ from .credentials import get as credential
 from .quality import PROMPT, normalize, validate_cleanup
 
 
+def contributor_scope(provider):
+    """Consent is tied to the exact endpoint and model, including custom aliases."""
+    return provider.base_url.rstrip("/") + "|" + provider.model
+
+
+def needs_contributor_consent(provider):
+    return "contributor" in (provider.model + " " + provider.base_url).casefold()
+
+
 class ProviderError(RuntimeError):
     """Sanitized error: never contains response bodies, headers, or dictation."""
 
@@ -180,6 +189,9 @@ class Providers:
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
         if not cfg.model:
+            return raw, False
+        if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
+            self.metrics["cleanup_error"] = "consent_required"
             return raw, False
         began = time.monotonic()
         try:

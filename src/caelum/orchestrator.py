@@ -291,6 +291,17 @@ class Orchestrator:
                     self.metrics["manual_copy"] = True
                     self.metrics["clipboard_fallback"] = False
                     self.metrics["visible_insertion_observed"] = False
+                    if not self.config.desktop.history_enabled:
+                        from .portable import copy_private_result
+
+                        await copy_private_result(text)
+                        self.recent_metrics.append(self.metrics.copy())
+                        self.recent_metrics = self.recent_metrics[-100:]
+                        self.pcm = self.chunker = self.failed_at = None
+                        await self.bindings.active(False)
+                        await self.event("copied")
+                        await notify("Text copied. Paste manually; history saving is off.")
+                        return
                     if not self.on_completed:
                         raise RuntimeError("History storage is required for portable delivery")
                     result = self.on_completed(session, text, self.metrics.copy(), refined, False)

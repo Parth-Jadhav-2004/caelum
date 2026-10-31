@@ -34,6 +34,16 @@ async def session_locked():
     return value == "yes"
 
 
+async def copy_private_result(text):
+    """Clipboard delivery without a transcript file or diagnostic payload."""
+    if os.environ.get("WAYLAND_DISPLAY"):
+        await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode())
+    elif os.environ.get("DISPLAY"):
+        await command("xclip", "-selection", "clipboard", data=text.encode())
+    else:
+        raise RuntimeError("Clipboard unavailable; open a desktop session")
+
+
 def portal_trigger(hotkey):
     parts = [part.strip() for part in hotkey.split("+")]
     names = {"SUPER": "LOGO", "CTRL": "CTRL", "ALT": "ALT", "SHIFT": "SHIFT"}

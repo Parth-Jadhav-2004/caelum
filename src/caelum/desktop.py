@@ -697,6 +697,18 @@ def run(path=None, *, on_activate=None):
             storage_settings.add_css_class("panel")
             storage_settings.append(self.label("History & desktop", "section-title"))
             page.append(storage_settings)
+            from .onboarding import PRIVACY
+
+            storage_settings.append(self.label(PRIVACY, "muted", True))
+            self.history_enabled = Gtk.CheckButton(label="Save dictation history on this device")
+            self.history_enabled.set_active(self.config.desktop.history_enabled)
+            storage_settings.append(self.history_enabled)
+            storage_settings.append(self.label(
+                "Turning this off keeps existing entries. Use History → Delete all to remove them. "
+                "On portable desktops, new text is copied directly to the clipboard when history is off. "
+                "Contributor models require training consent in setup for each endpoint and model.",
+                "muted", True,
+            ))
             self.retention = Gtk.SpinButton.new_with_range(1, 3650, 1)
             self.retention.set_value(self.config.desktop.retention_days)
             self.field(storage_settings, "Keep history for this many days", self.retention)
@@ -916,6 +928,7 @@ def run(path=None, *, on_activate=None):
                 widget.set_text(str(getattr(getattr(self.config, section), key)))
             self.preset.set_selected(provider_preset(self.config))
             self.selecting_preset = False
+            self.history_enabled.set_active(self.config.desktop.history_enabled)
             self.hotkey.set_text(self.config.app.hotkey)
             self.set_devices([(name, value) for name, value in self.devices if value is not None])
             self.connection_label.set_text(self.key_status(self.config))
@@ -1077,6 +1090,7 @@ def run(path=None, *, on_activate=None):
             updated.app.microphone = self.devices[self.mic.get_selected()][1]
             for (section, key), widget in self.entries.items():
                 setattr(getattr(updated, section), key, widget.get_text().strip())
+            updated.desktop.history_enabled = self.history_enabled.get_active()
             updated.desktop.retention_days = self.retention.get_value_as_int()
             updated.desktop.check_updates = self.update_automatic.get_active()
             self.save_button.set_sensitive(False)
@@ -1250,6 +1264,12 @@ def run(path=None, *, on_activate=None):
 
         def render_data(self, data):
             status, rows, recent, summary = data
+            if self.portable:
+                self.delivery_note.set_text(
+                    "Manual paste: completed text appears here. Choose Copy text, then paste."
+                    if self.config.desktop.history_enabled else
+                    "Manual paste: history is off. Text is copied directly to the clipboard; paste it."
+                )
             if status:
                 self.paused = status.get("paused", False)
                 title, detail = service_presentation(status)
@@ -1310,6 +1330,8 @@ def run(path=None, *, on_activate=None):
             self.pause_button.set_label("Resume" if self.paused else "Pause")
             self.history_note.set_text(
                 f"Saved automatically on this device · Kept for {self.config.desktop.retention_days} days"
+                if self.config.desktop.history_enabled
+                else "History saving is off. Existing entries can still be deleted or exported."
             )
             for widget, value in zip(
                 self.home_metrics,
@@ -1321,7 +1343,7 @@ def run(path=None, *, on_activate=None):
                 strict=True,
             ):
                 widget.set_text(str(value))
-            signature = (rows, recent, self.search.get_text())
+            signature = (rows, recent, self.search.get_text(), self.config.desktop.history_enabled)
             changed = signature != self.history_signature
             if changed:
                 self.history_signature = signature
@@ -1331,7 +1353,8 @@ def run(path=None, *, on_activate=None):
                 message = (
                     "No matching dictations."
                     if self.search.get_text()
-                    else "No dictations yet. Your next completed dictation will appear here."
+                    else ("No dictations yet." if self.config.desktop.history_enabled
+                          else "History saving is off. New dictations are not saved.")
                 )
                 self.history_rows.append(self.label(message, "muted", True))
             for row in recent if changed else []:
@@ -1339,7 +1362,8 @@ def run(path=None, *, on_activate=None):
             if changed and not recent:
                 self.recent.append(
                     self.label(
-                        "Your next completed dictation will appear here.",
+                        "Your next completed dictation will appear here."
+                        if self.config.desktop.history_enabled else "History saving is off.",
                         "muted",
                         True,
                     )

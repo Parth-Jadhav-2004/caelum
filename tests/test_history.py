@@ -84,13 +84,14 @@ def test_search_literal_and_delete_recalculates(storage):
     assert history.summary()["sessions"] == 0
 
 
-def test_legacy_disabled_preference_cannot_prevent_recording(storage):
+def test_disabled_preference_prevents_database_creation_and_survives_save(storage):
     config, path, history = storage
     path.write_text("[desktop]\nhistory_enabled = false\n")
     record(storage)
-    assert len(history.read()) == 1
+    assert history.read() == []
+    assert not history.path.exists()
     save(load(path), path)
-    assert "history_enabled" not in path.read_text()
+    assert load(path).desktop.history_enabled is False
 
 
 def test_retention_and_export(storage, tmp_path):
@@ -133,3 +134,20 @@ def test_settings_roundtrip_and_failed_save_preserves_existing(storage):
         save(config, path)
     assert path.read_bytes() == original
     assert not list(path.parent.glob(".caelum-*"))
+
+
+def test_disabled_history_keeps_old_entries_and_honors_session_snapshot(storage):
+    config, path, history = storage
+    record(storage, "old")
+    config.desktop.history_enabled = False
+    save(config, path)
+    record(storage, "disabled")
+    assert [row["id"] for row in history.read()] == ["old"]
+    config.desktop.history_enabled = True
+    save(config, path)
+    snapshot = load(path)
+    snapshot.desktop.history_enabled = False
+    history.record("private", "never saved", {}, snapshot, False, False)
+    assert [row["id"] for row in history.read()] == ["old"]
+    history.delete()
+    assert history.read() == []

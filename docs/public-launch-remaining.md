@@ -21,10 +21,9 @@ out below.
 - Hyprland pastes into the original window. Other desktops copy text for manual paste.
 - The GTK app can start, stop, pause, and resume the service. Closing the window
   leaves dictation running.
-- History, retention, delete-one, delete-all, and JSONL export exist. History is
-  always on.
-- Credentials stay in the environment or a mode-600 `environment` file. They are
-  not entered in the app and are not stored in the keyring.
+- Optional history, retention, delete-one, delete-all, and JSONL export exist.
+- In-app credentials use the desktop keyring, with a visible mode-600 private-file
+  fallback when unavailable. Legacy environment keys remain supported.
 - `.github/workflows/release.yml` runs tests and builds distro packages.
 - `docs/privacy.md` and `docs/acceptance.md` exist. Many acceptance boxes are
   still unchecked. There is no `LICENSE` file.
@@ -107,29 +106,35 @@ Implemented as a resumable native setup window; live-provider and desktop/keyrin
 
 ## 4. Privacy and security
 
-- [ ] **P0 — Store the API key in the desktop keyring**, with a private-file
-  fallback only where the keyring is unavailable. Today the key is an
-  environment variable or `~/.config/caelum/environment`.
-- [ ] **P0 — “Don’t save history”.** History is always saved. A saved
-  `history_enabled = false` is ignored and removed. People need a way to dictate
-  without a local transcript database.
-- [ ] **P0 — Explain data flow before the first upload.** Audio goes to the
-  transcription provider. Text goes to the refinement provider when refinement
-  is on. Final text goes to local history and the clipboard.
-- [ ] **P0 — Require opt-in for Contributor models**, and explain that submitted
-  text may be used for training. README mentions Muse Spark Contributor. The app
-  does not gate it.
-- [ ] **P0 — Keep retention, delete-all, and export easy to find.** These exist
-  in History and Settings. **Verify** they stay obvious after onboarding.
-- [ ] **P0 — State the limits.** Local history is not encrypted by the app.
-  Clipboard managers and exports keep their own copies. `docs/privacy.md`
-  already says this. **Verify** the app says it too.
-- [ ] **P0 — Scan the repository and release packages** for secrets, recordings,
-  transcripts, databases, and personal config.
-- [ ] **P0 — Confirm logs and errors omit audio, transcripts, prompts, and
-  keys.** Current design claims this. **Verify.**
-- [ ] **P0 — Use the same privacy wording** in onboarding, the app, the README,
-  and package descriptions.
+- [x] **P0 — Store the API key in the desktop keyring.** Setup uses Secret Service;
+  unavailable keyrings use an explicitly labelled, owner-only private-file fallback.
+  Real desktop unlock dialogs remain acceptance work.
+- [x] **P0 — “Don’t save history”.** Settings exposes Save dictation history;
+  `desktop.history_enabled = false` is preserved and prevents new database writes.
+  Existing entries remain deletable/exportable. Portable history-off delivery copies
+  directly to the clipboard; clipboard failure preserves retry audio.
+- [x] **P0 — Explain data flow before the first upload.** Setup explains audio,
+  refinement, optional history, clipboard and provider limits before consented practice.
+  Settings repeats the notice; direct CLI service startup prints it before capture.
+- [x] **P0 — Require opt-in for Contributor models.** Setup saves explicit training
+  consent for the exact endpoint/model. The provider enforces it before sending text,
+  including outside setup. Missing/stale consent falls back to raw transcription.
+  Custom aliases cannot expose undisclosed provider training policies.
+- [x] **P0 — Keep retention, delete-all, and export easy to find.** History remains
+  a top-level page with Export/Delete all; retention and history saving are in Settings.
+- [x] **P0 — State the limits.** Setup and Settings explain unencrypted history and
+  independent clipboard-manager/export copies; README and privacy policy agree.
+- [x] **P0 — Scan the repository and release packages.** Tracked files and local
+  artifacts scanned; CI scans tracked files and every native package staging tree.
+  Scans reject private runtime filenames and recognizable credential/private-key
+  patterns without printing values. This is not detection of arbitrary personal prose.
+- [x] **P0 — Confirm logs and errors omit audio, transcripts, prompts, and keys.**
+  Provider errors are fixed categories; regression checks inject sensitive response
+  content and check errors, captured logs, metrics and HUD payloads. Clipboard text
+  travels over stdin rather than command arguments.
+- [x] **P0 — Use the same privacy wording** in onboarding, Settings, README and
+  package descriptions: cloud dictation with optional local history. The full policy
+  ships with native packages.
 
 ## 5. Testing and release
 
@@ -282,3 +287,33 @@ first-launch activation, resumability, and completion gates. The GTK workflow
 uses mocked microphone/provider/keyring operations; it does not upload or store
 real credentials. Real Groq practice, real keyring unlock dialogs, portable
 shortcut permissions, and fresh-machine installation remain acceptance checks.
+
+## Privacy/security P0 verification — 2026-10-31
+
+- Preserved and enforced `desktop.history_enabled`, with a Settings switch and
+  existing-history deletion/export still available. Tests cover no database
+  creation, saved false values, session snapshots, portable clipboard delivery,
+  clipboard failure/retry, and duplicate-retry prevention.
+- Contributor training consent is persisted for the selected refinement endpoint
+  and model and checked in the provider before credential lookup or upload.
+  GTK tests cover blocking unchecked consent and saving checked consent. Provider
+  tests cover missing consent and changed endpoint/model.
+- Setup and Settings share the data-flow and storage-limits notice. README,
+  privacy policy, and native package descriptions describe optional local history.
+  Direct service CLI startup prints the notice before capture starts.
+- Existing credential tests verify keyring storage, private-file permissions,
+  replacement, deletion, locked-keyring failure, and environment tombstones.
+- Sensitive-content regression tests cover provider errors, logs, metrics and HUD;
+  clipboard subprocesses receive text through stdin, never command arguments.
+- `scripts/scan_privacy.py` checks tracked files in CI and every native package
+  staging tree before packaging. Current tracked files, the four existing local
+  artifacts (two DEBs, Arch package, wheel), and a fresh Debian build passed.
+  Detection covers private runtime filenames and recognizable credential patterns;
+  arbitrary prose and unknown secret formats still require human review.
+
+Verification: GTK-enabled full suite **201 passed, 4 native checks skipped**;
+`ruff check src tests scripts`, repository scan, and whitespace checks passed.
+A fresh Debian package built successfully with its staging privacy scan enabled.
+No real credentials, recordings, transcripts, or cloud requests were used.
+Real keyring unlock dialogs and desktop clipboard integration on each supported
+session remain release acceptance checks.

@@ -188,7 +188,9 @@ def show(host):
             self.key_choice.set_model(Gtk.StringList.new(self.key_names))
             self.key_choice.set_selected(0)
             self.key_entry.set_text("")
-            contributor = "contributor" in self.config.cleanup.model.casefold()
+            from .providers import needs_contributor_consent
+
+            contributor = needs_contributor_consent(self.config.cleanup)
             self.contributor.set_visible(contributor)
             self.contributor_note.set_visible(contributor)
             self.contributor.set_active(False)
@@ -433,6 +435,11 @@ def show(host):
                     )
                     return
 
+                from .providers import contributor_scope
+
+                self.config.cleanup.contributor_consent = (
+                    contributor_scope(self.config.cleanup) if self.contributor.get_active() else ""
+                )
                 self.validated = False
 
                 def validated(_):

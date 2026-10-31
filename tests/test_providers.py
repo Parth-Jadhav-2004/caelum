@@ -252,3 +252,45 @@ async def test_cleanup_key_lookup_is_bounded_by_cleanup_deadline(config, monkeyp
         assert await provider.cleanup("hello") == ("hello", False)
         assert provider.metrics["cleanup_error"] == "timeout"
         assert provider.metrics["cleanup_ms"] < 200
+
+
+async def test_contributor_requires_consent_for_exact_model_and_endpoint(config):
+    from caelum.providers import contributor_scope
+
+    config.cleanup.model = "meta/muse-spark-contributor"
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Hello."}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client)
+        assert await provider.cleanup("hello") == ("hello", False)
+        assert requests == []
+        assert provider.metrics["cleanup_error"] == "consent_required"
+        config.cleanup.contributor_consent = contributor_scope(config.cleanup)
+        assert await provider.cleanup("hello") == ("Hello.", True)
+        assert len(requests) == 1
+        config.cleanup.base_url = "https://other.example/v1"
+        assert await provider.cleanup("hello") == ("hello", False)
+        config.cleanup.contributor_consent = contributor_scope(config.cleanup)
+        config.cleanup.model += "-new"
+        assert await provider.cleanup("hello") == ("hello", False)
+        assert len(requests) == 1
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 429, 500])
+async def test_provider_errors_and_metrics_omit_sensitive_content(config, caplog, capsys, status):
+    sentinel = "PRIVATE_AUDIO_TRANSCRIPT_PROMPT_AND_KEY"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(status, json={"error": {"message": sentinel}})
+    )) as client:
+        provider = Providers(config, client)
+        assert await provider.cleanup(sentinel) == (sentinel, False)
+        with pytest.raises(ProviderError) as error:
+            await provider.models(config.stt)
+        assert sentinel not in str(error.value)
+        assert sentinel not in json.dumps(provider.metrics)
+    assert sentinel not in caplog.text
+    assert sentinel not in str(capsys.readouterr())

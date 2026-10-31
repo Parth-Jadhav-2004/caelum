@@ -15,7 +15,8 @@ from .providers import ProviderError, Providers
 
 PRIVACY = (
     "Audio is sent to your transcription provider. When refinement is on, text is sent "
-    "to your refinement provider. Regular dictations save final text in local history "
+    "to your refinement provider. Regular dictations save final text in local history when "
+    "Save dictation history is on (disable it in Settings → History & desktop) "
     "and may use the clipboard. Practice text stays in this setup window unless you copy it. "
     "History is not encrypted by Caelum. Exports and clipboard managers keep independent copies. "
     "Groq free usage has provider limits."

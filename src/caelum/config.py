@@ -40,12 +40,14 @@ class Cleanup:
     base_url: str = "https://api.groq.com/openai/v1"
     key_env: str = "GROQ_API_KEY"
     model: str = ""
+    contributor_consent: str = ""
     reasoning_effort: str = ""
     timeout_seconds: float = 1.8
 
 
 @dataclass
 class Desktop:
+    history_enabled: bool = True
     check_updates: bool = True
     theme: str = "dark"
     retention_days: int = 30
@@ -72,9 +74,6 @@ def load(path=None):
     config = Config()
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
         values = data.get(section, {}).copy()
-        if section == "desktop" and "history_enabled" in values:
-            if type(values.pop("history_enabled")) is not bool:
-                raise ValueError("Invalid type for desktop.history_enabled")
         if set(values) - {f.name for f in fields(cls)}:
             raise ValueError(f"Unknown option in {section}")
         defaults = cls()

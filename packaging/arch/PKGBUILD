@@ -2,11 +2,11 @@
 pkgname=caelum
 pkgver=0.3.0
 pkgrel=1
-pkgdesc='Private dictation for Linux desktops'
+pkgdesc='Cloud dictation with optional local history'
 arch=('x86_64')
 url='https://github.com/Parth-Jadhav-2004/caelum'
 license=('custom')
-depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libnotify' 'libsecret' 'glib2' 'systemd')
+depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd')
 makedepends=('python-build' 'python-installer' 'python-hatchling')
 depends+=('python-dbus-next' 'python-httpx' 'python-numpy' 'python-sounddevice')
 optdepends=('gtk4-layer-shell: Hyprland recording overlay' 'wl-clipboard: Hyprland automatic paste')

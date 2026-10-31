@@ -242,3 +242,21 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
         if not service.done():
             service.cancel()
         await asyncio.gather(service, return_exceptions=True)
+
+
+@pytest.mark.parametrize("wayland", [True, False])
+async def test_history_off_clipboard_uses_stdin(monkeypatch, wayland):
+    from caelum.portable import copy_private_result
+
+    monkeypatch.setenv("DISPLAY", ":1")
+    if wayland:
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    else:
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    command = AsyncMock()
+    monkeypatch.setattr("caelum.portable.command", command)
+    await copy_private_result("Private text")
+    args, kwargs = command.call_args
+    assert args[0] == ("wl-copy" if wayland else "xclip")
+    assert "Private text" not in str(args)
+    assert kwargs["data"] == b"Private text"

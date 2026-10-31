@@ -270,3 +270,27 @@ async def test_queued_retry_clicks_schedule_only_one_finalization(core, monkeypa
     assert core.work is work
     await work
     insertion.assert_awaited_once()
+
+
+async def test_portable_history_off_copies_once_without_storage(core, monkeypatch):
+    core.config.desktop.history_enabled = False
+    core.bindings.save_only = True
+    copy = AsyncMock()
+    monkeypatch.setattr("caelum.portable.copy_private_result", copy)
+    core.on_completed = lambda *args: pytest.fail("private result reached history")
+    await core.finalize(core.session)
+    assert core.state == "copied"
+    assert core.pcm is None
+    await core.handle("retry")
+    copy.assert_awaited_once_with("Private spoken words.")
+    assert "Private spoken words" not in str(core.hud.events) + str(core.recent_metrics)
+
+
+async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, monkeypatch):
+    core.config.desktop.history_enabled = False
+    core.bindings.save_only = True
+    monkeypatch.setattr("caelum.portable.copy_private_result", AsyncMock(side_effect=OSError()))
+    await core.finalize(core.session)
+    assert core.state == "error"
+    assert core.pcm is not None
+    await core.cancel(feedback=False)

@@ -104,7 +104,9 @@ def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
                 assert app.update_check.get_sensitive()
                 assert not app.update_busy
                 app.update_automatic.set_active(False)
+                app.history_enabled.set_active(False)
                 app.save_settings()
+                assert not load(path).desktop.history_enabled
                 assert not load(path).desktop.check_updates
                 monkeypatch.setattr(updates, "check", lambda: pytest.fail("checks disabled"))
                 app.begin_updates()
@@ -375,7 +377,8 @@ async def test_connection_check_validates_url_before_sending_key(monkeypatch):
 @pytest.mark.skipif(
     os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK setup test"
 )
-def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch):
+@pytest.mark.parametrize("contributor", [False, True])
+def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, contributor):
     import gi
 
     gi.require_version("Gtk", "4.0")
@@ -405,6 +408,10 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch):
         "caelum.credentials.store", lambda name, value: stored.append((name, value)) or "keyring"
     )
     path = tmp_path / "config.toml"
+    config = Config()
+    if contributor:
+        config.cleanup.model = "meta/muse-spark-contributor"
+    save(config, path)
     failures = []
 
     def activated(app):
@@ -423,6 +430,12 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch):
                 setup.save_key()
                 assert stored == [("GROQ_API_KEY", "test-key")]
                 assert not setup.key_entry.get_text()
+                if contributor:
+                    setup.advance()
+                    assert setup.stage == 1
+                    validate.assert_not_awaited()
+                    assert "training" in setup.notice.get_text()
+                    setup.contributor.set_active(True)
                 validate.side_effect = RuntimeError("Invalid provider key")
                 setup.advance()
                 assert setup.stage == 1 and not setup.validated
@@ -430,6 +443,13 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch):
                 validate.side_effect = None
                 setup.advance()
                 assert validate.await_count == 2
+                from caelum.config import load
+                from caelum.providers import contributor_scope
+
+                saved = load(path)
+                assert saved.cleanup.contributor_consent == (
+                    contributor_scope(saved.cleanup) if contributor else ""
+                )
                 assert setup.stage == 2
                 setup.advance()
                 assert setup.stage == 2  # no skipping the local test

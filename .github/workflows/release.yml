@@ -48,7 +48,8 @@ jobs:
           fi
           uv venv --python /usr/bin/python3 --system-site-packages
           uv sync --locked --extra dev --python /usr/bin/python3
-          uv run ruff check src tests scripts/build_package.py scripts/sign_release.py
+          uv run ruff check src tests scripts
+          python3 scripts/scan_privacy.py
           xvfb-run -a env GDK_BACKEND=x11 GSK_RENDERER=cairo CAELUM_DESKTOP_TESTS=1 .venv/bin/pytest -q
   package:
     name: Package ${{ matrix.target }}

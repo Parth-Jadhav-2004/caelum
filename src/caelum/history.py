@@ -44,8 +44,11 @@ class History:
         connection.execute("DELETE FROM dictations WHERE created_at < ?", (cutoff.isoformat(),))
 
     def record(self, session, text, metrics, config, refined, copied):
+        preferences = load(self.config_path).desktop
+        if not config.desktop.history_enabled or not preferences.history_enabled:
+            return False
         duration = max(0, metrics.get("capture_ms", 0))
-        rate = load(self.config_path).desktop.stt_usd_per_hour
+        rate = preferences.stt_usd_per_hour
         with closing(self.connect()) as connection, connection:
             self.prune(connection)
             connection.execute(

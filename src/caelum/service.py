@@ -153,9 +153,11 @@ async def serve(config, config_path=None):
     async def persist(arguments, snapshot):
         nonlocal storage_error
         try:
-            await asyncio.to_thread(history.record, *arguments[:3], snapshot, *arguments[3:])
+            recorded = await asyncio.to_thread(
+                history.record, *arguments[:3], snapshot, *arguments[3:]
+            )
             storage_error = False
-            return True
+            return recorded is not False
         except (OSError, ValueError, RuntimeError, sqlite3.Error):
             storage_error = True
             return False
@@ -259,7 +261,7 @@ async def serve(config, config_path=None):
         print(
             f"Caelum ready · hold {config.app.hotkey} · Escape cancels"
             if native
-            else f"Caelum ready · {bindings.description} · results in Caelum history",
+            else f"Caelum ready · {bindings.description} · manual paste",
             flush=True,
         )
         await stop.wait()

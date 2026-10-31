@@ -192,8 +192,10 @@ def main():
         elif args.command == "doctor":
             sys.exit(asyncio.run(doctor(config)))
         elif args.command == "serve":
+            from .onboarding import PRIVACY
             from .service import serve
 
+            print(PRIVACY, file=sys.stderr)
             asyncio.run(serve(config, args.config))
         elif args.command == "app":
             from .desktop import run

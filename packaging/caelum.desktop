@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Caelum
-Comment=Dictation with native Hyprland paste or manual copy on other desktops
+Comment=Cloud dictation with optional local history
 Exec=caelum app
 Icon=audio-input-microphone
 Terminal=false

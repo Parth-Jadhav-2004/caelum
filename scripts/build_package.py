@@ -129,7 +129,7 @@ exec /usr/bin/python3 -m caelum.cli "$@"
             """[Desktop Entry]
 Type=Application
 Name=Caelum
-Comment=Private dictation for Linux desktops
+Comment=Cloud dictation with optional local history
 Exec=caelum app
 Icon=audio-input-microphone
 Terminal=false
@@ -147,6 +147,9 @@ StartupNotify=false
             "Python dependencies: uv.lock, vendored with their upstream license metadata.\n"
             "This package does not configure credentials, autostart, or desktop shortcuts.\n",
         )
+        from scan_privacy import check
+
+        check(stage.rglob("*"))
         output.mkdir(parents=True, exist_ok=True)
         if kind == "deb":
             control = work / "control"
@@ -158,11 +161,12 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
-Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, systemd, openssl, pkexec
+Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
-Description: Private dictation for Linux desktops
- Records speech, transcribes it with your configured provider, and saves text locally.
+Description: Cloud dictation with optional local history
+ Sends audio to your transcription provider and text to refinement when enabled.
+ Local transcript history is optional; clipboard managers and exports keep copies.
  GNOME/KDE/X11 use explicit copy; native Hyprland integration is optional.
 """,
             )
@@ -184,7 +188,7 @@ Description: Private dictation for Linux desktops
                 f"""pkgname = caelum
 pkgbase = caelum
 pkgver = {version}-1
-pkgdesc = Private dictation for Linux desktops
+pkgdesc = Cloud dictation with optional local history
 url = https://github.com/Parth-Jadhav-2004/caelum
 builddate = {epoch}
 packager = Caelum release build
@@ -198,6 +202,8 @@ depend = gtk4
 depend = portaudio
 depend = libnotify
 depend = libsecret
+depend = wl-clipboard
+depend = xclip
 depend = glib2
 depend = systemd
 depend = openssl
@@ -220,14 +226,16 @@ optdepend = wl-clipboard: Hyprland automatic paste
                 f"""Name: caelum
 Version: {version}
 Release: 1
-Summary: Private dictation for Linux desktops
+Summary: Cloud dictation with optional local history
 License: LicenseRef-Caelum-No-License-Declared
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
-Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, libsecret, glib2, systemd, openssl, polkit
+Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
 %description
-Dictation for Linux desktops. GNOME/KDE use explicit copy; Hyprland integration is optional.
+Cloud dictation with optional local history. Audio goes to transcription; text goes
+to refinement when enabled. Clipboard managers and exports keep independent copies.
+GNOME/KDE use manual paste; Hyprland integration is optional.
 %install
 mkdir -p %{{buildroot}}
 cp -a {stage}/. %{{buildroot}}/
