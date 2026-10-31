@@ -397,6 +397,8 @@ def run(path=None, *, on_activate=None):
             self.brand.set_margin_bottom(24)
             self.navigation.append(self.brand)
             self.stack = Gtk.Stack()
+            self.stack.set_hhomogeneous(False)
+            self.stack.set_vhomogeneous(False)
             self.stack.set_hexpand(True)
             self.stack.set_vexpand(True)
             self.nav_buttons = {}
@@ -986,16 +988,16 @@ def run(path=None, *, on_activate=None):
                 value = Gtk.Stack()
                 value.set_valign(Gtk.Align.CENTER)
                 display = self.button("", lambda value=value: self.edit_inline(value), "inline-value")
-                display.get_child().set_ellipsize(3)
-                display.get_child().set_max_width_chars(30)
                 value.add_named(display, "value")
                 value.add_named(widget, "edit")
                 self.inline_values[(section, key)] = display
                 def changed(entry, display=display, key=key):
                     display.set_label(entry.get_text() or ("auto-detect" if key == "language" else "off"))
+                    display.get_child().set_ellipsize(Pango.EllipsizeMode.END)
+                    display.get_child().set_max_width_chars(30)
                     self.provider_edited(entry)
                 widget.connect("changed", changed)
-                display.set_label(widget.get_text() or ("auto-detect" if key == "language" else "off"))
+                changed(widget)
                 widget.connect("activate", lambda _, value=value: value.set_visible_child_name("value"))
                 focus = Gtk.EventControllerFocus()
                 focus.connect("leave", lambda _, value=value: value.set_visible_child_name("value"))

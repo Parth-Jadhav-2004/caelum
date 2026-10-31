@@ -76,6 +76,11 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert app.stack.get_visible_child_name() == "advanced"
                 assert app.nav_buttons["settings"].has_css_class("selected")
                 app.entries[("stt", "language")].set_text("en")
+                app.entries[("stt", "base_url")].set_text(
+                    "https://example.com/" + "a-long-provider-endpoint/" * 6
+                )
+                value = app.inline_values[("stt", "base_url")].get_child()
+                assert int(value.get_ellipsize()) == 3  # Updating a value retains truncation.
                 assert writes == []  # Changes coalesce during the 400ms debounce.
                 assert app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= 640
             except BaseException as error:
