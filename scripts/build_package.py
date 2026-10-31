@@ -161,7 +161,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
-Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
+Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
 Description: Cloud dictation with optional local history

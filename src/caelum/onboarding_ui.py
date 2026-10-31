@@ -70,16 +70,8 @@ def show(host, key_name=None):
             center.append(self.pages)
             self.notice = host.label("", "setup-note", True)
             center.append(self.notice)
-            scroll.set_child(center)
+            scroll.set_child(host.clamp(center, vertical_center=True))
             self.append(scroll)
-
-            def clamp(widget, _clock):
-                margin = max(0, (widget.get_width() - 600) // 2)
-                center.set_margin_start(margin)
-                center.set_margin_end(margin)
-                return True
-
-            scroll.add_tick_callback(clamp)
             bottom = host.box(False, 16)
             self.back = host.button("Back", self.go_back, "text-link")
             bottom.append(self.back)

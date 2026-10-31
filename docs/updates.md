@@ -3,30 +3,31 @@
 ## User experience
 
 Official x86-64 native packages built with a pinned update key check the latest
-**stable** GitHub release when the desktop app opens. Settings → Updates can also
-check manually. Disable **Check for updates when Caelum opens** and save settings
-to stop automatic network checks. The background dictation service never checks,
+**stable** GitHub release when the desktop app opens. The Settings footer can also
+check manually. Disable **Check for updates when Caelum opens** in Advanced settings
+to stop automatic network checks; changes save automatically. The background dictation service never checks,
 downloads, or opens authorization dialogs by itself.
 
 Omarchy uses the Arch package target when its system Python minor version matches
 the package. Other derivative distribution IDs are not automatically accepted.
 
-An available update prompts for download consent. **Later** leaves the application
-unchanged. Accepted downloads go to `$XDG_DATA_HOME/caelum/updates/pending`
+Choose **Update & restart** when an update is available to approve the download.
+**Later** leaves the application unchanged. Accepted downloads go to `$XDG_DATA_HOME/caelum/updates/pending`
 (normally `~/.local/share/caelum/updates/pending`), not the installation directory.
-The package is installed only on the next **desktop app launch**, after system
-administrator authorization through polkit. Closing and reopening the window is
-enough; logging in with only the background service is not.
+After download and verification, Caelum requests administrator authorization through
+polkit, installs the package, and restarts the desktop app automatically. Pending
+settings edits are saved before restarting. Queued updates are also retried on the
+next desktop app launch.
 
 Installation stops an idle dictation service, takes its process lock, installs the
 verified package with apt/dnf/pacman, then reloads the desktop and restarts dictation
 if it had been running. Active recording, processing, unfinished work, or retryable
 audio defers installation instead of losing speech. Finish or explicitly discard
-that session and reopen the app to try again. Already queued hotkey requests are
+that session and choose **Update & restart** to retry. Already queued hotkey requests are
 blocked once the service has accepted the update shutdown.
 
 Cancelled authorization or installation failure retains the pending download.
-Settings can discard it. The dictation service may need manually starting after
+Use **Update & restart** to retry, or discard it in Advanced settings. The dictation service may need manually starting after
 a failed installation. Source checkouts, pip installations, AUR source packages,
 unsupported architectures, Python versions, and mismatched OS releases must use
 their original installation method; the updater does not replace those installs.

@@ -212,6 +212,7 @@ def run(path=None, *, on_activate=None):
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Gdk", "4.0")
+    gi.require_foreign("cairo")
     gi.require_version("Graphene", "1.0")
     from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango
 
@@ -258,6 +259,37 @@ def run(path=None, *, on_activate=None):
                 point = Graphene.Point()
                 point.init(x, y)
                 child.allocate(w, h, -1, Gsk.Transform().translate(point))
+
+    class ClampedLayout(Gtk.LayoutManager):
+        """Constrain content width without adding margins to the minimum window size."""
+
+        def __init__(self, maximum, center, vertical_center):
+            super().__init__()
+            self.maximum = maximum
+            self.center = center
+            self.vertical_center = vertical_center
+
+        def do_get_request_mode(self, widget):
+            return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
+
+        def do_measure(self, widget, orientation, for_size):
+            child = widget.get_first_child()
+            if orientation == Gtk.Orientation.HORIZONTAL:
+                minimum, natural, _, _ = child.measure(orientation, -1)
+                return minimum, max(minimum, min(self.maximum, natural)), -1, -1
+            width = min(self.maximum, for_size) if for_size >= 0 else self.maximum
+            return child.measure(orientation, width)
+
+        def do_allocate(self, widget, width, height, baseline):
+            child = widget.get_first_child()
+            w = min(self.maximum, width)
+            h = height
+            if self.vertical_center:
+                _, natural, _, _ = child.measure(Gtk.Orientation.VERTICAL, w)
+                h = min(height, natural)
+            point = Graphene.Point()
+            point.init((width - w) // 2 if self.center else 0, (height - h) // 2)
+            child.allocate(w, h, -1, Gsk.Transform().translate(point))
 
     class Desktop(Gtk.Application):
         def __init__(self):
@@ -325,6 +357,16 @@ def run(path=None, *, on_activate=None):
                 orientation=Gtk.Orientation.VERTICAL if vertical else Gtk.Orientation.HORIZONTAL,
                 spacing=spacing,
             )
+
+        def clamp(self, child, maximum=600, center=True, vertical_center=False):
+            box = self.box(spacing=0)
+            box.set_layout_manager(ClampedLayout(maximum, center, vertical_center))
+            box.set_hexpand(True)
+            box.set_vexpand(vertical_center)
+            child.set_halign(Gtk.Align.FILL)
+            child.set_valign(Gtk.Align.FILL)
+            box.append(child)
+            return box
 
         def flow(self):
             flow = Gtk.FlowBox()
@@ -918,15 +960,7 @@ def run(path=None, *, on_activate=None):
             advanced.append(self.label("Advanced", "advanced-title"))
             rows = self.box(spacing=0)
             rows.set_halign(Gtk.Align.FILL)
-            # A clamp keeps the list at 720px without imposing a minimum window width.
-            clamp = self.box(False, 0)
-            clamp.append(rows)
-            rows.set_hexpand(False)
-            advanced.append(clamp)
-            def clamp_width(widget, _clock):
-                rows.set_size_request(min(720, max(180, widget.get_width())), -1)
-                return True
-            clamp.add_tick_callback(clamp_width)
+            advanced.append(self.clamp(rows, maximum=720, center=False))
             self.inline_values = {}
             for section, key, title in (
                 ("stt", "language", "Language"),
@@ -988,7 +1022,7 @@ def run(path=None, *, on_activate=None):
             self.update_automatic.set_valign(Gtk.Align.CENTER)
             automatic.append(self.update_automatic)
             rows.append(automatic)
-            key_row = self.box(False, 8)
+            key_row = self.flow()
             key_row.add_css_class("advanced-row")
             key_label = self.label("Key to manage", wrap=True)
             key_label.set_hexpand(True)

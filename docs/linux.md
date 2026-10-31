@@ -17,10 +17,10 @@ The vendored dependencies do not replace distro Python modules.
 Install downloaded packages with the native package manager:
 
 ```sh
-sudo apt install ./caelum_0.3.1-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.3.2-1_ubuntu-24.04_amd64.deb
 # Debian: select the debian-12 or debian-13 file instead.
-sudo pacman -U ./caelum-0.3.1-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.3.1-1.fedora43.x86_64.rpm
+sudo pacman -U ./caelum-0.3.2-1-x86_64.pkg.tar.zst
+sudo dnf install ./caelum-0.3.2-1.fedora43.x86_64.rpm
 ```
 
 Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Open setup / Manage keys.
@@ -108,7 +108,7 @@ manifest, uploads all assets to a draft, then publishes the complete stable
 release after environment approval. Missing or mismatched keys stop publication.
 Version and locked dependencies come from `pyproject.toml` and `uv.lock`.
 `scripts/build_package.py TARGET` builds the same payload locally (uv + zstd;
-RPM additionally needs rpmbuild). Settings → Updates handles signed downloads
+RPM additionally needs rpmbuild). The Settings footer handles signed downloads
 and next-app-launch installation for official updater-enabled native packages.
 
 The Arch source PKGBUILD in `packaging/arch` is a template until its source hash is
