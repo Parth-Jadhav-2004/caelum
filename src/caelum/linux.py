@@ -135,6 +135,13 @@ def shortcut_keys(hotkey):
     return starts, modifier_only
 
 
+def control_command():
+    # Hyprland executes callbacks in the compositor environment, not the daemon's.
+    # Native packages keep both Caelum and its vendored dependencies under this root.
+    root = Path(__file__).resolve().parent.parent
+    return shlex.join(["env", f"PYTHONPATH={root}", sys.executable, "-m", "caelum.cli", "control"])
+
+
 class Bindings:
     def __init__(self, hotkey):
         self.hotkey = hotkey
@@ -151,7 +158,7 @@ class Bindings:
             for b in binds
         ):
             raise RuntimeError(f"Hotkey collision: {self.hotkey}; choose another in config")
-        base = shlex.join([sys.executable, "-m", "caelum.cli", "control"])
+        base = control_command()
         # Lua owns the held flag: no autorepeat sessions and release works in either modifier order.
         # Exact binding handles are removed; existing user bindings are never unbound.
         code = f"""

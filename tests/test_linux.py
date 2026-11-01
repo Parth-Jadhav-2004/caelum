@@ -1,9 +1,13 @@
+import os
+import shlex
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from caelum.linux import Bindings, insert, shortcut_keys
+from caelum.linux import Bindings, control_command, insert, shortcut_keys
 
 
 async def test_focus_change_copies_without_paste(monkeypatch):
@@ -81,3 +85,34 @@ async def test_modifier_shortcut_collision_leaves_other_bindings_untouched(monke
     with pytest.raises(RuntimeError, match="collision"):
         await Bindings("CTRL + SUPER").install()
     command.assert_not_awaited()
+
+
+def test_control_command_restores_package_path_without_daemon_environment(tmp_path):
+    # Reproduce the compositor: no PYTHONPATH, and a working directory outside the repo.
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.pop("VIRTUAL_ENV", None)
+    arguments = shlex.split(control_command())
+    # Disable site-packages so an editable developer install cannot hide this regression.
+    arguments.insert(arguments.index(sys.executable) + 1, "-S")
+    result = subprocess.run(
+        [*arguments, "--help"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+    )
+    assert "start" in result.stdout and "status" in result.stdout
+
+
+def test_native_control_command_uses_vendored_library_path(monkeypatch):
+    monkeypatch.setattr("caelum.linux.__file__", "/opt/caelum/lib/caelum/linux.py")
+    monkeypatch.setattr("caelum.linux.sys.executable", "/usr/bin/python3")
+    assert shlex.split(control_command()) == [
+        "env", "PYTHONPATH=/opt/caelum/lib", "/usr/bin/python3", "-m", "caelum.cli", "control"
+    ]
+
+
+def test_control_command_quotes_paths_with_spaces(tmp_path, monkeypatch):
+    monkeypatch.setattr("caelum.linux.__file__", str(tmp_path / "app library/caelum/linux.py"))
+    monkeypatch.setattr("caelum.linux.sys.executable", str(tmp_path / "Python runtime/python"))
+    assert shlex.split(control_command())[:3] == [
+        "env", f"PYTHONPATH={tmp_path / 'app library'}", str(tmp_path / "Python runtime/python")
+    ]
