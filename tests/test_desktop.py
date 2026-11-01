@@ -433,12 +433,14 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 assert app.stack.get_child_by_name("setup") is None
                 assert app.stack.get_visible_child_name() == "home"
                 setup = show(app)
+                assert Progress.load(path).complete  # Merely opening key setup cannot undo Finish.
                 assert show(app) is setup  # Reopening reuses the embedded page.
                 setup.preset.set_selected(0)
                 setup.stage = 3
                 setup.render()
                 setup.resume_later()
                 assert Progress.load(path).stage == 3
+                assert Progress.load(path).complete
                 setup = show(app)
                 assert setup.stage == 1  # resume validates provider access again
                 assert not setup.validated and not setup.succeeded
@@ -534,5 +536,76 @@ def test_setup_collects_distinct_custom_keys_before_validation(tmp_path, monkeyp
         GLib.timeout_add(300, verify)
 
     run(path, on_activate=activated)
+    if failures:
+        raise failures[0]
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK setup test"
+)
+def test_completed_setup_stays_complete_after_key_management_and_restart(tmp_path, monkeypatch):
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import GLib
+
+    from caelum.desktop import run
+    from caelum.onboarding import Progress
+    from caelum.onboarding_ui import show
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
+    monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "hidden"})
+    deleted = []
+    monkeypatch.setattr("caelum.credentials.delete", deleted.append)
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    Progress(4, True).save(path)
+    failures = []
+
+    def first_launch(app):
+        def verify():
+            try:
+                app.work = lambda operation, done=None: done(operation()) if done else operation()
+                assert getattr(app, "setup_window", None) is None
+                assert app.stack.get_visible_child_name() == "home"
+                setup = show(app)
+                assert Progress.load(path).complete
+                setup.preset.set_selected(0)
+                assert not setup.validated and not setup.succeeded
+                assert Progress.load(path).complete
+                setup.delete_key()
+                assert deleted == ["GROQ_API_KEY"]
+                assert Progress.load(path).complete
+                setup.resume_later()
+                assert Progress.load(path).complete
+                # Closing the app while manually opened setup is visible also retains completion.
+                show(app)
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                app.quit()
+            return False
+
+        GLib.timeout_add(200, verify)
+
+    def second_launch(app):
+        def verify():
+            try:
+                assert getattr(app, "setup_window", None) is None
+                assert app.stack.get_visible_child_name() == "home"
+                assert Progress.load(path).complete
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                app.quit()
+            return False
+
+        GLib.timeout_add(200, verify)
+
+    run(path, on_activate=first_launch)
+    assert Progress.load(path).complete
+    run(path, on_activate=second_launch)
     if failures:
         raise failures[0]

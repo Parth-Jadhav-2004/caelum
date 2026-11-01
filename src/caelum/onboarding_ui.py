@@ -31,6 +31,7 @@ def show(host, key_name=None):
             self.progress = Progress.load(host.path)
             # Resume by revalidating access; no separate welcome screen.
             self.stage = 1
+            # Validation is per visit; completion remains saved after the first Finish.
             self.validated = self.tested = self.succeeded = False
             self.closed = self.busy = self.recording_key = False
             self.cancelled = threading.Event()
@@ -203,7 +204,6 @@ def show(host, key_name=None):
                 ("Groq ▾", "Groq ▾", "Custom ▾")[self.preset.get_selected()]
             )
             self.validated = self.succeeded = False
-            self.progress.complete = False
             self.key_names = list(dict.fromkeys(
                 [self.config.stt.key_env]
                 + ([self.config.cleanup.key_env] if self.config.cleanup.model else [])
@@ -223,7 +223,6 @@ def show(host, key_name=None):
                 return
             self.key_entry.set_text("")
             self.validated = self.succeeded = False
-            self.progress.complete = False
             self.progress.save(host.path)
 
             def deleted(_):
