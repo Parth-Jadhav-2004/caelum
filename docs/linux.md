@@ -17,9 +17,9 @@ The vendored dependencies do not replace distro Python modules.
 Install downloaded packages with the native package manager:
 
 ```sh
-sudo apt install ./caelum_0.3.2-1_ubuntu-24.04_amd64.deb
-sudo pacman -U ./caelum-0.3.2-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.3.2-1.fedora43.x86_64.rpm
+sudo apt install ./caelum_0.3.3-1_ubuntu-24.04_amd64.deb
+sudo pacman -U ./caelum-0.3.3-1-x86_64.pkg.tar.zst
+sudo dnf install ./caelum-0.3.3-1.fedora43.x86_64.rpm
 ```
 
 Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Open setup / Manage keys.
