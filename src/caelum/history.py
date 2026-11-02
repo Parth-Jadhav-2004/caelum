@@ -36,6 +36,13 @@ class History:
             estimated_stt_usd REAL, hourly_rate REAL NOT NULL
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS history_date ON dictations(created_at)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS usage_totals (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1), words INTEGER NOT NULL
+        )""")
+        # Seed once before retention removes existing rows. No transcript is duplicated.
+        connection.execute("""INSERT OR IGNORE INTO usage_totals
+            SELECT 1, COALESCE(SUM(word_count), 0) FROM dictations""")
+        connection.commit()
         return connection
 
     def prune(self, connection):
@@ -51,7 +58,7 @@ class History:
         rate = preferences.stt_usd_per_hour
         with closing(self.connect()) as connection, connection:
             self.prune(connection)
-            connection.execute(
+            inserted = connection.execute(
                 "INSERT OR IGNORE INTO dictations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session,
@@ -68,6 +75,9 @@ class History:
                     rate,
                 ),
             )
+            if inserted.rowcount:
+                connection.execute("UPDATE usage_totals SET words = words + ? WHERE singleton = 1",
+                                   (len(text.split()),))
 
     def read(self, query="", limit=200):
         if not self.path.exists():
@@ -99,6 +109,7 @@ class History:
         daily = {str(today - timedelta(days=offset)): 0 for offset in reversed(range(7))}
         result = dict(
             words=0,
+            total_words=0,
             duration_ms=0,
             sessions=0,
             today_words=0,
@@ -108,6 +119,7 @@ class History:
             estimated_stt_usd=0,
             unpriced_sessions=0,
             daily=daily,
+            activity={},
         )
         if not self.path.exists():
             result["wpm"] = 0
@@ -122,10 +134,14 @@ class History:
                 COALESCE(SUM(estimated_stt_usd IS NULL), 0) AS unpriced_sessions
                 FROM dictations""").fetchone()
             result.update(dict(totals))
+            result["total_words"] = connection.execute(
+                "SELECT words FROM usage_totals WHERE singleton = 1"
+            ).fetchone()[0]
             days = connection.execute("""SELECT date(created_at, 'localtime') AS day,
                 SUM(word_count) AS words FROM dictations GROUP BY day""").fetchall()
         for row in days:
             day = datetime.fromisoformat(row["day"]).date()
+            result["activity"][str(day)] = row["words"]
             if day == today:
                 result["today_words"] += row["words"]
             if today - timedelta(days=6) <= day <= today:

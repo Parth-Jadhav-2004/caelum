@@ -46,9 +46,9 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                 )
                 rows = app.history.read()
                 summary = app.history.summary()
-                summary.update(today_words=1234, sessions=7, duration_ms=156000)
+                summary.update(total_words=1234, sessions=7, duration_ms=156000)
                 app.render_data((None, rows, rows, summary))
-                assert [label.get_text() for label in app.home_metrics] == ["1234", "7", "2.6"]
+                assert [label.get_text() for label in app.home_metrics] == ["1234", "2.6"]
                 assert app.shortcut_label.get_text() == "Hold Alt + Ctrl + D to dictate"
                 assert app.status_label.get_text() == "Stopped"
                 assert not app.recovery.get_visible()
@@ -100,7 +100,31 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                     app.recent.get_first_child().get_text()
                     == "Nothing yet. Hold Alt + Ctrl + D and start talking."
                 )
-                assert app.window.get_size_request().width == 900
+                assert app.window.get_size_request().width == 480
+                from datetime import date, datetime
+
+                app.usage_month = date(2024, 2, 1)
+                app.usage_selected = date(2024, 2, 29)
+                app.render_usage_calendar({"2024-02-01": 50, "2024-02-29": 1200})
+                assert len(app.usage_buttons) == 29
+                leap_day = app.usage_buttons[date(2024, 2, 29)]
+                assert leap_day.has_css_class("level-4")
+                assert leap_day.get_tooltip_text() == "1,200 words dictated"
+                assert not app.status_button.get_visible()
+                assert app.theme_button.get_parent() is not app.navigation
+                assert app.usage_buttons[date(2024, 2, 1)].has_css_class("level-1")
+                assert app.usage_buttons[date(2024, 2, 2)].has_css_class("level-0")
+                leap_day.emit("clicked")
+                assert app.usage_detail.get_text() == "Feb 29 · 1,200 words dictated"
+                app.move_usage_month(1)
+                assert app.usage_month == date(2024, 3, 1)
+                assert len(app.usage_buttons) == 31
+                today = datetime.now().astimezone().date()
+                app.usage_month = today.replace(day=1)
+                app.render_usage_calendar({})
+                assert not app.usage_next.get_sensitive()
+                app.move_usage_month(1)
+                assert app.usage_month == today.replace(day=1)
                 for name in ("home", "history", "settings", "stats"):
                     app.navigate(name)
                     assert app.stack.get_visible_child_name() == name

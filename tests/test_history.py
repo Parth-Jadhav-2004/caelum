@@ -48,6 +48,7 @@ def test_reading_empty_history_does_not_create_database(storage):
     history = storage[2]
     assert history.read() == []
     assert history.summary()["sessions"] == 0
+    assert history.summary()["activity"] == {}
     assert not history.path.exists()
 
 
@@ -151,3 +152,49 @@ def test_disabled_history_keeps_old_entries_and_honors_session_snapshot(storage)
     assert [row["id"] for row in history.read()] == ["old"]
     history.delete()
     assert history.read() == []
+
+
+def test_monthly_activity_uses_all_retained_days_and_reflects_deletion(storage):
+    record(storage, "today-one", "two words")
+    record(storage, "today-two", "three more words")
+    record(storage, "earlier", "older saved words")
+    history = storage[2]
+    earlier = datetime.now(timezone.utc) - timedelta(days=20)
+    with sqlite3.connect(history.path) as connection:
+        connection.execute("UPDATE dictations SET created_at = ? WHERE id = 'earlier'", (earlier.isoformat(),))
+    summary = history.summary()
+    today = str(datetime.now().astimezone().date())
+    old_day = str(earlier.astimezone().date())
+    assert summary["activity"][today] == 5
+    assert summary["activity"][old_day] == 3
+    assert old_day not in summary["daily"]
+    history.delete("earlier")
+    assert old_day not in history.summary()["activity"]
+
+
+def test_total_words_survives_retention_deletion_and_reopening(storage):
+    record(storage, "old", "one two three")
+    record(storage, "old", "one two three")  # Retries do not inflate the count.
+    record(storage, "new", "four five")
+    history = storage[2]
+    with sqlite3.connect(history.path) as connection:
+        connection.execute(
+            "UPDATE dictations SET created_at = ? WHERE id = 'old'",
+            ((datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),),
+        )
+    assert history.summary()["total_words"] == 5
+    assert history.summary()["words"] == 2
+    history.delete()
+    reopened = History(storage[1], history.path)
+    assert reopened.summary()["total_words"] == 5
+    assert reopened.summary()["words"] == 0
+
+
+def test_total_words_migrates_existing_history_once(storage):
+    record(storage, "one", "one two three")
+    history = storage[2]
+    with sqlite3.connect(history.path) as connection:
+        connection.execute("DROP TABLE usage_totals")
+    assert history.summary()["total_words"] == 3
+    record(storage, "two", "four five")
+    assert History(storage[1], history.path).summary()["total_words"] == 5

@@ -17,14 +17,13 @@ The vendored dependencies do not replace distro Python modules.
 Install downloaded packages with the native package manager:
 
 ```sh
-sudo apt install ./caelum_0.3.3-1_ubuntu-24.04_amd64.deb
-sudo pacman -U ./caelum-0.3.3-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.3.3-1.fedora43.x86_64.rpm
+sudo apt install ./caelum_0.3.4-1_ubuntu-24.04_amd64.deb
+sudo pacman -U ./caelum-0.3.4-1-x86_64.pkg.tar.zst
+sudo dnf install ./caelum-0.3.4-1.fedora43.x86_64.rpm
 ```
 
-Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Open setup / Manage keys.
-No credentials, autostart entry, recording service, or system shortcuts are
-installed/enabled automatically. Configuration remains in `~/.config/caelum`;
+Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Advanced → Manage key, or Manage keys in the provider status when a key is missing. Opening Caelum starts the dictation service. The system tray provides Open Caelum, Settings, Start/Pause/Resume dictation, and Quit Caelum.
+Package installation does not configure credentials, enable autostart, or start the recording service; opening the app starts the service and registers the configured shortcut. Configuration remains in `~/.config/caelum`;
 history remains in `~/.local/share/caelum`. Uninstalling does not erase these files.
 This project does not claim an AUR or Flathub listing.
 

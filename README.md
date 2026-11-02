@@ -4,7 +4,7 @@ Hold a shortcut, speak, and get the text back in the app you were using.
 
 Caelum is dictation for Linux desktops. You bring a [Groq](https://console.groq.com) API key. Speech goes to that provider for transcription. Finished text is saved on your computer. The recording itself is not.
 
-**Caelum 0.3.3 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.3). Install and compatibility details are in the [Linux guide](docs/linux.md).
+**Caelum 0.3.4 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.4). Install and compatibility details are in the [Linux guide](docs/linux.md).
 
 ## Install
 
@@ -12,35 +12,35 @@ Pick the package for your distribution. Debian is not currently packaged.
 
 ```sh
 # Ubuntu 24.04
-sudo apt install ./caelum_0.3.3-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.3.4-1_ubuntu-24.04_amd64.deb
 
 # Arch
-sudo pacman -U ./caelum-0.3.3-1-x86_64.pkg.tar.zst
+sudo pacman -U ./caelum-0.3.4-1-x86_64.pkg.tar.zst
 
 # Fedora 43
-sudo dnf install ./caelum-0.3.3-1.fedora43.x86_64.rpm
+sudo dnf install ./caelum-0.3.4-1.fedora43.x86_64.rpm
 ```
 
 Packages are published for Ubuntu 24.04 and 26.04, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
 
-Open **Caelum** from the app launcher, or run `caelum app`. Installing the package does not start recording, enable autostart, or add a shortcut.
+Open **Caelum** from the app launcher, or run `caelum app`. Opening the app starts the dictation service, reusing it if already running. Installing the package does not start recording or enable autostart.
 
 Uninstalling the package leaves `~/.config/caelum` and `~/.local/share/caelum` in place.
 
 ## Get a key and dictate
 
 1. Open Caelum. First launch opens setup; Settings → **Manage keys** reopens it when a key is missing.
-2. Read the privacy explanation, choose a provider, and follow **Create a Groq API key**. Free usage has provider limits.
-3. Enter the key and select **Save key**. Caelum uses the desktop keyring. If unavailable, it clearly reports an owner-only, unencrypted private-file fallback. Keys can be replaced or deleted here.
+2. Read the privacy explanation, choose a provider, and follow **Get a free key**. Free usage has provider limits.
+3. Enter the key and select **Continue** to save and validate it. Caelum uses the desktop keyring. If unavailable, it clearly reports an owner-only, unencrypted private-file fallback. Keys can be replaced or deleted here.
 4. Continue to validate the key and every selected model, run the three-second **local-only** microphone test, then choose a shortcut. Desktop permission dialogs may appear when the service starts; portable desktops also offer manual recording.
 5. Explicitly consent to upload a five-second practice sample. Practice text appears inside setup, with an optional Copy action; it is not pasted elsewhere or saved to history. A successful practice enables **Finish**. **Resume later** preserves your place; reopening rechecks provider access.
-6. Choose **Start service**, then dictate:
-   - **Hyprland:** hold **Super+Alt+V**, then release. Caelum pastes once into the original window.
+6. Once setup is complete, dictate:
+   - **Hyprland:** hold the shortcut shown in Caelum, then release. Caelum pastes once into the original window.
    - **Other desktops:** choose **Record**, then **Finish recording**. Copy the completed text from Caelum and paste it yourself.
 
 Existing environment keys and mode-600 `~/.config/caelum/environment` files remain supported. Keys saved in setup take precedence. Deleting a key in setup disables legacy environment fallback for that key until you save a replacement; edit shell/environment files separately to remove their copies.
 
-Opening the window does not turn on the microphone. **Stop service** stops dictation and drops any audio still waiting. Closing the window leaves the service running. **Pause** ignores the shortcut until you resume.
+Opening the window does not turn on the microphone. On desktops with a system tray, closing the window keeps Caelum available there. The tray menu offers **Open Caelum**, **Settings**, **Start/Pause/Resume dictation**, and **Quit Caelum**. Quit stops the app and service and discards pending audio. Pause ignores the shortcut until you resume.
 
 A new install transcribes only. In Settings, the **Groq** preset turns on optional cleanup with the same key. **Transcription only** leaves the raw transcript. **Custom provider** is for another OpenAI-compatible endpoint. Put base URLs and model names under **Advanced**, then use **Check connection**. That check confirms the key can see the model list. It does not upload audio.
 
@@ -48,13 +48,13 @@ If cleanup is slow, unavailable, or not configured, you still get the transcript
 
 ## What the app includes
 
-- **Overview** shows whether dictation is stopped, ready, recording, processing, paused, or waiting to retry, plus the shortcut and recent results.
+- **Home** shows total words dictated, recording minutes, the five latest dictations, and a monthly daily-usage calendar. The sidebar can be opened or closed.
 - **History** keeps completed transcripts, with search, copy, delete, and export. Audio, the raw provider transcript, and the source app are not stored.
-- **Statistics** summarizes words, recording time, and how long release-to-paste took, using the history you still have.
-- **Settings** covers the provider, shortcut, microphone, a three-second local microphone check, language, and how long history is kept. The microphone check stays on your machine.
+- **Statistics** shows total words, today’s and this month’s words, speaking rate, and daily activity. Total words starts from existing saved history and accumulates future saved dictations; deletion and retention do not reduce it. Dictations deleted before this counter was introduced cannot be recovered. With history saving off, new dictations do not add to this counter.
+- **Settings** covers the provider, shortcut, microphone, a three-second local microphone check, theme, and how long history is kept. Changes save automatically. Language and provider details are under **Advanced**. The microphone check stays on your machine.
 - **Launcher and login** can be turned on from Settings. Neither is enabled by the installer.
 
-Turn off **Save dictation history on this device** in Settings → History & desktop to stop saving new transcripts (`desktop.history_enabled = false`). Existing entries remain until deleted or expired. With history off, portable desktops copy directly using `wl-copy` on Wayland or `xclip` on X11; paste manually.
+Turn off **Save dictation history** in Settings → Advanced to stop saving new transcripts (`desktop.history_enabled = false`). Existing entries remain until deleted or expired. With history off, portable desktops copy directly using `wl-copy` on Wayland or `xclip` on X11; paste manually.
 
 History lives in `~/.local/share/caelum/history.sqlite3`. It is readable by your user and is not encrypted by Caelum. Delete an entry, or delete all of them, from History. The default retention period is 30 days and is applied the next time history is read or written.
 
@@ -128,7 +128,7 @@ check GitHub for new versions, approve a verified download, and authorize instal
 Caelum then restarts automatically. Source/AUR installations keep
 using their package manager. [Updater behavior and release setup](docs/updates.md).
 
-Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.3](docs/release-0.3.3.md).
+Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.4](docs/release-0.3.4.md).
 
 ## License
 

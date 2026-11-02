@@ -168,14 +168,20 @@ def test_native_desktop_pages_and_rail(tmp_path, monkeypatch):
     def activated(app):
         def verify():
             try:
+                assert app.sidebar.get_reveal_child()
+                app.sidebar_toggle.set_active(False)
+                assert not app.sidebar.get_reveal_child()
+                app.sidebar_toggle.set_active(True)
+                assert app.sidebar.get_reveal_child()
+                app.sidebar_toggle.set_active(False)
                 for page in ("home", "history", "stats", "settings", "advanced"):
                     app.navigate(page)
                     assert app.stack.get_visible_child_name() == page
                     maximum = 1100 if page == "home" else 640
                     minimum = app.window.measure(Gtk.Orientation.HORIZONTAL, -1).minimum
                     assert minimum <= maximum, (page, minimum, maximum)
-                assert not hasattr(app, "sidebar_toggle")
-                assert set(app.nav_buttons) == {"home", "history", "settings"}
+                assert not app.sidebar.get_reveal_child()
+                assert set(app.nav_buttons) == {"home", "stats", "history", "settings"}
                 assert app.nav_buttons["settings"].has_css_class("selected")
                 app.nav_buttons["history"].emit("clicked")
                 assert app.stack.get_visible_child_name() == "history"

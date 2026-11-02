@@ -1,6 +1,7 @@
 """Native GTK desktop shell; slow work stays outside the GTK main thread."""
 
 import asyncio
+import calendar
 import json
 import math
 import os
@@ -10,7 +11,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from .config import config_path, load, save, validate
@@ -212,6 +213,7 @@ def run(path=None, *, on_activate=None):
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Gdk", "4.0")
+    gi.require_version("Gsk", "4.0")
     gi.require_foreign("cairo")
     gi.require_version("Graphene", "1.0")
     from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango
@@ -380,18 +382,28 @@ def run(path=None, *, on_activate=None):
         def activate(self, _):
             if hasattr(self, "window"):
                 self.window.present()
+                if not on_activate and not getattr(self, "restarting_update", False):
+                    self.ensure_service()
                 return
             self.window = Gtk.ApplicationWindow(application=self, title="Caelum")
-            self.window.set_default_size(1100, 700)
+            self.window.set_default_size(1100, 760)
             self.window.set_size_request(480, 480)
             self.window.add_css_class("caelum")
             header = Gtk.HeaderBar()
             header.set_title_widget(Gtk.Box())
+            self.sidebar_toggle = Gtk.ToggleButton()
+            self.sidebar_toggle.set_child(self.line_icon("sidebar-collapse"))
+            self.sidebar_toggle.add_css_class("sidebar-toggle")
+            self.sidebar_toggle.set_tooltip_text("Toggle sidebar")
+            self.sidebar_toggle.update_property([Gtk.AccessibleProperty.LABEL], ["Toggle sidebar"])
+            header.pack_start(self.sidebar_toggle)
+            self.header_brand = self.label("Caelum", "wordmark")
+            header.pack_start(self.header_brand)
             self.window.set_titlebar(header)
             outer = self.box(False, 0)
             self.navigation = self.box(spacing=0)
             self.navigation.add_css_class("navigation")
-            self.navigation.set_size_request(76, -1)
+            self.navigation.set_size_request(184, -1)
             self.brand = self.label("Caelum", "wordmark")
             self.brand.set_halign(Gtk.Align.CENTER)
             self.brand.set_margin_bottom(24)
@@ -404,15 +416,19 @@ def run(path=None, *, on_activate=None):
             self.nav_buttons = {}
             for name, title, icon in (
                 ("home", "Home", "home"),
+                ("stats", "Statistics", "statistics"),
                 ("history", "History", "clock"),
                 ("settings", "Settings", "gear"),
             ):
                 button = Gtk.ToggleButton()
                 button.add_css_class("nav-item")
                 button.set_size_request(44, 44)
-                button.set_halign(Gtk.Align.CENTER)
-                button.set_margin_bottom(8)
-                button.set_child(self.line_icon(icon))
+                button.set_halign(Gtk.Align.FILL)
+                button.set_margin_bottom(6)
+                nav_content = self.box(False, 12)
+                nav_content.append(self.line_icon(icon))
+                nav_content.append(self.label(title))
+                button.set_child(nav_content)
                 button.set_tooltip_text(title)
                 button.update_property([Gtk.AccessibleProperty.LABEL], [title])
                 button.connect("clicked", lambda _, name=name: self.navigate(name))
@@ -424,13 +440,18 @@ def run(path=None, *, on_activate=None):
             self.theme = Gtk.DropDown.new_from_strings(["System", "Light", "Dark"])
             self.theme.set_selected(("system", "light", "dark").index(self.config.desktop.theme))
             self.theme_button = self.token_menu(self.theme, lambda: ["System", "Light", "Dark"])
-            self.theme_button.remove_css_class("token")
-            self.theme_button.add_css_class("theme-menu")
             self.theme_button.set_tooltip_text("Appearance: System, Light or Dark")
             self.theme_button.update_property([Gtk.AccessibleProperty.LABEL], ["Appearance"])
-            self.navigation.append(self.theme_button)
             self.theme.connect("notify::selected", self.change_theme)
-            outer.append(self.navigation)
+            self.sidebar = Gtk.Revealer()
+            self.sidebar.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.sidebar.set_child(self.navigation)
+            self.sidebar.set_reveal_child(self.config.desktop.sidebar_visible)
+            self.sidebar.set_visible(self.config.desktop.sidebar_visible)
+            self.sidebar_toggle.set_active(self.config.desktop.sidebar_visible)
+            self.header_brand.set_visible(not self.config.desktop.sidebar_visible)
+            self.sidebar_toggle.connect("toggled", self.toggle_sidebar)
+            outer.append(self.sidebar)
             content = self.box(spacing=0)
             content.set_hexpand(True)
             self.notice = self.label("", "notice", True)
@@ -446,6 +467,9 @@ def run(path=None, *, on_activate=None):
             self.apply_theme()
             self.navigate("home")
             self.window.present()
+            if not on_activate:
+                self.setup_tray()
+                self.window.connect("close-request", self.close_window)
             self.refresh()
             self.timer = GLib.timeout_add_seconds(1, self.refresh)
             self.work(microphones, self.set_devices)
@@ -457,6 +481,8 @@ def run(path=None, *, on_activate=None):
                 on_activate(self)
             else:
                 self.begin_updates()
+                if not getattr(self, "restarting_update", False):
+                    self.ensure_service()
 
         def page(self, name, title, description):
             scroll = Gtk.ScrolledWindow()
@@ -471,12 +497,21 @@ def run(path=None, *, on_activate=None):
             self.stack.add_named(scroll, name)
             return body
 
+        def toggle_sidebar(self, *_):
+            visible = self.sidebar_toggle.get_active()
+            self.sidebar.set_reveal_child(visible)
+            self.sidebar.set_visible(visible)
+            self.header_brand.set_visible(not visible)
+            self.config.desktop.sidebar_visible = visible
+            self.sidebar_toggle.set_tooltip_text("Close sidebar" if visible else "Open sidebar")
+            if hasattr(self, "save_status"):
+                self.queue_autosave()
+
         def navigate(self, name):
             if name != "setup" and self.stack.get_visible_child_name() == "setup":
                 setup = getattr(self, "setup_window", None)
                 if setup:
                     setup.finish_setup()
-            self.window.set_size_request(900 if name == "home" else 480, 480)
             self.stack.set_visible_child_name(name)
             if name == "advanced":
                 name = "settings"
@@ -508,7 +543,28 @@ def run(path=None, *, on_activate=None):
                 context.set_line_cap(1)
                 context.set_line_join(1)
                 kind = area.icon_name
-                if kind == "home":
+                if kind == "sidebar-collapse":
+                    # Supplied Streamline/Iconoir glyph, scaled from its 16px viewBox.
+                    context.translate(.75, .75)
+                    context.scale(1.5, 1.5)
+                    context.set_line_width(1)
+                    radius = 1.5076875
+                    for x, y, start in ((12.7769375, 2.2230625, -math.pi / 2),
+                                        (12.7769375, 12.7769375, 0),
+                                        (2.2230625, 12.7769375, math.pi / 2),
+                                        (2.2230625, 2.2230625, math.pi)):
+                        context.arc(x, y, radius, start, start + math.pi / 2)
+                    context.close_path()
+                    context.move_to(5.615375, .715375)
+                    context.line_to(5.615375, 14.284625)
+                    context.move_to(3.91925, 5.9923125)
+                    context.line_to(2.6, 7.5)
+                    context.line_to(3.91925, 9.0076875)
+                elif kind == "statistics":
+                    for x, height in ((5, 7), (11, 13), (17, 18)):
+                        context.move_to(x, 21)
+                        context.line_to(x, 21 - height)
+                elif kind == "home":
                     for x, y in ((3, 10), (12, 3), (21, 10), (21, 21), (3, 21), (3, 10)):
                         context.line_to(x, y)
                 elif kind == "clock":
@@ -556,6 +612,15 @@ def run(path=None, *, on_activate=None):
                     context.line_to(18, 18)
                     context.move_to(18, 6)
                     context.line_to(6, 18)
+                elif kind in ("chevron-left", "chevron-right"):
+                    if kind == "chevron-left":
+                        context.move_to(14, 6)
+                        context.line_to(8, 12)
+                        context.line_to(14, 18)
+                    else:
+                        context.move_to(10, 6)
+                        context.line_to(16, 12)
+                        context.line_to(10, 18)
                 elif kind == "retry":
                     context.arc(12, 12, 8, -math.pi / 2, math.pi)
                     context.move_to(4, 5)
@@ -611,7 +676,7 @@ def run(path=None, *, on_activate=None):
             pill.append(self.status_dot)
             pill.append(self.status_label)
             self.status_button.set_child(pill)
-            top.append(self.status_button)
+            self.status_button.set_visible(False)
             self.service_menu = Gtk.Popover()
             self.service_menu.set_parent(self.status_button)
             self.service_menu.set_position(Gtk.PositionType.BOTTOM)
@@ -664,12 +729,12 @@ def run(path=None, *, on_activate=None):
             for button in (self.record_button, self.retry_button, self.cancel_button):
                 controls.append(button)
             controls.set_valign(Gtk.Align.CENTER)
-            top.insert_child_after(controls, self.status_button)
+            top.prepend(controls)
             page.append(self.recovery)
-            metrics = self.box(False, 72)
+            metrics = self.box(False, 40)
             metrics.add_css_class("overview-metrics")
             self.home_metrics = []
-            for title in ("words today", "sessions", "minutes"):
+            for title in ("words dictated", "minutes"):
                 item = self.box(spacing=8)
                 value = self.label("0", "overview-number")
                 self.home_metrics.append(value)
@@ -683,10 +748,142 @@ def run(path=None, *, on_activate=None):
             seat = Gdk.Display.get_default().get_default_seat()
             if seat and seat.get_capabilities() & Gdk.SeatCapabilities.TOUCH:
                 self.recent.add_css_class("touch")
-            page.append(self.recent)
+            self.home_columns = self.box(False, 24)
+            self.home_columns.set_valign(Gtk.Align.START)
+            self.home_columns.set_vexpand(False)
+            self.home_columns.set_homogeneous(True)
+            recent_column = self.box(spacing=16)
+            recent_column.set_hexpand(True)
+            recent_heading = self.box(False, 12)
+            title = self.label("Recent dictations", "section-title")
+            title.set_hexpand(True)
+            recent_heading.append(title)
+            recent_heading.append(self.button("View all", lambda: self.navigate("history"), "text-link"))
+            recent_column.append(recent_heading)
+            self.recent.set_vexpand(True)
+            recent_column.append(self.recent)
+            recent_column.append(self.label("Your latest five dictations", "calendar-caption"))
+            self.home_columns.append(recent_column)
+            self.build_usage_calendar(self.home_columns)
+            page.append(self.home_columns)
+
+            def adapt(widget, _clock):
+                narrow = widget.get_width() < 760
+                self.home_columns.set_orientation(
+                    Gtk.Orientation.VERTICAL if narrow else Gtk.Orientation.HORIZONTAL
+                )
+                self.home_columns.set_homogeneous(not narrow)
+                if narrow:
+                    page.add_css_class("compact-overview")
+                else:
+                    page.remove_css_class("compact-overview")
+                return True
+
+            page.add_tick_callback(adapt)
+
+        def build_usage_calendar(self, parent):
+            column = self.box(spacing=16)
+            column.set_hexpand(True)
+            heading = self.box(False, 12)
+            heading.set_size_request(-1, 44)
+            heading.append(self.label("Daily usage", "section-title"))
+            column.append(heading)
+            card = self.box(spacing=12)
+            card.add_css_class("usage-calendar")
+            card.set_vexpand(True)
+            toolbar = self.box(False, 4)
+            self.usage_month = datetime.now().astimezone().date().replace(day=1)
+            self.usage_selected = datetime.now().astimezone().date()
+            self.usage_data = {}
+            self.usage_signature = None
+            self.usage_title = self.label("", "calendar-title")
+            self.usage_title.set_hexpand(True)
+            toolbar.append(self.usage_title)
+            self.usage_previous = self.icon_button("chevron-left", "Previous month", lambda: self.move_usage_month(-1))
+            self.usage_next = self.icon_button("chevron-right", "Next month", lambda: self.move_usage_month(1))
+            toolbar.append(self.usage_previous)
+            toolbar.append(self.usage_next)
+            card.append(toolbar)
+            self.usage_grid = Gtk.Grid(column_spacing=4, row_spacing=4, column_homogeneous=True)
+            self.usage_grid.set_halign(Gtk.Align.CENTER)
+            card.append(self.usage_grid)
+            self.usage_detail = self.label("", "muted", True)
+            card.append(self.usage_detail)
+            legend = self.box(False, 4)
+            legend.append(self.label("Less", "calendar-caption"))
+            for level in range(5):
+                swatch = self.box(spacing=0)
+                swatch.add_css_class("usage-swatch")
+                swatch.add_css_class(f"level-{level}")
+                swatch.set_size_request(12, 12)
+                swatch.set_valign(Gtk.Align.CENTER)
+                legend.append(swatch)
+            legend.append(self.label("More", "calendar-caption"))
+            legend.set_halign(Gtk.Align.END)
+            card.append(legend)
+            column.append(card)
+            column.append(self.label("Words from saved dictations", "calendar-caption"))
+            parent.append(column)
+            self.render_usage_calendar({})
+
+        def move_usage_month(self, offset):
+            index = self.usage_month.year * 12 + self.usage_month.month - 1 + offset
+            month = date(index // 12, index % 12 + 1, 1)
+            today = datetime.now().astimezone().date()
+            if month > today.replace(day=1):
+                return
+            self.usage_month = month
+            self.usage_selected = today if month == today.replace(day=1) else month
+            self.render_usage_calendar(self.usage_data)
+
+        def select_usage_day(self, day):
+            self.usage_selected = day
+            for value, button in self.usage_buttons.items():
+                if value == day:
+                    button.add_css_class("selected-day")
+                else:
+                    button.remove_css_class("selected-day")
+            words = self.usage_data.get(str(day), 0)
+            self.usage_detail.set_text(f"{day.strftime('%b')} {day.day} · {words:,} words dictated")
+
+        def render_usage_calendar(self, activity):
+            self.usage_data = activity
+            today = datetime.now().astimezone().date()
+            signature = (self.usage_month, today, tuple(sorted(activity.items())))
+            if signature == self.usage_signature:
+                return
+            self.usage_signature = signature
+            self.usage_title.set_text(self.usage_month.strftime("%B %Y"))
+            self.usage_next.set_sensitive(self.usage_month < today.replace(day=1))
+            while child := self.usage_grid.get_first_child():
+                self.usage_grid.remove(child)
+            for column, name in enumerate(("M", "T", "W", "T", "F", "S", "S")):
+                label = self.label(name, "calendar-caption")
+                label.set_xalign(.5)
+                self.usage_grid.attach(label, column, 0, 1, 1)
+            self.usage_buttons = {}
+            weeks = calendar.Calendar(firstweekday=0).monthdayscalendar(
+                self.usage_month.year, self.usage_month.month
+            )
+            for row, week in enumerate(weeks, 1):
+                for column, number in enumerate(week):
+                    if not number:
+                        continue
+                    day = self.usage_month.replace(day=number)
+                    words = activity.get(str(day), 0)
+                    level = sum(words >= threshold for threshold in (1, 100, 500, 1000))
+                    button = self.button(str(number), lambda day=day: self.select_usage_day(day), "usage-day")
+                    button.add_css_class(f"level-{level}")
+                    description = f"{day.strftime('%B')} {number}, {day.year}: {words:,} words dictated"
+                    button.set_tooltip_text(f"{words:,} words dictated")
+                    button.update_property([Gtk.AccessibleProperty.LABEL], [description])
+                    button.set_sensitive(day <= today)
+                    self.usage_grid.attach(button, column, row, 1, 1)
+                    self.usage_buttons[day] = button
+            self.select_usage_day(self.usage_selected)
 
         def recent_row(self, row):
-            item = self.box(False, 20)
+            item = self.box(False, 12)
             item.add_css_class("recent-row")
             date = datetime.fromisoformat(row["created_at"]).astimezone()
             timestamp = self.label(date.strftime("%H:%M"), "recent-time")
@@ -757,14 +954,9 @@ def run(path=None, *, on_activate=None):
             for index, (key, title) in enumerate(
                 (
                     ("today_words", "Words today"),
-                    ("week_words", "Words · last 7 days"),
                     ("month_words", "Words this month"),
-                    ("words", "Words retained"),
+                    ("total_words", "Total words"),
                     ("wpm", "Words / recording minute"),
-                    (
-                        "latency_ms",
-                        "Mean completion time" if self.portable else "Mean output dispatch",
-                    ),
                 )
             ):
                 panel = self.box(spacing=8)
@@ -775,7 +967,7 @@ def run(path=None, *, on_activate=None):
                 panel.append(label)
                 grid.attach(panel, index % 2, index // 2, 1, 1)
             page.append(grid)
-            page.append(self.label("Words over the last seven days", "section-title"))
+            page.append(self.label("Daily activity", "section-title"))
             self.chart = Gtk.DrawingArea()
             self.chart.set_content_height(170)
             self.chart.set_draw_func(self.draw_chart)
@@ -867,7 +1059,12 @@ def run(path=None, *, on_activate=None):
                     items.append(self.button(name, choose, "menu-choice"))
                 values = names()
                 index = model.get_selected()
-                button.set_label(values[index] + " ▾" if index < len(values) else "Choose ▾")
+                title = values[index] if index < len(values) else "Choose"
+                label = self.label(title + " ▾")
+                label.set_ellipsize(Pango.EllipsizeMode.END)
+                label.set_max_width_chars(28)
+                button.set_child(label)
+                button.set_tooltip_text(title)
 
             model.connect("notify::selected", populate)
             model.connect("notify::model", populate)
@@ -954,6 +1151,10 @@ def run(path=None, *, on_activate=None):
             self.login_button.connect("notify::active", lambda *_: self.queue_autosave())
             self.sentence(page, "Keep dictations for", self.retention_token,
                           ", and start Caelum at login", self.login_button)
+
+            appearance = self.box(spacing=12)
+            self.sentence(appearance, "Use the", self.theme_button, "theme.")
+            page.append(appearance)
 
             advanced = self.settings_page("advanced")
             back = self.button("← Settings", lambda: self.navigate("settings"), "text-link")
@@ -1100,11 +1301,18 @@ def run(path=None, *, on_activate=None):
         def build_updates(self, page):
             from .updates import cache_dir, installed
 
-            footer = self.flow()
+            footer = self.box(False, 20)
             footer.add_css_class("settings-footer")
-            version = self.box(False, 4)
+            self.settings_footer = footer
+            version = self.box(False, 6)
             version.append(self.label(f"Caelum {display_version()} ·", "settings-muted"))
-            self.update_status = self.label("up to date", "settings-muted", True)
+            self.update_status = self.label("up to date", "settings-muted")
+            self.update_status.connect(
+                "notify::label", lambda label, _: label.set_wrap(len(label.get_text()) > 32)
+            )
+            self.update_status.set_hexpand(False)
+            self.update_status.set_max_width_chars(34)
+            version.set_hexpand(False)
             version.append(self.update_status)
             self.update_check = self.button("Check", self.check_updates, "text-link")
             self.update_check.set_sensitive(bool(installed()))
@@ -1118,7 +1326,17 @@ def run(path=None, *, on_activate=None):
             self.save_status = self.label("Saved automatically", "settings-muted", True)
             self.save_status.set_hexpand(True)
             footer.append(self.save_status)
-            footer.append(self.button("Advanced →", lambda: self.navigate("advanced"), "text-link"))
+            advanced_link = self.button("Advanced →", lambda: self.navigate("advanced"), "text-link")
+            advanced_link.set_halign(Gtk.Align.END)
+            footer.append(advanced_link)
+
+            def adapt_footer(widget, _clock):
+                narrow = widget.get_width() < 680
+                widget.set_orientation(Gtk.Orientation.VERTICAL if narrow else Gtk.Orientation.HORIZONTAL)
+                self.save_status.set_xalign(0 if narrow else .5)
+                return True
+
+            footer.add_tick_callback(adapt_footer)
             page.append(footer)
             pending = (cache_dir() / "pending").is_dir()
             self.update_discard.set_visible(pending)
@@ -1531,6 +1749,7 @@ def run(path=None, *, on_activate=None):
             updated.desktop.retention_days = self.retention.get_value_as_int()
             updated.desktop.check_updates = self.update_automatic.get_active()
             updated.desktop.theme = ("system", "light", "dark")[self.theme.get_selected()]
+            updated.desktop.sidebar_visible = self.sidebar_toggle.get_active()
             return validate(updated)
 
         def save_settings(self):
@@ -1608,6 +1827,10 @@ def run(path=None, *, on_activate=None):
                 if dark else
                 ("#F6F5F2", "#FFFFFF", "#1B1B1A", "#5E5D58", "#E4E2DC", "#EEECE6", "#E9E7E0", "#F1F0EC", "#2F6F57", "#9A6A23")
             )
+            if dark:
+                self.window.add_css_class("dark")
+            else:
+                self.window.remove_css_class("dark")
             self.hotkey_color = palette[2]
             if hasattr(self, "current_hotkey"):
                 self.update_hotkey(self.current_hotkey)
@@ -1642,17 +1865,72 @@ def run(path=None, *, on_activate=None):
             self.record_button.set_sensitive(False)
             self.work(lambda: request("toggle"), lambda _: self.refresh())
 
+        def ensure_service(self):
+            def check():
+                try:
+                    request("status")
+                    return True
+                except (FileNotFoundError, ConnectionRefusedError):
+                    return False
+            self.work(check, lambda running: None if running else self.start_service())
+
         def start_service(self):
             if self.process and self.process.poll() is None:
                 return
+            environment = os.environ.copy()
+            source = str(Path(__file__).resolve().parent.parent)
+            environment["PYTHONPATH"] = os.pathsep.join(
+                filter(None, (source, environment.get("PYTHONPATH", "")))
+            )
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "caelum.cli", "--config", str(self.path), "serve"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=environment,
             )
-            self.message(
-                "Starting dictation… If it cannot start, open Settings and check the key, microphone, and shortcut."
-            )
+
+        def setup_tray(self):
+            from .tray import Tray
+
+            self.tray_held = False
+            try:
+                self.tray = Tray(
+                    lambda: self.window.present(),
+                    lambda: (self.navigate("settings"), self.window.present()),
+                    self.tray_dictation, self.quit_caelum, self.tray_availability,
+                )
+            except GLib.Error:
+                self.tray = None
+
+        def tray_availability(self, available):
+            if available and not self.tray_held:
+                self.hold()
+                self.tray_held = True
+            elif not available and self.tray_held:
+                # Keep a reachable window if the desktop's tray disappears.
+                self.window.present()
+                self.release()
+                self.tray_held = False
+
+        def close_window(self, *_):
+            if getattr(self, "tray", None) and self.tray.registered:
+                self.window.set_visible(False)
+                return True
+            return False
+
+        def tray_dictation(self):
+            if self.service_running:
+                self.toggle_pause()
+            else:
+                self.start_service()
+
+        def quit_caelum(self):
+            def stop():
+                try:
+                    request("shutdown")
+                except (OSError, RuntimeError):
+                    pass
+            self.work(stop, lambda _: self.quit())
 
         def stop_service(self):
             self.work(
@@ -1684,7 +1962,7 @@ def run(path=None, *, on_activate=None):
                     return (
                         status,
                         self.history.read(query),
-                        self.history.read(limit=3),
+                        self.history.read(limit=5),
                         self.history.summary(),
                     )
                 finally:
@@ -1722,6 +2000,8 @@ def run(path=None, *, on_activate=None):
             else:
                 pill_title = "Ready"
             self.status_label.set_text(pill_title)
+            if getattr(self, "tray", None):
+                self.tray.update(bool(status), self.paused, pill_title)
             for name in ("ready", "paused", "stopped"):
                 self.status_dot.remove_css_class(name)
             self.status_dot.add_css_class("paused" if self.paused else "ready" if status and state != "error" else "stopped")
@@ -1774,8 +2054,7 @@ def run(path=None, *, on_activate=None):
             for widget, value in zip(
                 self.home_metrics,
                 (
-                    summary["today_words"],
-                    summary["sessions"],
+                    summary.get("total_words", summary["words"]),
                     f"{summary['duration_ms'] / 60000:.1f}",
                 ),
                 strict=True,
@@ -1813,6 +2092,7 @@ def run(path=None, *, on_activate=None):
                 )
             self.daily = summary["daily"]
             self.chart.queue_draw()
+            self.render_usage_calendar(summary.get("activity", {}))
 
         def history_card(self, row, compact=False):
             card = self.box(spacing=10)
@@ -1911,6 +2191,8 @@ def run(path=None, *, on_activate=None):
 
         def shutdown(self, _):
             self.closed = True
+            if getattr(self, "tray", None):
+                self.tray.close()
             if getattr(self, "setup_window", None):
                 self.setup_window.finish_setup()
             # Drain a pending debounce before the window exits. Wait for older writes first.

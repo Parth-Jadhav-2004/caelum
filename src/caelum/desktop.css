@@ -60,7 +60,7 @@ window.caelum, .caelum headerbar, .caelum .background {
   border: 1px solid @caelum_border; border-radius: 12px; box-shadow: none; padding: 6px; }
 .caelum button:focus-visible, .caelum entry:focus-visible,
 .caelum spinbutton:focus-visible, .caelum checkbutton:focus-visible,
-.caelum textview:focus-visible { outline: 2px solid @caelum_accent; outline-offset: 2px; }
+.caelum textview:focus-visible { outline: 2px solid @caelum_muted; outline-offset: 2px; }
 
 /* Settings: the sentence is the interface. */
 .caelum .sentence-page { padding: 56px 72px; }
@@ -105,17 +105,10 @@ window.caelum, .caelum headerbar, .caelum .background {
 .caelum .settings-switch:checked { background: @caelum_accent; border-color: @caelum_accent; }
 .caelum .settings-switch slider { min-height: 24px; min-width: 24px;
   background: white; border: none; border-radius: 50%; box-shadow: none; }
-.caelum .settings-switch:focus-visible { outline: 2px solid @caelum_accent; outline-offset: 4px; }
+.caelum .settings-switch:focus-visible { outline: 2px solid @caelum_muted; outline-offset: 4px; }
 .caelum .sentence-page button.menu-choice { background: transparent; min-height: 44px; }
 .caelum .sentence-page button.menu-choice:hover { background: @caelum_active; }
 .caelum .sentence-page.compact-settings { padding: 32px 24px; }
-
-/* Icon controls keep a clear focus cue even on GTK themes that suppress focus-visible. */
-.caelum button.icon-button:focus, .caelum button.nav-item:focus,
-.caelum button.status-pill:focus {
-  outline: 2px solid @caelum_accent;
-  outline-offset: 2px;
-}
 
 /* Embedded setup shares the main window and its appearance controls. */
 .caelum .wordmark { font-size: 17px; font-weight: 650; color: @caelum_ink; }
@@ -140,7 +133,7 @@ window.caelum, .caelum headerbar, .caelum .background {
   border-bottom: 2px solid @caelum_accent; min-height: 52px; font-size: 20px;
 }
 .caelum .setup-page entry.setup-key:focus-within {
-  outline: 2px solid @caelum_accent; outline-offset: 4px;
+  outline: 2px solid @caelum_muted; outline-offset: 4px;
 }
 .caelum .setup-page entry.setup-key image { padding: 10px; }
 .caelum .setup-page button.setup-primary {
@@ -156,7 +149,7 @@ window.caelum, .caelum headerbar, .caelum .background {
 .caelum .setup-page button.icon-button { background: transparent; }
 .caelum .setup-page checkbutton { min-height: 44px; }
 .caelum .setup-page menubutton.token > button:focus-visible {
-  outline: 2px solid @caelum_accent; outline-offset: 2px;
+  outline: 2px solid @caelum_muted; outline-offset: 2px;
 }
 
 .caelum .sentence-page button.text-link label { text-decoration-line: underline; }
@@ -164,3 +157,46 @@ window.caelum, .caelum headerbar, .caelum .background {
   border: 1px solid @caelum_muted; box-shadow: none; }
 .caelum .setup-page checkbutton check:checked { background: @caelum_accent;
   border-color: @caelum_accent; color: @caelum_page; }
+
+/* Navigation can be closed entirely; selection uses a quiet fill, never an outline. */
+.caelum .navigation { padding: 24px 12px; }
+.caelum button.nav-item { border: none; padding: 0 12px; border-radius: 10px; }
+.caelum button.nav-item.selected { background: @caelum_active; font-weight: 500; }
+.caelum headerbar button { min-width: 36px; min-height: 36px; padding: 4px; }
+.caelum button.text-link { background: transparent; color: @caelum_muted;
+  border: none; border-radius: 6px; padding: 0 4px; min-height: 44px; font-size: 14px; }
+.caelum button.text-link:hover { color: @caelum_ink; background: transparent; }
+.caelum button.text-link label { text-decoration-line: underline; }
+.caelum menubutton.theme-menu > button { font-size: 13px; min-height: 44px; padding: 0 12px; }
+
+.caelum .settings-footer { padding-top: 12px; }
+.caelum .settings-footer .settings-muted { font-size: 13px; }
+
+/* Recent dictations and the monthly usage calendar share a single row. */
+.caelum .overview { padding: 32px 40px; }
+.caelum .overview.compact-overview { padding: 28px 24px; }
+.caelum .overview-number { font-size: 48px; }
+.caelum .recent-row { padding: 16px; min-height: 44px; }
+.caelum .recent-text { font-size: 15px; }
+.caelum .recent-empty { padding: 24px 20px; font-size: 14px; }
+.caelum .usage-calendar { background: @caelum_surface; border: 1px solid @caelum_border;
+  border-radius: 16px; padding: 16px; }
+.caelum .calendar-title { font-size: 15px; font-weight: 500; }
+.caelum .calendar-caption { font-size: 12px; color: @caelum_muted; }
+.caelum button.usage-day { min-width: 36px; min-height: 36px; padding: 0;
+  border: 1px solid transparent; border-radius: 6px; font-size: 12px; color: @caelum_ink; }
+.caelum .usage-swatch { border-radius: 3px; }
+.caelum button.usage-day.level-0, .caelum .usage-swatch.level-0 { background: @caelum_fill; }
+.caelum button.usage-day.level-1, .caelum .usage-swatch.level-1 { background: #DCEAE1; }
+.caelum button.usage-day.level-2, .caelum .usage-swatch.level-2 { background: #A9CBB9; }
+.caelum button.usage-day.level-3, .caelum .usage-swatch.level-3 { background: #6AA386; }
+.caelum button.usage-day.level-4, .caelum .usage-swatch.level-4 { background: #2F6F57; color: #F6F5F2; }
+.caelum button.usage-day.selected-day { border-color: @caelum_muted; }
+.caelum.dark button.usage-day.level-1, .caelum.dark .usage-swatch.level-1 { background: #193C2A; }
+.caelum.dark button.usage-day.level-2, .caelum.dark .usage-swatch.level-2 { background: #2F6F57; }
+.caelum.dark button.usage-day.level-3, .caelum.dark .usage-swatch.level-3 { background: #4B9C75; color: #0B0B0D; }
+.caelum.dark button.usage-day.level-4, .caelum.dark .usage-swatch.level-4 { background: #6FD3A4; color: #0B0B0D; }
+
+.caelum headerbar button.sidebar-toggle { min-width: 44px; min-height: 44px;
+  padding: 0; margin: 0; border-radius: 10px; }
+.caelum .recent-list, .caelum .usage-calendar { min-height: 340px; }

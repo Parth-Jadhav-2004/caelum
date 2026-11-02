@@ -68,6 +68,8 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 app.retention.set_value(46)
                 app.update_automatic.set_active(False)
                 assert app.brand.get_text() == "Caelum"
+                app.sidebar_toggle.set_active(False)
+                assert not app.sidebar.get_visible()
                 app.theme.set_selected(1)
                 assert app.hotkey_color == "#1B1B1A"
                 app.theme.set_selected(2)
@@ -100,6 +102,7 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert saved.stt.language == "en"
                 assert not saved.desktop.check_updates
                 assert saved.desktop.theme == "dark"
+                assert not saved.desktop.sidebar_visible
                 assert "reload" in requests
                 assert app.save_status.get_text() == "Saved"
                 app.show_provider_status("Transcription: Invalid provider key")

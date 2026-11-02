@@ -50,6 +50,7 @@ class Desktop:
     history_enabled: bool = True
     check_updates: bool = True
     theme: str = "system"
+    sidebar_visible: bool = True
     retention_days: int = 30
     stt_usd_per_hour: float = 0.0
 

@@ -38,5 +38,6 @@ timeout_seconds = 1.8
 history_enabled = true
 check_updates = true # Official native packages check GitHub on app launch; never auto-download.
 theme = "system" # system follows desktop appearance; light and dark override it.
+sidebar_visible = true
 retention_days = 30
 stt_usd_per_hour = 0.0 # 0 means unknown; configure your own rate for new-session estimates
