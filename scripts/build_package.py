@@ -121,18 +121,11 @@ exec /usr/bin/python3 -m caelum.cli "$@"
 """,
             executable=True,
         )
-        write(
-            stage / "usr/share/applications/caelum.desktop",
-            """[Desktop Entry]
-Type=Application
-Name=Caelum
-Comment=Cloud dictation with optional local history
-Exec=caelum app
-Icon=caelum
-Terminal=false
-Categories=Utility;Audio;
-StartupNotify=false
-""",
+        applications = stage / "usr/share/applications"
+        applications.mkdir(parents=True)
+        shutil.copy2(
+            ROOT / "packaging/io.caelum.Dictation.desktop",
+            applications / "io.caelum.Dictation.desktop",
         )
         icons = stage / "usr/share/icons/hicolor/scalable/apps"
         icons.mkdir(parents=True)
@@ -244,7 +237,7 @@ cp -a {stage}/. %{{buildroot}}/
 %files
 /opt/caelum
 /usr/bin/caelum
-/usr/share/applications/caelum.desktop
+/usr/share/applications/io.caelum.Dictation.desktop
 /usr/share/icons/hicolor/scalable/apps/caelum.svg
 /usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg
 /usr/share/doc/caelum

@@ -108,6 +108,7 @@ jobs:
           caelum --help
           python3 -c 'import gi; gi.require_version("Gtk","4.0"); from gi.repository import Gtk; import cairo; gi.require_foreign("cairo"); assert Gtk.get_major_version() == 4'
           PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx'
+          PYTHONPATH=/opt/caelum/lib python3 -c 'from gi.repository import Gio; from caelum.launcher import APP_ID; entry = Gio.DesktopAppInfo.new(APP_ID + ".desktop"); assert entry is not None; assert entry.get_icon().to_string() == "caelum"; assert entry.get_startup_wm_class() == APP_ID'
       - uses: actions/upload-artifact@v4
         with:
           name: caelum-${{ matrix.target }}

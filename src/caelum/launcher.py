@@ -1,9 +1,14 @@
 """Desktop entries point at the existing private-environment launcher."""
 
+import configparser
+import io
 import os
 import shutil
 import tempfile
 from pathlib import Path
+
+APP_ID = "io.caelum.Dictation"
+COMMENT = "Dictation with native Hyprland paste or manual copy on other desktops"
 
 
 def entry_path(autostart=False):
@@ -12,7 +17,54 @@ def entry_path(autostart=False):
         if autostart
         else (Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")))
     )
-    return root / ("autostart/caelum.desktop" if autostart else "applications/caelum.desktop")
+    return root / ("autostart/caelum.desktop" if autostart else f"applications/{APP_ID}.desktop")
+
+
+def icon_path():
+    return Path(__file__).resolve().parent / "icons/hicolor/scalable/apps/caelum.svg"
+
+
+def write_entry(destination, text):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".caelum-")
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write(text)
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def migrate_legacy_launcher():
+    destination = entry_path()
+    legacy = destination.with_name("caelum.desktop")
+    if legacy.is_symlink() or not legacy.is_file():
+        return False
+    try:
+        original = legacy.read_text()
+        document = configparser.ConfigParser(interpolation=None)
+        document.optionxform = str
+        document.read_string(original)
+        entry = document["Desktop Entry"]
+        if (entry.get("Name"), entry.get("Type"), entry.get("Comment")) != (
+            "Caelum", "Application", COMMENT,
+        ):
+            return False
+        if entry.get("Icon") in ("audio-input-microphone", "audio-input-microphone-symbolic"):
+            entry["Icon"] = str(icon_path())
+        entry["StartupWMClass"] = APP_ID
+        if not destination.exists() and not destination.is_symlink():
+            output = io.StringIO()
+            document.write(output, space_around_delimiters=False)
+            write_entry(destination, output.getvalue())
+        entry["NoDisplay"] = "true"
+        output = io.StringIO()
+        document.write(output, space_around_delimiters=False)
+        if output.getvalue() != original:
+            write_entry(legacy, output.getvalue())
+        return True
+    except (OSError, ValueError, KeyError, configparser.Error):
+        return False
 
 
 def desktop_quote(value):
@@ -41,15 +93,15 @@ def install(config, autostart=False, enabled=True):
         if not executable:
             raise RuntimeError("Install Caelum or run it from a source checkout")
         launcher = Path(executable).resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
     arguments = [launcher, "--config", config, "serve" if autostart else "app"]
     text = "\n".join(
         (
             "[Desktop Entry]",
             "Type=Application",
             "Name=Caelum",
-            "Comment=Dictation with native Hyprland paste or manual copy on other desktops",
-            "Icon=" + str(Path(__file__).resolve().parent / "icons/hicolor/scalable/apps/caelum.svg"),
+            "Comment=" + COMMENT,
+            "Icon=" + str(icon_path()),
+            "StartupWMClass=" + APP_ID,
             "Exec=" + " ".join(map(desktop_quote, arguments)),
             "Terminal=false",
             "Categories=Utility;",
@@ -57,11 +109,7 @@ def install(config, autostart=False, enabled=True):
             "",
         )
     )
-    descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".caelum-")
-    try:
-        with os.fdopen(descriptor, "w") as output:
-            output.write(text)
-        os.replace(temporary, destination)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    write_entry(destination, text)
+    if not autostart:
+        migrate_legacy_launcher()
     return destination

@@ -18,7 +18,7 @@ from pathlib import Path
 from .config import config_path, load, save, validate
 from .credentials import describe as credential_status
 from .history import History
-from .launcher import entry_path, install
+from .launcher import APP_ID, entry_path, install, migrate_legacy_launcher
 from .portable import backend_name
 
 
@@ -220,6 +220,8 @@ def service_presentation(status):
 
 
 def run(path=None, *, on_activate=None):
+    if not on_activate:
+        migrate_legacy_launcher()
     if os.environ.get("WAYLAND_DISPLAY"):
         os.environ.setdefault("GDK_BACKEND", "wayland")
     import gi
@@ -309,7 +311,7 @@ def run(path=None, *, on_activate=None):
     class Desktop(Gtk.Application):
         def __init__(self):
             super().__init__(
-                application_id="io.caelum.Dictation",
+                application_id=APP_ID,
                 flags=Gio.ApplicationFlags.NON_UNIQUE
                 if on_activate
                 else Gio.ApplicationFlags.DEFAULT_FLAGS,

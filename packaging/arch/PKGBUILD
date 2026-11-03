@@ -1,6 +1,6 @@
 # Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
 pkgname=caelum
-pkgver=0.3.5
+pkgver=0.3.6
 pkgrel=1
 pkgdesc='Cloud dictation with optional local history'
 arch=('x86_64')
@@ -21,7 +21,7 @@ build() {
 package() {
   cd "$pkgname-$pkgver"
   python -m installer --destdir="$pkgdir" dist/*.whl
-  install -Dm644 packaging/caelum.desktop "$pkgdir/usr/share/applications/caelum.desktop"
+  install -Dm644 packaging/io.caelum.Dictation.desktop "$pkgdir/usr/share/applications/io.caelum.Dictation.desktop"
   install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum.svg"
   install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum-symbolic.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg"
 }

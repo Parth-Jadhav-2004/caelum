@@ -190,6 +190,10 @@ def test_native_desktop_pages_and_rail(tmp_path, monkeypatch):
     def activated(app):
         def verify():
             try:
+                from caelum.launcher import APP_ID
+
+                assert app.get_application_id() == APP_ID
+                assert app.window.get_icon_name() == "caelum"
                 assert app.sidebar.get_reveal_child()
                 app.sidebar_toggle.set_active(False)
                 assert not app.sidebar.get_reveal_child()
