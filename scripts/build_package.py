@@ -128,12 +128,16 @@ Type=Application
 Name=Caelum
 Comment=Cloud dictation with optional local history
 Exec=caelum app
-Icon=audio-input-microphone
+Icon=caelum
 Terminal=false
 Categories=Utility;Audio;
 StartupNotify=false
 """,
         )
+        icons = stage / "usr/share/icons/hicolor/scalable/apps"
+        icons.mkdir(parents=True)
+        for source in (ROOT / "src/caelum/icons/hicolor/scalable/apps").glob("*.svg"):
+            shutil.copy2(source, icons / source.name)
         docs = stage / "usr/share/doc/caelum"
         docs.mkdir(parents=True)
         for source in (ROOT / "README.md", ROOT / "docs/linux.md", ROOT / "docs/privacy.md"):
@@ -158,7 +162,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
-Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
+Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, pulseaudio-utils, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
 Description: Cloud dictation with optional local history
@@ -197,6 +201,7 @@ depend = python-gobject
 depend = python-cairo
 depend = gtk4
 depend = portaudio
+depend = libpulse
 depend = libnotify
 depend = libsecret
 depend = wl-clipboard
@@ -228,7 +233,7 @@ License: LicenseRef-Caelum-No-License-Declared
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
-Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
+Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, pulseaudio-utils, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
 %description
 Cloud dictation with optional local history. Audio goes to transcription; text goes
 to refinement when enabled. Clipboard managers and exports keep independent copies.
@@ -240,6 +245,8 @@ cp -a {stage}/. %{{buildroot}}/
 /opt/caelum
 /usr/bin/caelum
 /usr/share/applications/caelum.desktop
+/usr/share/icons/hicolor/scalable/apps/caelum.svg
+/usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg
 /usr/share/doc/caelum
 """,
             )

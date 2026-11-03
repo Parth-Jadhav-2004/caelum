@@ -1,12 +1,12 @@
 # Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
 pkgname=caelum
-pkgver=0.3.4
+pkgver=0.3.5
 pkgrel=1
 pkgdesc='Cloud dictation with optional local history'
 arch=('x86_64')
 url='https://github.com/Parth-Jadhav-2004/caelum'
 license=('custom')
-depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd')
+depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libpulse' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd')
 makedepends=('python-build' 'python-installer' 'python-hatchling')
 depends+=('python-dbus-next' 'python-httpx' 'python-numpy' 'python-sounddevice')
 optdepends=('gtk4-layer-shell: Hyprland recording overlay' 'wl-clipboard: Hyprland automatic paste')
@@ -22,4 +22,6 @@ package() {
   cd "$pkgname-$pkgver"
   python -m installer --destdir="$pkgdir" dist/*.whl
   install -Dm644 packaging/caelum.desktop "$pkgdir/usr/share/applications/caelum.desktop"
+  install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum.svg"
+  install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum-symbolic.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg"
 }

@@ -52,6 +52,11 @@ def call(path, interface, method, parameters=None):
     if isinstance(result[0], Exception):
         raise result[0]
     return result[0].unpack()
+properties = call(ITEM_PATH, 'org.freedesktop.DBus.Properties', 'GetAll', GLib.Variant('(s)', (ITEM_INTERFACE,)))[0]
+assert properties['IconName'] == 'caelum-symbolic'
+from pathlib import Path
+assert (Path(properties['IconThemePath']) / 'caelum-symbolic.svg').is_file()
+assert properties['ToolTip'][0] == 'caelum-symbolic'
 revision, layout = call(MENU_PATH, MENU_INTERFACE, 'GetLayout', GLib.Variant('(iias)', (0, -1, [])))
 assert [item[1]['label'] for item in layout[2]] == ['Open Caelum', 'Settings', 'Start dictation', 'Quit Caelum']
 assert layout[2][2][1]['enabled']

@@ -1,0 +1,11 @@
+[Icon Theme]
+Name=Caelum
+Comment=Caelum application icons
+Directories=scalable/apps
+
+[scalable/apps]
+Size=40
+Type=Scalable
+MinSize=16
+MaxSize=512
+Context=Applications

@@ -149,7 +149,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Caelum $GITHUB_REF_NAME" --generate-notes
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Caelum $GITHUB_REF_NAME" --notes-file "docs/release-${GITHUB_REF_NAME#v}.md"
           gh release upload "$GITHUB_REF_NAME" \
             release-assets/*.deb \
             release-assets/*.rpm \

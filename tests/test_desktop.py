@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -14,6 +16,11 @@ def test_launcher_entries_use_private_environment_launcher(tmp_path, monkeypatch
     assert path == entry_path()
     assert '"app"' in path.read_text()
     assert "scripts/run.sh" in path.read_text()
+    from caelum import launcher
+
+    icon = Path(launcher.__file__).resolve().parent / "icons/hicolor/scalable/apps/caelum.svg"
+    assert icon.is_file()
+    assert f"Icon={icon}\n" in path.read_text()
     path = install(config, autostart=True)
     assert path == entry_path(True)
     assert '"serve"' in path.read_text()
@@ -25,6 +32,21 @@ def test_desktop_quoting():
     assert desktop_quote('/a path/100% "$HOME"') == '"/a path/100%% \\"\\$HOME\\""'
     with pytest.raises(ValueError):
         desktop_quote("/path\nExec=another-command")
+
+
+def test_app_icons_preserve_product_page_waveform():
+    root = Path(__file__).resolve().parents[1]
+    website = ElementTree.parse(root / "website/mark.svg").getroot()
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    waveform = website.find("svg:path", namespace)
+    for name in ("caelum.svg", "caelum-symbolic.svg"):
+        icon = ElementTree.parse(
+            root / "src/caelum/icons/hicolor/scalable/apps" / name
+        ).getroot()
+        assert icon.attrib["viewBox"] == website.attrib["viewBox"]
+        path = icon.find("svg:path", namespace)
+        for attribute in ("d", "stroke-width", "stroke-linecap"):
+            assert path.attrib[attribute] == waveform.attrib[attribute]
 
 
 @pytest.mark.skipif(
@@ -223,6 +245,7 @@ def test_packaged_launcher_does_not_require_source_checkout(tmp_path, monkeypatc
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     result = launcher.install(tmp_path / "config.toml")
     assert 'Exec="/usr/bin/caelum" "--config"' in result.read_text()
+    assert "Icon=/opt/caelum/lib/caelum/icons/hicolor/scalable/apps/caelum.svg\n" in result.read_text()
 
 
 def test_provider_presets_preserve_other_preferences():

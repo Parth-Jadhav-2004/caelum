@@ -62,6 +62,24 @@ sessions use logind when the Omarchy lock helper is absent.
 Run `caelum doctor` to see required checks and optional capabilities separately.
 It never records or uploads audio. Optional portal availability is not a failure.
 
+## Microphones and Bluetooth headsets
+
+On PipeWire/PulseAudio desktops, Settings lists actual input sources rather than
+JACK client ports or playback monitors. Selected inputs use stable `pulse:` source
+names; existing uniquely named microphone settings remain compatible. Capture and
+the local microphone test use the same path, with the audio server converting the
+device's native rate to 16 kHz mono. Disconnected selected sources fail rather than
+silently recording another microphone. ALSA-only systems retain PortAudio capture.
+
+For Bluetooth earbuds such as CMF Buds 2, select the earbuds in Settings and run
+**Test mic**. WirePlumber normally switches from A2DP playback to the HFP/HSP headset
+profile while recording, then restores playback afterward. This can briefly lower
+playback quality. If automatic switching is disabled, select the headset/hands-free
+profile in your desktop audio settings; A2DP alone does not expose the buds' mic.
+The test is local-only and never uploads or saves audio. `pactl` and `parec` are
+provided by `pulseaudio-utils` on Ubuntu/Fedora and `libpulse` on Arch; these clients
+also work with PipeWire and do not require replacing it with a PulseAudio daemon.
+
 ## Configuration and credentials
 
 `caelum init` creates a config only when it does not already exist. Configure your
@@ -77,11 +95,11 @@ Install uv using its official instructions, then install system prerequisites:
 
 ```sh
 # Ubuntu 24.04+/Debian 12+
-sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 libnotify-bin libglib2.0-bin libsecret-tools wl-clipboard xclip
+sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 pulseaudio-utils libnotify-bin libglib2.0-bin libsecret-tools wl-clipboard xclip
 # Arch
-sudo pacman -S python python-gobject python-cairo gtk4 portaudio libnotify glib2 libsecret wl-clipboard xclip
+sudo pacman -S python python-gobject python-cairo gtk4 portaudio libpulse libnotify glib2 libsecret wl-clipboard xclip
 # Fedora
-sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio libnotify glib2 libsecret wl-clipboard xclip
+sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio pulseaudio-utils libnotify glib2 libsecret wl-clipboard xclip
 
 ./scripts/setup.sh
 .venv/bin/caelum init

@@ -83,12 +83,18 @@ async def doctor(config):
     except (ImportError, OSError, ValueError, RuntimeError, TimeoutError):
         checks["desktop_integration"] = False
     try:
-        import sounddevice as sd
+        from .pulse import resolve
 
-        checks["input_device"] = bool(sd.query_devices(config.app.microphone, "input"))
-        sd.check_input_settings(
-            device=config.app.microphone, channels=1, samplerate=16000, dtype="int16"
-        )
+        source = resolve(config.app.microphone)
+        if source is not None:
+            checks["input_device"] = True
+        else:
+            import sounddevice as sd
+
+            checks["input_device"] = bool(sd.query_devices(config.app.microphone, "input"))
+            sd.check_input_settings(
+                device=config.app.microphone, channels=1, samplerate=16000, dtype="int16"
+            )
         checks["microphone_16khz"] = True
     except Exception:
         checks["microphone_16khz"] = False
@@ -186,9 +192,10 @@ def main():
                 file.write(example.read_text())
             print(path)
         elif args.command == "devices":
-            import sounddevice as sd
+            from .desktop import microphones
 
-            print(sd.query_devices())
+            for label, device in microphones():
+                print(f"{device}\t{label}")
         elif args.command == "doctor":
             sys.exit(asyncio.run(doctor(config)))
         elif args.command == "serve":

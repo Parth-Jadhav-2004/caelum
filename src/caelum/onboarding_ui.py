@@ -16,7 +16,14 @@ def show(host, key_name=None):
     gi.require_version("Gdk", "4.0")
     from gi.repository import Gdk, GLib, Gtk
 
-    from .desktop import PRESETS, apply_provider_preset, microphones, provider_preset, request
+    from .desktop import (
+        PRESETS,
+        apply_provider_preset,
+        microphone_selection,
+        microphones,
+        provider_preset,
+        request,
+    )
 
     if getattr(host, "setup_window", None):
         host.navigate("setup")
@@ -270,7 +277,7 @@ def show(host, key_name=None):
             if self.closed:
                 return
             self.devices = [("System default", None), *dict.fromkeys(devices)]
-            selected = self.config.app.microphone
+            selected = microphone_selection(self.config.app.microphone, self.devices)
             if selected is not None and not any(value == selected for _, value in self.devices):
                 self.devices.append((f"{selected} · not detected", selected))
             self.mic.set_model(Gtk.StringList.new([name for name, _ in self.devices]))

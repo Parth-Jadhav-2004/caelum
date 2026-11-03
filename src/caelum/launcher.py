@@ -49,7 +49,7 @@ def install(config, autostart=False, enabled=True):
             "Type=Application",
             "Name=Caelum",
             "Comment=Dictation with native Hyprland paste or manual copy on other desktops",
-            "Icon=audio-input-microphone",
+            "Icon=" + str(Path(__file__).resolve().parent / "icons/hicolor/scalable/apps/caelum.svg"),
             "Exec=" + " ".join(map(desktop_quote, arguments)),
             "Terminal=false",
             "Categories=Utility;",

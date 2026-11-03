@@ -73,16 +73,22 @@ class Capture:
             self.full = self.size >= self.capacity
 
     def start(self):
-        import sounddevice as sd
+        from .pulse import PulseStream, resolve
 
-        self.stream = sd.RawInputStream(
-            samplerate=RATE,
-            channels=1,
-            dtype="int16",
-            blocksize=BLOCK,
-            device=self.config.microphone,
-            callback=self.callback,
-        )
+        source = resolve(self.config.microphone)
+        if source is not None:
+            self.stream = PulseStream(source["name"], self.callback)
+        else:
+            import sounddevice as sd
+
+            self.stream = sd.RawInputStream(
+                samplerate=RATE,
+                channels=1,
+                dtype="int16",
+                blocksize=BLOCK,
+                device=self.config.microphone,
+                callback=self.callback,
+            )
         try:
             self.stream.start()
         except BaseException:

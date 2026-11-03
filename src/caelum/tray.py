@@ -1,5 +1,7 @@
 """StatusNotifierItem and DBusMenu integration using GTK's existing Gio runtime."""
 
+from pathlib import Path
+
 from gi.repository import Gio, GLib
 
 ITEM_PATH = "/StatusNotifierItem"
@@ -9,6 +11,7 @@ ITEM_INTERFACE = "org.kde.StatusNotifierItem"
 MENU_INTERFACE = "com.canonical.dbusmenu"
 
 ITEM_XML = """<node><interface name="org.kde.StatusNotifierItem">
+<property name="IconThemePath" type="s" access="read"/>
 <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="ContextMenu"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -163,9 +166,12 @@ class Tray:
             "Category": GLib.Variant("s", "ApplicationStatus"),
             "Id": GLib.Variant("s", "caelum"), "Title": GLib.Variant("s", "Caelum"),
             "Status": GLib.Variant("s", "Active"), "WindowId": GLib.Variant("i", 0),
-            "IconName": GLib.Variant("s", "audio-input-microphone-symbolic"),
+            "IconThemePath": GLib.Variant(
+                "s", str(Path(__file__).resolve().parent / "icons/hicolor/scalable/apps")
+            ),
+            "IconName": GLib.Variant("s", "caelum-symbolic"),
             "IconPixmap": GLib.Variant("a(iiay)", []),
-            "ToolTip": GLib.Variant("(sa(iiay)ss)", ("audio-input-microphone-symbolic", [], "Caelum", self.status)),
+            "ToolTip": GLib.Variant("(sa(iiay)ss)", ("caelum-symbolic", [], "Caelum", self.status)),
             "ItemIsMenu": GLib.Variant("b", False), "Menu": GLib.Variant("o", MENU_PATH),
         }.get(name)
 

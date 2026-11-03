@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -82,6 +83,11 @@ def display_version():
 
 
 def microphones():
+    from .pulse import microphones as server_microphones
+
+    devices = server_microphones()
+    if devices is not None:
+        return devices
     import sounddevice as sound
 
     return [
@@ -92,6 +98,13 @@ def microphones():
 
 
 PRESETS = ("Groq", "Transcription only", "Custom provider")
+
+
+def microphone_selection(selected, devices):
+    if selected is None or any(value == selected for _, value in devices):
+        return selected
+    matches = [value for label, value in devices if label == selected]
+    return matches[0] if len(matches) == 1 else selected
 
 
 def provider_preset(config):
@@ -386,6 +399,10 @@ def run(path=None, *, on_activate=None):
                     self.ensure_service()
                 return
             self.window = Gtk.ApplicationWindow(application=self, title="Caelum")
+            Gtk.IconTheme.get_for_display(self.window.get_display()).add_search_path(
+                str(Path(__file__).resolve().parent / "icons")
+            )
+            self.window.set_icon_name("caelum")
             self.window.set_default_size(1100, 760)
             self.window.set_size_request(480, 480)
             self.window.add_css_class("caelum")
@@ -1634,6 +1651,7 @@ def run(path=None, *, on_activate=None):
             selected = self.devices[index][1] if index < len(self.devices) else self.config.app.microphone
             if getattr(self, "syncing_setup", False):
                 selected = self.config.app.microphone
+            selected = microphone_selection(selected, devices)
             self.devices = [("System default", None), *dict.fromkeys(devices)]
             if selected is not None and not any(value == selected for _, value in self.devices):
                 self.devices.append((f"{selected} · configured, not detected", selected))
@@ -1708,13 +1726,9 @@ def run(path=None, *, on_activate=None):
             device = self.devices[self.mic.get_selected()][1]
 
             def test():
-                import time
+                from .onboarding import record_sample
 
-                import numpy as np
-                import sounddevice as sound
-
-                def level(data, frames, timing, status):
-                    value = min(1, float(np.sqrt(np.mean(data**2))) * 8)
+                def level(value):
                     GLib.idle_add(self.set_mic_level, value)
 
                 try:
@@ -1724,8 +1738,9 @@ def run(path=None, *, on_activate=None):
                         status = None
                     if status and status["state"] in ("starting", "listening", "recording"):
                         raise RuntimeError("Finish recording before testing the microphone")
-                    with sound.InputStream(device=device, channels=1, callback=level):
-                        time.sleep(3)
+                    config = deepcopy(self.config)
+                    config.app.microphone = device
+                    record_sample(config, 3, threading.Event(), level)
                 finally:
                     GLib.idle_add(self.test_button.set_sensitive, True)
                     GLib.idle_add(self.set_mic_level, 0)
