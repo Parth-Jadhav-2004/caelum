@@ -130,6 +130,3 @@ using their package manager. [Updater behavior and release setup](docs/updates.m
 
 Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.6](docs/release-0.3.6.md).
 
-## License
-
-A license has not been added to this repository yet.
