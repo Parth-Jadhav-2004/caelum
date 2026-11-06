@@ -116,6 +116,22 @@ change this configuration during a dictation. Removing the fragment and
 restarting the service restores the default codec negotiation. See
 [WirePlumber's Bluetooth configuration](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/bluetooth.html).
 
+If `bluez5.enable-msbc = false` alone does not stabilize capture, an explicit
+codec allowlist can be tested in the same fragment:
+
+```ini
+monitor.bluez.properties = {
+  bluez5.enable-msbc = false
+  bluez5.codecs = [ sbc sbc_xq aac cvsd ]
+}
+```
+
+Restart WirePlumber and reconnect the earbuds after changing it. This further
+limits Bluetooth playback to SBC/SBC-XQ/AAC for that user; other headsets will
+not offer codecs such as LDAC or aptX while the restriction is active. It is a
+machine-level workaround, not a universal app fix. Verify several longer
+recordings with normal playback restored between them, not just one short test.
+
 ## Configuration and credentials
 
 `caelum init` creates a config only when it does not already exist. Configure your
