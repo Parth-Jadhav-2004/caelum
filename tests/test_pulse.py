@@ -15,9 +15,15 @@ from caelum.desktop import microphone_selection, microphones
 
 
 @pytest.fixture
+def no_real_audio_sources(monkeypatch):
+    monkeypatch.setattr(pulse, "sources", lambda: [])
+
+
+@pytest.fixture
 def inputs(monkeypatch):
     devices = [
-        {"name": "alsa_input.builtin", "description": "Built-in Audio", "properties": {}},
+        {"name": "alsa_input.builtin", "description": "Built-in Audio",
+         "properties": {"device.form_factor": "internal"}},
         {"name": "bluez_input.2C:BE:EE:59:59:AC", "description": "CMF Buds 2",
          "properties": {"device.api": "bluez5"}},
     ]
@@ -77,18 +83,63 @@ def test_duplicate_names_are_distinguished_and_legacy_ambiguity_is_rejected(inpu
         pulse.resolve("CMF Buds 2")
 
 
-def test_resolution_supports_legacy_names_without_switching_missing_inputs(inputs):
+def test_resolution_supports_legacy_names_and_disconnected_bluetooth_fallback(inputs):
     assert pulse.resolve("CMF Buds 2") == inputs[1]
     assert pulse.resolve("pulse:" + inputs[1]["name"]) == inputs[1]
     assert pulse.resolve(None) == {"name": None}
     assert pulse.resolve(0) is None
     assert pulse.resolve("hw:0") is None
     inputs.pop()
-    with pytest.raises(RuntimeError, match="disconnected"):
-        pulse.resolve("pulse:bluez_input.2C:BE:EE:59:59:AC")
+    assert pulse.resolve("pulse:bluez_input.2C:BE:EE:59:59:AC") == inputs[0]
     inputs.clear()
     with pytest.raises(RuntimeError, match="No microphones"):
         pulse.resolve(None)
+
+
+def test_bluetooth_fallback_preserves_preference_and_uses_buds_when_reconnected(inputs, monkeypatch):
+    selected = "pulse:" + inputs[1]["name"]
+    bluetooth = inputs.pop()
+    config = App(microphone=selected)
+    stream = Mock()
+    factory = Mock(return_value=stream)
+    monkeypatch.setattr(pulse, "PulseStream", factory)
+    capture = Capture(config)
+    capture.start()
+    factory.assert_called_with(inputs[0]["name"], capture.callback)
+    capture.stop()
+    assert config.microphone == selected
+    inputs.append(bluetooth)
+    capture.start()
+    factory.assert_called_with(bluetooth["name"], capture.callback)
+    capture.stop()
+
+
+@pytest.mark.parametrize("selection", ["pulse:alsa_input.missing", "pulse:bluez_input.missing"])
+def test_missing_inputs_do_not_fall_back_to_usb_or_another_bluetooth_mic(inputs, selection):
+    inputs[0]["properties"] = {"device.bus": "usb"}
+    with pytest.raises(RuntimeError, match="disconnected"):
+        pulse.resolve(selection)
+
+
+def test_missing_non_bluetooth_input_does_not_fall_back_to_builtin(inputs):
+    with pytest.raises(RuntimeError, match="disconnected"):
+        pulse.resolve("pulse:alsa_input.missing")
+
+
+def test_bluetooth_fallback_accepts_internal_pci_input(inputs):
+    inputs[0]["properties"] = {"device.bus": "pci"}
+    assert pulse.resolve("pulse:bluez_input.missing") == inputs[0]
+
+
+def test_connected_bluetooth_transport_failure_does_not_switch_microphones(inputs, monkeypatch):
+    stream = pulse.PulseStream(inputs[1]["name"], Mock())
+    stream.process = Mock()
+    monkeypatch.setattr(pulse.select, "select", lambda *_: ([], [], []))
+    factory = Mock()
+    monkeypatch.setattr(pulse.subprocess, "Popen", factory)
+    stream.read()
+    factory.assert_not_called()
+    assert "stopped sending audio" in stream.callback.call_args.args[3]
 
 
 def test_capture_uses_server_conversion_for_48khz_bluetooth_input(inputs, monkeypatch):
@@ -185,7 +236,7 @@ def test_pulse_shutdown_kills_unresponsive_process():
     process.stdout.close.assert_called_once()
 
 
-def test_stalled_stream_reports_transport_failure_instead_of_silence(monkeypatch):
+def test_stalled_stream_reports_transport_failure_instead_of_silence(monkeypatch, no_real_audio_sources):
     stream = pulse.PulseStream("bluez_input.test", Mock())
     stream.process = Mock()
     stream.process.stdout.read.return_value = b"\0" * 640
@@ -199,7 +250,7 @@ def test_stalled_stream_reports_transport_failure_instead_of_silence(monkeypatch
     assert readiness.call_args.args[3] == 2
 
 
-def test_partial_pipe_reads_are_combined_into_complete_pcm_blocks(monkeypatch):
+def test_partial_pipe_reads_are_combined_into_complete_pcm_blocks(monkeypatch, no_real_audio_sources):
     stream = pulse.PulseStream("bluez_input.test", Mock())
     stream.process = Mock()
     stream.process.stdout.read.side_effect = [b"\x01\0" * 100, b"\x02\0" * 220, b""]
@@ -222,7 +273,73 @@ def test_stop_during_poll_does_not_report_a_capture_error(monkeypatch):
     stream.callback.assert_not_called()
 
 
-def test_real_pipe_that_stalls_after_start_reports_an_error(monkeypatch):
+@pytest.mark.parametrize("failure", ["eof", "stall"])
+def test_disconnect_during_recording_switches_to_builtin_without_capture_error(
+    inputs, monkeypatch, failure,
+):
+    bluetooth = inputs.pop()
+    previous = Mock(stdout=io.BytesIO(b"\x01\0" * 100))
+    previous.poll.return_value = None
+    builtin = Mock(stdout=io.BytesIO(b"\x02\0" * 320))
+    factory = Mock(return_value=builtin)
+    monkeypatch.setattr(pulse.subprocess, "Popen", factory)
+    stream = pulse.PulseStream(bluetooth["name"], Mock())
+    stream.process = previous
+    polls = 0
+
+    def readable(readers, *_):
+        nonlocal polls
+        polls += 1
+        return ([], [], []) if failure == "stall" and polls == 2 else (readers, [], [])
+
+    def received(*_):
+        stream.stopping.set()
+
+    stream.callback.side_effect = received
+    monkeypatch.setattr(pulse.select, "select", readable)
+    stream.read()
+    assert stream.source == inputs[0]["name"]
+    assert "--device=" + inputs[0]["name"] in factory.call_args.args[0]
+    stream.callback.assert_called_once_with(b"\x02\0" * 320, 320, None, None)
+    previous.terminate.assert_called_once()
+    assert previous.stdout.closed
+    stream.close()
+    assert builtin.stdout.closed
+
+
+def test_disconnect_is_detected_even_when_server_keeps_sending_audio(inputs, monkeypatch):
+    bluetooth = inputs.pop()
+    previous = Mock()
+    previous.poll.return_value = None
+    builtin = Mock(stdout=io.BytesIO(b"\x02\0" * 320))
+    monkeypatch.setattr(pulse.subprocess, "Popen", Mock(return_value=builtin))
+    monkeypatch.setattr(pulse.time, "monotonic", Mock(side_effect=[0, 2, 2]))
+    monkeypatch.setattr(pulse.select, "select", lambda readers, *_: (readers, [], []))
+    stream = pulse.PulseStream(bluetooth["name"], Mock())
+    stream.process = previous
+    stream.callback.side_effect = lambda *_: stream.stopping.set()
+    stream.read()
+    previous.stdout.read.assert_not_called()
+    stream.callback.assert_called_once_with(b"\x02\0" * 320, 320, None, None)
+    stream.close()
+
+
+def test_stop_during_fallback_discovery_does_not_open_another_microphone(inputs, monkeypatch):
+    bluetooth = inputs.pop()
+    stream = pulse.PulseStream(bluetooth["name"], Mock())
+    factory = Mock()
+    monkeypatch.setattr(pulse.subprocess, "Popen", factory)
+
+    def devices():
+        stream.stopping.set()
+        return inputs
+
+    monkeypatch.setattr(pulse, "sources", devices)
+    assert not stream.fallback()
+    factory.assert_not_called()
+
+
+def test_real_pipe_that_stalls_after_start_reports_an_error(monkeypatch, no_real_audio_sources):
     reader, writer = os.pipe()
     process = Mock(stdout=os.fdopen(reader, "rb", buffering=0))
     process.poll.return_value = 0
