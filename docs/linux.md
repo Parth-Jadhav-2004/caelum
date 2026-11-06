@@ -17,9 +17,9 @@ The vendored dependencies do not replace distro Python modules.
 Install downloaded packages with the native package manager:
 
 ```sh
-sudo apt install ./caelum_0.3.6-1_ubuntu-24.04_amd64.deb
-sudo pacman -U ./caelum-0.3.6-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.3.6-1.fedora43.x86_64.rpm
+sudo apt install ./caelum_0.3.7-1_ubuntu-24.04_amd64.deb
+sudo pacman -U ./caelum-0.3.7-1-x86_64.pkg.tar.zst
+sudo dnf install ./caelum-0.3.7-1.fedora43.x86_64.rpm
 ```
 
 Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Advanced → Manage key, or Manage keys in the provider status when a key is missing. Opening Caelum starts the dictation service. The system tray provides Open Caelum, Settings, Start/Pause/Resume dictation, and Quit Caelum.
@@ -87,6 +87,34 @@ profile in your desktop audio settings; A2DP alone does not expose the buds' mic
 The test is local-only and never uploads or saves audio. `pactl` and `parec` are
 provided by `pulseaudio-utils` on Ubuntu/Fedora and `libpulse` on Arch; these clients
 also work with PipeWire and do not require replacing it with a PulseAudio daemon.
+
+If earbuds show **Connected** but the test receives no audio, disconnect and
+reconnect just those earbuds in Bluetooth settings, then run **Test mic** again.
+Pairing can remain connected while the headset's audio transport has failed.
+Caelum reports stalled capture separately from a quiet microphone, and the local
+test reports whether speech was detected. Reconnecting does not require deleting
+the pairing or resetting the Bluetooth adapter.
+
+If repeated A2DP/headset switching fails and kernel logs show corrupted SCO
+packets or unknown connection handles, the symptoms can match a
+[reported Bluetooth transport bug](https://github.com/bluez/bluez/issues/2562).
+Selecting CVSD manually may not help while mSBC is still advertised. A reversible
+user-session workaround is a WirePlumber configuration fragment containing:
+
+```ini
+monitor.bluez.properties = {
+  bluez5.enable-msbc = false
+}
+```
+
+Place it under `~/.config/wireplumber/wireplumber.conf.d/`, restart the user
+WirePlumber service, and disconnect/reconnect the headset to clear the broken
+transport. Restarting that service briefly interrupts audio. This disables
+wideband Bluetooth voice for all headsets in that user session; microphone audio
+uses lower-fidelity CVSD, while normal A2DP music codecs remain enabled. Do not
+change this configuration during a dictation. Removing the fragment and
+restarting the service restores the default codec negotiation. See
+[WirePlumber's Bluetooth configuration](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/bluetooth.html).
 
 ## Configuration and credentials
 

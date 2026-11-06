@@ -101,12 +101,14 @@ def record_sample(config, seconds, cancelled, level=lambda value: None):
             if cancelled.is_set():
                 raise RuntimeError("Recording cancelled; sample discarded")
             if capture.error:
-                raise RuntimeError("Microphone interrupted; choose an input and test again")
+                raise RuntimeError(str(capture.error))
             level(capture.level)
             time.sleep(0.04)
         if cancelled.is_set():
             raise RuntimeError("Recording cancelled; sample discarded")
         capture.stop()
+        if capture.error:
+            raise RuntimeError(str(capture.error))
         return capture.snapshot() if capture.speech_ms >= 80 else b""
     finally:
         try:

@@ -1,5 +1,7 @@
 """Native Settings interaction and persistence regression check (no provider or mic access)."""
 import os
+import time
+from unittest.mock import Mock
 
 import pytest
 
@@ -125,3 +127,71 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
     if failures:
         raise failures[0]
     assert load(path).desktop.retention_days == 47
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
+)
+@pytest.mark.parametrize("result,expected", [
+    (b"audio", "Microphone test passed"),
+    (b"", "No speech detected"),
+    (RuntimeError("Microphone stopped sending audio. Reconnect the headset."), "Reconnect"),
+])
+def test_microphone_check_shows_result_and_restores_button(tmp_path, monkeypatch, result, expected):
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import GLib
+
+    from caelum import desktop
+    from caelum.config import Config, save
+    from caelum.onboarding import Progress
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    devices = [("CMF Buds 2", "pulse:bluez_input.test")]
+    monkeypatch.setattr(desktop, "microphones", lambda: devices)
+    monkeypatch.setattr(desktop, "request", lambda _: {"state": "hidden", "paused": False})
+    record = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
+    monkeypatch.setattr("caelum.onboarding.record_sample", record)
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    Progress(4, True).save(path)
+    failures = []
+    messages = []
+
+    def activated(app):
+        deadline = time.monotonic() + 5
+
+        def finished():
+            try:
+                if not messages or not app.test_button.get_sensitive():
+                    assert time.monotonic() < deadline, "Microphone test never completed"
+                    return True
+                assert expected in messages[-1]
+                record.assert_called_once()
+                assert record.call_args.args[0].app.microphone == devices[0][1]
+            except BaseException as error:
+                failures.append(error)
+            app.quit()
+            return False
+
+        def begin():
+            try:
+                app.navigate("settings")
+                app.set_devices(devices)
+                app.mic.set_selected(1)
+                app.message = messages.append
+                app.test_microphone()
+                assert not app.test_button.get_sensitive()
+                GLib.timeout_add(40, finished)
+            except BaseException as error:
+                failures.append(error)
+                app.quit()
+            return False
+
+        GLib.timeout_add(100, begin)
+
+    desktop.run(path, on_activate=activated)
+    if failures:
+        raise failures[0]

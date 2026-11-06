@@ -14,6 +14,12 @@ def test_pcm_wav_is_lossless():
         assert wav.readframes(1000) == pcm
 
 
+def test_capture_preserves_actionable_transport_errors():
+    capture = Capture(App())
+    capture.callback(b"", 0, None, "Microphone stopped sending audio. Reconnect the headset.")
+    assert capture.error == "Microphone stopped sending audio. Reconnect the headset."
+
+
 def test_capture_bounds_and_quiet_audio_not_gated():
     capture = Capture(App(max_recording_seconds=1))
     quiet = np.full(BLOCK, 40, dtype=np.int16).tobytes()

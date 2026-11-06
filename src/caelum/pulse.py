@@ -1,6 +1,7 @@
 """Named PipeWire/PulseAudio inputs with server-side PCM conversion."""
 
 import json
+import select
 import shutil
 import subprocess
 import threading
@@ -80,7 +81,8 @@ class PulseStream:
         if self.source is not None:
             command.append("--device=" + self.source)
         self.process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, bufsize=0,
         )
         self.thread = threading.Thread(target=self.read, name="caelum-audio", daemon=True)
         self.thread.start()
@@ -89,17 +91,31 @@ class PulseStream:
             raise RuntimeError("Microphone did not start; reconnect it and check the headset profile")
 
     def read(self):
+        pending = bytearray()
         try:
             while not self.stopping.is_set():
-                data = self.process.stdout.read(640)
-                if len(data) != 640:
+                readable, _, _ = select.select([self.process.stdout], [], [], 2)
+                if not readable:
                     if not self.stopping.is_set():
-                        self.callback(b"", 0, None, True)
+                        self.callback(
+                            b"", 0, None,
+                            "Microphone stopped sending audio. Disconnect and reconnect "
+                            "the headset, then test again.",
+                        )
                     break
-                self.callback(data, 320, None, None)
+                data = self.process.stdout.read(640 - len(pending))
+                if not data:
+                    if not self.stopping.is_set():
+                        self.callback(b"", 0, None, "Microphone disconnected or capture interrupted")
+                    break
+                pending.extend(data)
+                if len(pending) < 640:
+                    continue
+                self.callback(bytes(pending), 320, None, None)
+                pending.clear()
                 self.started = True
                 self.ready.set()
-        except OSError:
+        except (OSError, ValueError):
             if not self.stopping.is_set():
                 self.callback(b"", 0, None, True)
         finally:

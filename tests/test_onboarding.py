@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -78,6 +78,22 @@ def test_local_recording_cancel_closes_and_discards(monkeypatch):
     with pytest.raises(RuntimeError, match="cancelled"):
         record_sample(Config(), 3, cancelled)
     assert calls == ["start", "stop", "discard"]
+
+
+@pytest.mark.parametrize("late_error", [False, True])
+def test_local_recording_reports_transport_error_and_discards_partial_audio(monkeypatch, late_error):
+    error = "Microphone stopped sending audio. Reconnect the headset."
+    capture = SimpleNamespace(
+        start=Mock(), stop=Mock(), discard=Mock(), snapshot=Mock(),
+        error=None if late_error else error, level=0, speech_ms=100,
+    )
+    if late_error:
+        capture.stop.side_effect = lambda: setattr(capture, "error", error)
+    monkeypatch.setattr("caelum.onboarding.Capture", lambda _: capture)
+    with pytest.raises(RuntimeError, match="Reconnect the headset"):
+        record_sample(Config(), 0 if late_error else 1, threading.Event())
+    capture.snapshot.assert_not_called()
+    capture.discard.assert_called_once()
 
 
 async def test_practice_success_uses_providers_without_history_or_insertion(monkeypatch):

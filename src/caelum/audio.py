@@ -47,7 +47,7 @@ class Capture:
 
     def callback(self, indata, frames, time_info, status):
         if status:
-            self.error = "Audio capture interrupted"
+            self.error = status if isinstance(status, str) else "Audio capture interrupted"
         raw = bytes(indata)
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768
         rms = float(np.sqrt(np.mean(samples * samples))) if len(samples) else 0

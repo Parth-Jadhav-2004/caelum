@@ -1742,12 +1742,16 @@ def run(path=None, *, on_activate=None):
                         raise RuntimeError("Finish recording before testing the microphone")
                     config = deepcopy(self.config)
                     config.app.microphone = device
-                    record_sample(config, 3, threading.Event(), level)
+                    return bool(record_sample(config, 3, threading.Event(), level))
                 finally:
                     GLib.idle_add(self.test_button.set_sensitive, True)
                     GLib.idle_add(self.set_mic_level, 0)
 
-            self.work(test)
+            self.work(test, lambda heard: self.message(
+                "Microphone test passed. Audio detected locally; nothing saved or uploaded."
+                if heard else
+                "No speech detected. Speak into the selected microphone and test again."
+            ))
 
         def queue_autosave(self):
             if self.selecting_preset or self.closed or getattr(self, "restarting_update", False):

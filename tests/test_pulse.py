@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import threading
 from types import SimpleNamespace
@@ -127,6 +128,7 @@ def test_failed_stream_start_is_closed(inputs, monkeypatch):
 
 
 def test_pulse_stream_routes_exact_source_and_cleans_up_reader(monkeypatch):
+    monkeypatch.setattr(pulse.select, "select", lambda readers, *_: (readers, [], []))
     stopped = threading.Event()
     reads = []
 
@@ -160,6 +162,7 @@ def test_pulse_stream_routes_exact_source_and_cleans_up_reader(monkeypatch):
 
 
 def test_pulse_startup_failure_terminates_process(monkeypatch):
+    monkeypatch.setattr(pulse.select, "select", lambda readers, *_: (readers, [], []))
     process = Mock(stdout=io.BytesIO())
     process.poll.return_value = 1
     monkeypatch.setattr(pulse.subprocess, "Popen", Mock(return_value=process))
@@ -180,3 +183,60 @@ def test_pulse_shutdown_kills_unresponsive_process():
     process.terminate.assert_called_once()
     process.kill.assert_called_once()
     process.stdout.close.assert_called_once()
+
+
+def test_stalled_stream_reports_transport_failure_instead_of_silence(monkeypatch):
+    stream = pulse.PulseStream("bluez_input.test", Mock())
+    stream.process = Mock()
+    stream.process.stdout.read.return_value = b"\0" * 640
+    readiness = Mock(side_effect=[([stream.process.stdout], [], []), ([], [], [])])
+    monkeypatch.setattr(pulse.select, "select", readiness)
+    stream.read()
+    assert stream.started
+    assert stream.ready.is_set()
+    assert stream.callback.call_args.args[:3] == (b"", 0, None)
+    assert "stopped sending audio" in stream.callback.call_args.args[3]
+    assert readiness.call_args.args[3] == 2
+
+
+def test_partial_pipe_reads_are_combined_into_complete_pcm_blocks(monkeypatch):
+    stream = pulse.PulseStream("bluez_input.test", Mock())
+    stream.process = Mock()
+    stream.process.stdout.read.side_effect = [b"\x01\0" * 100, b"\x02\0" * 220, b""]
+    monkeypatch.setattr(pulse.select, "select", lambda readers, *_: (readers, [], []))
+    stream.read()
+    stream.callback.assert_any_call(b"\x01\0" * 100 + b"\x02\0" * 220, 320, None, None)
+    assert [call.args[0] for call in stream.process.stdout.read.call_args_list] == [640, 440, 640]
+
+
+def test_stop_during_poll_does_not_report_a_capture_error(monkeypatch):
+    stream = pulse.PulseStream(None, Mock())
+    stream.process = Mock()
+
+    def stopped(*_):
+        stream.stopping.set()
+        return [], [], []
+
+    monkeypatch.setattr(pulse.select, "select", stopped)
+    stream.read()
+    stream.callback.assert_not_called()
+
+
+def test_real_pipe_that_stalls_after_start_reports_an_error(monkeypatch):
+    reader, writer = os.pipe()
+    process = Mock(stdout=os.fdopen(reader, "rb", buffering=0))
+    process.poll.return_value = 0
+    monkeypatch.setattr(pulse.subprocess, "Popen", Mock(return_value=process))
+    capture = Capture(App())
+    stream = pulse.PulseStream("bluez_input.test", capture.callback)
+    try:
+        os.write(writer, b"\x01\0" * 320)
+        stream.start()
+        stream.thread.join(timeout=3)
+        assert not stream.thread.is_alive()
+        assert "stopped sending audio" in capture.error
+        assert capture.size == 640
+    finally:
+        stream.close()
+        os.close(writer)
+        capture.discard()

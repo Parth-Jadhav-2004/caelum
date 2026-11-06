@@ -4,7 +4,7 @@ Hold a shortcut, speak, and get the text back in the app you were using.
 
 Caelum is dictation for Linux desktops. You bring a [Groq](https://console.groq.com) API key. Speech goes to that provider for transcription. Finished text is saved on your computer. The recording itself is not.
 
-**Caelum 0.3.6 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.6). Install and compatibility details are in the [Linux guide](docs/linux.md).
+**Caelum 0.3.7 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.7). Install and compatibility details are in the [Linux guide](docs/linux.md).
 
 ## Install
 
@@ -12,13 +12,13 @@ Pick the package for your distribution. Debian is not currently packaged.
 
 ```sh
 # Ubuntu 24.04
-sudo apt install ./caelum_0.3.6-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.3.7-1_ubuntu-24.04_amd64.deb
 
 # Arch
-sudo pacman -U ./caelum-0.3.6-1-x86_64.pkg.tar.zst
+sudo pacman -U ./caelum-0.3.7-1-x86_64.pkg.tar.zst
 
 # Fedora 43
-sudo dnf install ./caelum-0.3.6-1.fedora43.x86_64.rpm
+sudo dnf install ./caelum-0.3.7-1.fedora43.x86_64.rpm
 ```
 
 Packages are published for Ubuntu 24.04 and 26.04, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
@@ -128,5 +128,5 @@ check GitHub for new versions, approve a verified download, and authorize instal
 Caelum then restarts automatically. Source/AUR installations keep
 using their package manager. [Updater behavior and release setup](docs/updates.md).
 
-Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.6](docs/release-0.3.6.md).
+Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.7](docs/release-0.3.7.md).
 
