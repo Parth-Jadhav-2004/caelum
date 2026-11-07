@@ -72,7 +72,8 @@ class Transcript:
 
 
 class Providers:
-    def __init__(self, config, client=None):
+    def __init__(self, config, client=None, *, credential_overrides=None):
+        self.credential_overrides = dict(credential_overrides or {})
         self.config = config
         self.client = client or httpx.AsyncClient(
             limits=httpx.Limits(max_connections=5), follow_redirects=False
@@ -91,7 +92,9 @@ class Providers:
 
     async def headers(self, provider):
         try:
-            key = await asyncio.to_thread(credential, provider.key_env)
+            key = (self.credential_overrides[provider.key_env]
+                   if provider.key_env in self.credential_overrides
+                   else await asyncio.to_thread(credential, provider.key_env))
         except (RuntimeError, OSError):
             raise ProviderError(
                 "Saved credential unavailable; open setup to repair key storage", "credential_store"

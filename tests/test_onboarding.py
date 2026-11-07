@@ -125,3 +125,14 @@ async def test_practice_cancellation_ignores_late_work(monkeypatch):
     with pytest.raises(RuntimeError, match="cancelled"):
         await task
     assert stopped.is_set()
+
+
+async def test_provider_validation_error_names_role_and_credential(monkeypatch):
+    config = Config()
+    config.cleanup.model = "refinement"
+    config.cleanup.key_env = "REFINEMENT_KEY"
+    models = AsyncMock(side_effect=[[config.stt.model], ProviderError("Invalid key", "auth")])
+    monkeypatch.setattr("caelum.providers.Providers.models", models)
+    with pytest.raises(ProviderError, match=r"Refinement \(REFINEMENT_KEY\): Invalid key") as error:
+        await validate_providers(config)
+    assert error.value.kind == "auth"

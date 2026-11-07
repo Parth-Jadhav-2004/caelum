@@ -16,7 +16,7 @@ from .providers import ProviderError, Providers
 PRIVACY = (
     "Audio is sent to your transcription provider. When refinement is on, text is sent "
     "to your refinement provider. Regular dictations save final text in local history when "
-    "Save dictation history is on (disable it in Settings → History & desktop) "
+    "Save dictation history is on (disable it in Settings → Advanced) "
     "and may use the clipboard. Practice text stays in this setup window unless you copy it. "
     "History is not encrypted by Caelum. Exports and clipboard managers keep independent copies. "
     "Groq free usage has provider limits."
@@ -49,16 +49,20 @@ class Progress:
             Path(temporary).unlink(missing_ok=True)
 
 
-async def validate_providers(config):
+async def validate_providers(config, credential_overrides=None):
     validate(config)
-    provider = Providers(config)
+    provider = Providers(config, credential_overrides=credential_overrides)
     try:
         for title, settings in (("Transcription", config.stt), ("Refinement", config.cleanup)):
             if not settings.model:
                 if title == "Transcription":
                     raise ValueError("Choose a transcription model")
                 continue
-            if settings.model not in await provider.models(settings):
+            try:
+                available = await provider.models(settings)
+            except ProviderError as error:
+                raise ProviderError(f"{title} ({settings.key_env}): {error}", error.kind) from None
+            if settings.model not in available:
                 raise ProviderError(f"{title} model unavailable; choose another model", "model")
     finally:
         await provider.client.aclose()

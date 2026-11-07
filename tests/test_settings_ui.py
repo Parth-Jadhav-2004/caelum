@@ -43,6 +43,8 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
     def activated(app):
         def edit():
             try:
+                if len(app.devices) < 2:
+                    return True
                 app.navigate("settings")
                 assert not hasattr(app, "save_button")
                 assert app.record_key.has_css_class("token")
@@ -94,8 +96,13 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
             GLib.timeout_add(1000, verify)
             return False
 
+        deadline = time.monotonic() + 8
+
         def verify():
             try:
+                if app.save_in_flight or app.autosave_source:
+                    assert time.monotonic() < deadline, "Autosave did not settle"
+                    return True
                 saved = load(path)
                 assert writes == [46]
                 assert saved.app.hotkey == "CTRL + SUPER"
@@ -109,6 +116,7 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert app.save_status.get_text() == "Saved"
                 app.show_provider_status("Transcription: Invalid provider key")
                 assert app.provider_status_dot.has_css_class("error")
+                assert app.key_setup.get_visible()
                 app.show_provider_status("Transcription: key missing")
                 assert app.key_setup.get_visible()
                 app.show_provider_status("Transcription: connected (model available)")

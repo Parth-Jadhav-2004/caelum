@@ -30,7 +30,8 @@ def test_cleanup_validation(raw, result, expected):
 
 
 @pytest.fixture
-def config(monkeypatch):
+def config(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv("GROQ_API_KEY", "test-not-a-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "test-not-a-secret")
     cfg = Config()
@@ -294,3 +295,19 @@ async def test_provider_errors_and_metrics_omit_sensitive_content(config, caplog
         assert sentinel not in json.dumps(provider.metrics)
     assert sentinel not in caplog.text
     assert sentinel not in str(capsys.readouterr())
+
+
+async def test_candidate_key_validation_does_not_read_or_replace_saved_key(config, monkeypatch):
+    saved_lookup = Mock(side_effect=AssertionError("Candidate should be used in memory"))
+    monkeypatch.setattr("caelum.providers.credential", saved_lookup)
+    observed = []
+
+    def respond(request):
+        observed.append(request.headers["Authorization"])
+        return httpx.Response(200, json={"data": [{"id": config.stt.model}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client, credential_overrides={config.stt.key_env: "candidate"})
+        assert await provider.models(config.stt) == [config.stt.model]
+    assert observed == ["Bearer candidate"]
+    saved_lookup.assert_not_called()

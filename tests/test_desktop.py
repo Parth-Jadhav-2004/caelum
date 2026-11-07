@@ -389,9 +389,12 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
 
     def activated(app):
         def verify():
+            setup = app.setup_window
+            if setup is not None and (len(setup.devices) < 2 or len(app.devices) < 2):
+                return True
             try:
                 app.work = lambda operation, done=None: done(operation()) if done else operation()
-                assert app.setup_window is not None  # first launch opens setup automatically
+                assert setup is not None  # first launch opens setup automatically
                 setup = show(app)
                 assert isinstance(setup, Gtk.Box)
                 assert not isinstance(setup, Gtk.Window)
@@ -419,6 +422,13 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 setup.advance()
                 assert setup.stage == 1 and not setup.validated
                 assert "Invalid provider key" in setup.notice.get_text()
+                assert not stored  # A rejected key must never replace a saved credential.
+                assert setup.key_entry.get_text() == "test-key"
+                setup.key_entry.set_text("")
+                setup.advance()
+                assert "GROQ_API_KEY" not in setup.pending_keys
+                assert validate.await_count == 1
+                setup.key_entry.set_text("test-key")
                 validate.side_effect = None
                 setup.advance()
                 assert validate.await_count == 2
@@ -447,7 +457,11 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 assert setup.hotkey.get_text() == old_hotkey
                 setup.release_shortcut(None, Gdk.KEY_Super_L, 0, Gdk.ModifierType.CONTROL_MASK)
                 assert setup.hotkey.get_text() == "CTRL + SUPER"
+                setup.begin_shortcut()
+                assert setup.recording_key
                 setup.advance()
+                assert not setup.recording_key
+                assert "Keys…" not in setup.shortcut_token.get_label()
                 assert setup.stage == 4
                 assert not setup.next.get_sensitive()
                 setup.run_practice()
@@ -477,7 +491,7 @@ def test_setup_flow_requires_validation_mic_and_practice(tmp_path, monkeypatch, 
                 setup = show(app)
                 assert setup.stage == 1  # resume validates provider access again
                 assert not setup.validated and not setup.succeeded
-                assert setup.preset.get_selected() == 0  # draft selection survives resume
+                assert setup.preset.get_selected() == (2 if contributor else 1)  # Unvalidated presets are discarded.
                 setup.key_entry.set_text("discard-this-draft")
                 app.navigate("settings")  # Leaving the page cancels work and clears secrets.
                 assert setup.closed and setup.cancelled.is_set()
@@ -546,15 +560,34 @@ def test_setup_collects_distinct_custom_keys_before_validation(tmp_path, monkeyp
                 assert setup.key_name == "REFINEMENT_KEY"
                 assert not setup.key_entry.get_text()
                 checked.assert_not_awaited()
+                import asyncio
+                async def cancel_validation(*_):
+                    assert setup.cancel_action.get_visible()
+                    setup.cancel_test()
+                    await asyncio.sleep(10)
+                checked.side_effect = cancel_validation
                 setup.key_entry.set_text("second-test-key")
                 setup.advance()
+                assert not setup.busy and not keys
+                assert "cancelled" in setup.notice.get_text()
+                checked.side_effect = RuntimeError("Invalid first key")
+                setup.key_entry.set_text("second-test-key")
+                setup.advance()
+                assert setup.stage == 1 and not keys
+                setup.key_selector.set_selected(0)
+                assert setup.key_entry.get_text() == "first-test-key"
+                setup.key_entry.set_text("repaired-first-key")
+                setup.key_selector.set_selected(1)
+                assert setup.key_entry.get_text() == "second-test-key"
+                checked.side_effect = None
+                setup.advance()
                 assert setup.stage == 2 and setup.validated
-                checked.assert_awaited_once()
-                assert keys == {"GROQ_API_KEY": "first-test-key", "REFINEMENT_KEY": "second-test-key"}
-                assert "not encrypted" in app.notice.get_text()
+                assert checked.await_count == 3
+                assert keys == {"GROQ_API_KEY": "repaired-first-key", "REFINEMENT_KEY": "second-test-key"}
+                assert "not encrypted" in setup.notice.get_text()
                 setup.go_back()
                 assert setup.remove_key.get_visible()
-                setup.delete_key()
+                setup.delete_key(True)
                 assert "REFINEMENT_KEY" not in keys
                 assert not setup.remove_key.get_visible()
                 setup.open_settings()
@@ -608,7 +641,7 @@ def test_completed_setup_stays_complete_after_key_management_and_restart(tmp_pat
                 setup.preset.set_selected(0)
                 assert not setup.validated and not setup.succeeded
                 assert Progress.load(path).complete
-                setup.delete_key()
+                setup.delete_key(True)
                 assert deleted == ["GROQ_API_KEY"]
                 assert Progress.load(path).complete
                 setup.resume_later()
