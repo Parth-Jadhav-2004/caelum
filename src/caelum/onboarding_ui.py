@@ -5,8 +5,19 @@ import threading
 from copy import deepcopy
 
 from . import credentials
-from .config import save, validate
-from .onboarding import Progress, check_shortcut, practice, record_sample, validate_providers
+from .config import save
+from .onboarding import (
+    PRIVACY,
+    Progress,
+    check_shortcut,
+    practice,
+    record_sample,
+    validate_providers,
+)
+
+PRACTICE_GUIDANCE = (
+    "Click to record a five-second sample. It appears here, without pasting into another app. Esc cancels."
+)
 
 
 def show(host, key_name=None):
@@ -45,6 +56,7 @@ def show(host, key_name=None):
             self.key_name = key_name
             self.pending_modifiers = []
             self.pending_shortcut = None
+            self.pending_keys = {}
             top = host.box(False, 16)
             progress = host.box(False, 6)
             progress.set_valign(Gtk.Align.CENTER)
@@ -56,7 +68,11 @@ def show(host, key_name=None):
                 bar.update_property([Gtk.AccessibleProperty.LABEL], [f"Step {index + 1}"])
                 self.progress_bars.append(bar)
                 progress.append(bar)
-            top.append(progress)
+            progress_group = host.box(spacing=8)
+            self.step_label = host.label("", "setup-step")
+            progress_group.append(self.step_label)
+            progress_group.append(progress)
+            top.append(progress_group)
             spacer = host.box()
             spacer.set_hexpand(True)
             top.append(spacer)
@@ -77,12 +93,21 @@ def show(host, key_name=None):
             self.pages.set_hhomogeneous(False)
             center.append(self.pages)
             self.notice = host.label("", "setup-note", True)
+            def announce_notice(*_):
+                text = self.notice.get_text()
+                if text and hasattr(self.notice, "announce"):
+                    self.notice.announce(text, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+            self.notice.connect("notify::label", announce_notice)
             center.append(self.notice)
             scroll.set_child(host.clamp(center, vertical_center=True))
             self.append(scroll)
             bottom = host.box(False, 16)
+            bottom.add_css_class("setup-footer")
             self.back = host.button("Back", self.go_back, "text-link")
             bottom.append(self.back)
+            self.cancel_action = host.button("Cancel test", self.cancel_test, "text-link")
+            self.cancel_action.set_visible(False)
+            bottom.append(self.cancel_action)
             spacer = host.box()
             spacer.set_hexpand(True)
             bottom.append(spacer)
@@ -133,6 +158,10 @@ def show(host, key_name=None):
                     done(value)
                 else:
                     self.notice.set_text(value)
+                    if self.stage == 1:
+                        self.refresh_key()
+                    elif self.stage == 4:
+                        self.practice_note.set_text(PRACTICE_GUIDANCE)
                 self.render()
 
             host.work(safe, delivered)
@@ -142,7 +171,7 @@ def show(host, key_name=None):
             self.preset = Gtk.DropDown.new_from_strings(PRESETS)
             self.preset.set_selected(provider_preset(self.config))
             self.provider_token = host.token_menu(
-                self.preset, lambda: ["Groq", "Groq · transcription only", "Custom"]
+                self.preset, lambda: list(PRESETS)
             )
             self.headline(page, "Use", self.provider_token, "to turn your voice into text.")
             self.key_entry = Gtk.PasswordEntry()
@@ -151,6 +180,15 @@ def show(host, key_name=None):
             self.key_entry.add_css_class("setup-key")
             self.key_entry.update_property([Gtk.AccessibleProperty.LABEL], ["Provider API key"])
             self.key_entry.connect("activate", lambda _: self.advance())
+            page.append(host.label(
+                "Connect your provider, check your microphone, then try a dictation.",
+                "setup-note", True,
+            ))
+            self.key_selector = Gtk.DropDown.new_from_strings([])
+            self.key_selector.update_property([Gtk.AccessibleProperty.LABEL], ["Credential to edit"])
+            self.key_selector.connect("notify::selected", self.select_key)
+            self.syncing_keys = False
+            page.append(self.key_selector)
             page.append(self.key_entry)
             self.key_note = host.label("Stored in your system keyring.", "setup-note", True)
             page.append(self.key_note)
@@ -160,13 +198,16 @@ def show(host, key_name=None):
             )
             self.get_key.add_css_class("text-link")
             links.append(self.get_key)
-            links.append(host.button("Custom provider", self.open_settings, "text-link"))
+            links.append(host.button("Custom provider (restarts setup)", self.open_settings, "text-link"))
             self.remove_key = host.button("Remove saved key", self.delete_key, "text-link")
             links.append(self.remove_key)
             page.append(links)
+            privacy = Gtk.Expander(label="How Caelum handles your data")
+            privacy.set_child(host.label(PRIVACY, "setup-note", True))
+            page.append(privacy)
             self.consent = Gtk.CheckButton()
             self.consent.set_child(host.label(
-                "Allow selected providers to process audio and text.",
+                "I understand dictation sends audio and text to my selected providers.",
                 "setup-note", True,
             ))
             self.consent.get_child().set_hexpand(True)
@@ -176,19 +217,32 @@ def show(host, key_name=None):
             self.consent.connect("toggled", lambda _: self.render())
             page.append(self.consent)
             self.contributor_row = host.box(False, 16)
-            label = host.label("Allow Contributor training use of my text", "setup-note", True)
+            label = host.label("Allow Contributor training use of my text (required for this model)", "setup-note", True)
             label.set_hexpand(True)
             self.contributor_row.append(label)
             self.contributor = Gtk.Switch()
             self.contributor.add_css_class("settings-switch")
             self.contributor.set_valign(Gtk.Align.CENTER)
             self.contributor.update_property(
-                [Gtk.AccessibleProperty.LABEL], ["Allow Contributor training use of my text"]
+                [Gtk.AccessibleProperty.LABEL], ["Allow Contributor training use of my text (required for this model)"]
             )
             self.contributor_row.append(self.contributor)
             page.append(self.contributor_row)
+            self.contributor.connect("notify::active", lambda *_: self.render())
             self.preset.connect("notify::selected", self.change_provider)
             self.change_provider()
+
+        def select_key(self, *_):
+            if self.syncing_keys:
+                return
+            value = self.key_entry.get_text().strip()
+            if value:
+                self.pending_keys[self.key_name] = value
+            else:
+                self.pending_keys.pop(self.key_name, None)
+            self.key_name = self.key_names[self.key_selector.get_selected()]
+            self.key_entry.set_text(self.pending_keys.get(self.key_name, ""))
+            self.refresh_key()
 
         def refresh_key(self):
             description = credentials.describe(self.key_name)
@@ -198,7 +252,8 @@ def show(host, key_name=None):
                 "Stored in an owner-only private file; not encrypted."
                 if "private file" in description else
                 "Key available from your environment." if "environment" in description else
-                "Stored in your system keyring."
+                "Stored in your system keyring." if stored else
+                "Validated keys will be stored securely when possible; private-file fallback is disclosed."
             )
             self.key_entry.set_property(
                 "placeholder-text", "Paste your API key" if self.key_name == self.config.stt.key_env
@@ -206,29 +261,49 @@ def show(host, key_name=None):
             )
 
         def change_provider(self, *_):
+            from .providers import contributor_scope
+            old_scope = contributor_scope(self.config.cleanup)
+            was_accepted = self.contributor.get_active()
             self.config = apply_provider_preset(self.config, self.preset.get_selected())
             self.provider_token.set_label(
-                ("Groq ▾", "Groq ▾", "Custom ▾")[self.preset.get_selected()]
+                PRESETS[self.preset.get_selected()] + " ▾"
             )
             self.validated = self.succeeded = False
+            self.pending_keys.clear()
             self.key_names = list(dict.fromkeys(
                 [self.config.stt.key_env]
                 + ([self.config.cleanup.key_env] if self.config.cleanup.model else [])
             ))
             if self.key_name not in self.key_names:
                 self.key_name = self.key_names[0]
+            self.syncing_keys = True
+            self.key_selector.set_model(Gtk.StringList.new(self.key_names))
+            self.key_selector.set_selected(self.key_names.index(self.key_name))
+            self.key_selector.set_visible(len(self.key_names) > 1)
+            self.syncing_keys = False
             self.key_entry.set_text("")
             from .providers import needs_contributor_consent
 
             self.contributor_row.set_visible(needs_contributor_consent(self.config.cleanup))
-            self.contributor.set_active(False)
+            self.contributor.set_active(
+                was_accepted and old_scope == contributor_scope(self.config.cleanup)
+            )
             self.get_key.set_visible("groq.com" in self.config.stt.base_url)
             self.refresh_key()
 
-        def delete_key(self):
+        def delete_key(self, confirmed=False):
             if self.busy:
                 return
+            if not confirmed:
+                host.confirm_action(
+                    "Remove the saved provider key?",
+                    "Dictation with this key will stop working. Environment fallback for this key "
+                    "is also disabled until you save a replacement.",
+                    "Remove key", lambda: self.delete_key(True),
+                )
+                return
             self.key_entry.set_text("")
+            self.pending_keys.pop(self.key_name, None)
             self.validated = self.succeeded = False
             self.progress.save(host.path)
 
@@ -338,8 +413,12 @@ def show(host, key_name=None):
             self.shortcut_token = host.button(
                 self.config.app.hotkey.title(), self.begin_shortcut, "token"
             )
-            self.headline(page, "Hold", self.shortcut_token, "to talk.")
-            page.append(host.label("Release to insert. Esc to cancel.", "setup-note", True))
+            self.headline(page, "Choose", self.shortcut_token, "to start dictation.")
+            page.append(host.label(
+                "Click the shortcut to change it. Press Esc to cancel a change. "
+                "Portable desktops need a letter, number, or function key.", "setup-note", True,
+            ))
+            page.append(host.button("Desktop options (restarts setup)", self.open_settings, "text-link"))
             keys = Gtk.EventControllerKey()
             keys.connect("key-pressed", self.capture_shortcut)
             keys.connect("key-released", self.release_shortcut)
@@ -349,16 +428,16 @@ def show(host, key_name=None):
             self.recording_key = True
             self.pending_modifiers = []
             self.pending_shortcut = None
-            self.shortcut_token.set_label("Press keys…")
+            self.shortcut_token.set_label("Keys… Esc cancels")
             self.shortcut_token.grab_focus()
 
         def capture_shortcut(self, _, keyval, keycode, state):
             if not self.recording_key:
                 return False
-            if keyval == Gdk.KEY_Escape:
+            if keyval in (Gdk.KEY_Escape, Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
                 self.recording_key = False
                 self.shortcut_token.set_label(self.hotkey.get_text().title())
-                return True
+                return keyval == Gdk.KEY_Escape
             modifiers, key = self.chord(keyval, state)
             self.pending_modifiers = modifiers
             if key and modifiers:
@@ -391,7 +470,7 @@ def show(host, key_name=None):
         def practice_page(self):
             page = self.page(4)
             self.practice_button = host.button(self.config.app.hotkey.title(), self.run_practice, "token")
-            self.headline(page, "Hold", self.practice_button, "and say hello.")
+            self.headline(page, "Try", self.practice_button, "and say hello.")
             self.upload = Gtk.CheckButton()
             self.upload.set_child(host.label("Allow this practice upload.", "setup-note", True))
             self.upload.get_child().set_hexpand(True)
@@ -403,7 +482,18 @@ def show(host, key_name=None):
             self.result.set_hexpand(True)
             self.result.set_size_request(-1, 100)
             self.result.update_property([Gtk.AccessibleProperty.LABEL], ["Practice dictation result"])
-            card.append(self.result)
+            result_overlay = Gtk.Overlay()
+            result_overlay.set_hexpand(True)
+            result_overlay.set_child(self.result)
+            placeholder = host.label("Your practice text will appear here.", "setup-note", True)
+            placeholder.set_halign(Gtk.Align.START)
+            placeholder.set_valign(Gtk.Align.START)
+            placeholder.set_can_target(False)
+            result_overlay.add_overlay(placeholder)
+            self.result.get_buffer().connect(
+                "changed", lambda buffer: placeholder.set_visible(buffer.get_char_count() == 0)
+            )
+            card.append(result_overlay)
             self.copy_button = host.button("", self.copy_practice, "icon-button")
             self.copy_button.set_child(host.line_icon("copy"))
             self.copy_button.set_valign(Gtk.Align.START)
@@ -411,7 +501,7 @@ def show(host, key_name=None):
             self.copy_button.set_sensitive(False)
             card.append(self.copy_button)
             page.append(card)
-            self.practice_note = host.label("Click the shortcut or hold it to record five seconds.", "setup-note", True)
+            self.practice_note = host.label(PRACTICE_GUIDANCE, "setup-note", True)
             page.append(self.practice_note)
 
         def practice_pressed(self, _, keyval, keycode, state):
@@ -439,11 +529,12 @@ def show(host, key_name=None):
                 self.notice.set_text("Allow the practice upload before recording.")
                 return
             if not (self.validated and self.tested):
-                self.stage = 1
+                self.stage = 1 if not self.validated else 2
                 self.notice.set_text("Validate providers and test the microphone first.")
                 self.render()
                 return
             self.succeeded = False
+            self.practice_heard = False
             self.result.get_buffer().set_text("")
             self.copy_button.set_sensitive(False)
             self.cancelled.clear()
@@ -451,7 +542,8 @@ def show(host, key_name=None):
 
             def run_sample():
                 self.ensure_idle()
-                pcm = record_sample(self.config, 5, self.cancelled)
+                pcm = record_sample(self.config, 5, self.cancelled, self.practice_level)
+                GLib.idle_add(self.practice_processing)
                 if not pcm:
                     raise RuntimeError("No speech detected. Try again")
                 return asyncio.run(practice(self.config, pcm, self.cancelled))
@@ -468,6 +560,29 @@ def show(host, key_name=None):
                 )
 
             self.work(run_sample, completed)
+
+        def cancel_test(self):
+            self.cancelled.set()
+            self.cancel_action.set_sensitive(False)
+            self.notice.set_text("Cancelling…")
+
+        def practice_level(self, value):
+            def display():
+                if not self.closed and self.busy and not self.cancelled.is_set():
+                    if value > 0.02 and not self.practice_heard:
+                        self.practice_heard = True
+                        self.notice.set_text("Recording… Speech detected.")
+                    self.practice_note.set_text(
+                        "Recording… Speech detected." if value > 0.02
+                        else "Recording… Speak into your microphone."
+                    )
+                return False
+            GLib.idle_add(display)
+
+        def practice_processing(self):
+            if not self.closed and not self.cancelled.is_set():
+                self.notice.set_text("Transcribing your sample… You can cancel at any time.")
+            return False
 
         def copy_practice(self):
             buffer = self.result.get_buffer()
@@ -497,34 +612,58 @@ def show(host, key_name=None):
                 self.config.desktop = deepcopy(host.config.desktop)
                 self.validated = False
                 name, value = self.key_name, self.key_entry.get_text().strip()
-                self.key_entry.set_text("")
+                if value:
+                    self.pending_keys[name] = value
+                else:
+                    self.pending_keys.pop(name, None)
+                pending_keys = dict(self.pending_keys)
                 self.cancelled.clear()
 
                 def validated(result):
                     storage, missing = result
                     if storage == "file":
-                        host.message("Keyring unavailable; key stored in an owner-only private file, not encrypted.")
+                        self.notice.set_text("Keyring unavailable; key stored in an owner-only private file, not encrypted.")
                     if missing:
-                        self.key_name = missing
+                        self.key_selector.set_selected(self.key_names.index(missing))
                         self.refresh_key()
                         self.notice.set_text(f"Add the key for {missing} to continue.")
                         return
+                    self.key_entry.set_text("")
                     self.refresh_key()
                     self.validated = True
+                    self.pending_keys.clear()
                     self.stage = 2
-                    self.notice.set_text("")
+                    if storage != "file":
+                        self.notice.set_text("")
                     self.config.desktop = deepcopy(host.config.desktop)
                     host.config = deepcopy(self.config)
                     host.sync_setup_settings()
 
                 def verify_and_save():
-                    storage = credentials.store(name, value) if value else None
-                    missing = next((key for key in self.key_names if not credentials.get(key)), None)
+                    missing = next((key for key in self.key_names
+                                    if not pending_keys.get(key) and not credentials.get(key)), None)
                     if missing:
-                        return storage, missing
-                    asyncio.run(validate_providers(self.config))
+                        return None, missing
+                    async def validate():
+                        task = asyncio.create_task(validate_providers(self.config, pending_keys))
+                        try:
+                            while not task.done():
+                                if self.cancelled.is_set():
+                                    raise RuntimeError("Validation cancelled. Keys have not been saved.")
+                                await asyncio.wait({task}, timeout=0.1)
+                            await task
+                        finally:
+                            if not task.done():
+                                task.cancel()
+                                await asyncio.gather(task, return_exceptions=True)
+                    asyncio.run(validate())
                     if self.cancelled.is_set():
                         raise RuntimeError("Setup paused")
+                    storage = None
+                    for key, secret in pending_keys.items():
+                        stored = credentials.store(key, secret)
+                        if stored == "file" or storage is None:
+                            storage = stored
                     save(self.config, host.path)
                     return storage, None
 
@@ -537,6 +676,8 @@ def show(host, key_name=None):
                 self.notice.set_text("")
                 self.render()
             elif self.stage == 3:
+                self.recording_key = False
+                self.shortcut_token.set_label(self.hotkey.get_text().title())
                 self.config.app.hotkey = self.hotkey.get_text().strip().upper()
                 self.config.desktop = deepcopy(host.config.desktop)
                 self.cancelled.clear()
@@ -579,18 +720,35 @@ def show(host, key_name=None):
         def render(self):
             if self.closed:
                 return
+            changed = self.pages.get_visible_child_name() != str(self.stage)
             self.pages.set_visible_child_name(str(self.stage))
+            if changed:
+                target = (self.key_entry, self.next, self.shortcut_token, self.practice_button)[self.stage - 1]
+                GLib.idle_add(target.grab_focus)
             self.pages.set_sensitive(not self.busy)
             self.back.set_sensitive(not self.busy and self.stage > 1)
+            if not self.busy and host.window.get_focus() is self.cancel_action:
+                self.next.grab_focus()
+            self.cancel_action.set_label("Cancel validation" if self.stage == 1 else "Cancel test")
+            self.cancel_action.set_visible(self.busy and self.stage in (1, 2, 4))
+            self.cancel_action.set_sensitive(not self.cancelled.is_set())
+            self.step_label.set_text(f"Step {self.stage} of 4 · " + ("Provider", "Microphone", "Shortcut", "Practice")[self.stage - 1])
             self.next.set_label(
+                "Working…" if self.busy else
                 "Finish" if self.stage == 4 else
                 "Test microphone" if self.stage == 2 and not self.tested else "Continue"
             )
             self.next.set_sensitive(not self.busy and (
-                (self.stage != 1 or self.consent.get_active())
+                (self.stage != 1 or (self.consent.get_active() and (
+                    not self.contributor_row.get_visible() or self.contributor.get_active())))
                 and (self.stage != 4 or self.succeeded)
             ))
+            self.test_again.set_visible(self.tested)
             for index, bar in enumerate(self.progress_bars):
+                bar.update_property([Gtk.AccessibleProperty.LABEL], [
+                    f"Step {index + 1}: " + ("current" if index + 1 == self.stage else
+                                           "completed" if index + 1 < self.stage else "upcoming")
+                ])
                 if index < self.stage:
                     bar.add_css_class("active")
                 else:
@@ -606,16 +764,8 @@ def show(host, key_name=None):
             if self.closed:
                 return
             self.cancelled.set()
-            if not self.busy:
-                try:
-                    self.config.app.hotkey = self.hotkey.get_text().strip().upper()
-                    self.config.desktop = deepcopy(host.config.desktop)
-                    validate(self.config)
-                    save(self.config, host.path)
-                    host.config = deepcopy(self.config)
-                except (ValueError, OSError):
-                    host.message("Setup paused. Settings could not be saved.")
             self.closed = True
+            self.pending_keys.clear()
             self.key_entry.set_text("")
             self.result.get_buffer().set_text("")
             host.window.remove_controller(self.practice_keys)

@@ -33,7 +33,7 @@ Uninstalling the package leaves `~/.config/caelum` and `~/.local/share/caelum` i
 2. Read the privacy explanation, choose a provider, and follow **Get a free key**. Free usage has provider limits.
 3. Enter the key and select **Continue** to save and validate it. Caelum uses the desktop keyring. If unavailable, it clearly reports an owner-only, unencrypted private-file fallback. Keys can be replaced or deleted here.
 4. Continue to validate the key and every selected model, run the three-second **local-only** microphone test, then choose a shortcut. Desktop permission dialogs may appear when the service starts; portable desktops also offer manual recording.
-5. Explicitly consent to upload a five-second practice sample. Practice text appears inside setup, with an optional Copy action; it is not pasted elsewhere or saved to history. A successful practice enables **Finish**. **Resume later** preserves your place; reopening rechecks provider access.
+5. Explicitly consent to upload a five-second practice sample. Practice text appears inside setup, with an optional Copy action; it is not pasted elsewhere or saved to history. A successful practice enables **Finish**. **Resume later** keeps validated settings; reopening starts with provider checks and a fresh microphone test.
 6. Once setup is complete, dictate:
    - **Hyprland:** hold the shortcut shown in Caelum, then release. Caelum pastes once into the original window.
    - **Other desktops:** choose **Record**, then **Finish recording**. Copy the completed text from Caelum and paste it yourself.
@@ -97,7 +97,6 @@ Qualified Hyprland sessions paste into the original window. Other desktops copy 
 
 Also outside this preview:
 
-- A system tray icon
 - Flatpak, Flathub, a published AUR package, and ARM builds
 - Windows and macOS
 - Offline speech recognition

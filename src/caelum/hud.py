@@ -140,11 +140,11 @@ def run(reduced_motion=False, high_contrast=False):
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         kind = state["state"]
         capture = kind in ("listening", "recording")
-        accent, white, error = (0.847, 0.847, 0.847), (0.906, 0.906, 0.906), (0.953, 0.706, 0.667)
+        accent, white, error = (0.435, 0.827, 0.643), (0.906, 0.906, 0.906), (0.953, 0.706, 0.667)
         cr.set_source_rgb(
             *(
                 accent
-                if kind in ("recording", "success", "unrefined")
+                if kind == "recording"
                 else error
                 if kind == "error"
                 else white

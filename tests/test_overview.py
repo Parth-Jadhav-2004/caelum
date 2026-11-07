@@ -61,14 +61,29 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                 assert calls[-1] == "stop"
                 app.pause_button.emit("clicked")
                 assert "pause" in calls
+                for _ in range(8):
+                    GLib.MainContext.default().iteration(False)
                 app.render_data(({"state": "hidden", "paused": True}, rows, rows, summary))
                 assert app.status_label.get_text() == "Paused"
                 app.pause_button.emit("clicked")
                 assert "resume" in calls
+                for _ in range(30):
+                    if not app.control_busy:
+                        break
+                    GLib.MainContext.default().iteration(False)
+                assert not app.control_busy
 
                 app.render_data(({"state": "error", "pending_audio": True}, rows, rows, summary))
                 assert app.retry_button.get_visible() and app.cancel_button.get_visible()
                 app.retry_button.emit("clicked")
+                app.retry_button.emit("clicked")
+                assert calls.count("retry") == 1  # Duplicate input stays suppressed in flight.
+                for _ in range(30):
+                    if not app.control_busy:
+                        break
+                    GLib.MainContext.default().iteration(False)
+                assert not app.control_busy
+                app.render_service({"state": "error", "pending_audio": True})
                 app.cancel_button.emit("clicked")
                 assert "retry" in calls and "cancel" in calls
 
@@ -110,7 +125,8 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                 leap_day = app.usage_buttons[date(2024, 2, 29)]
                 assert leap_day.has_css_class("level-4")
                 assert leap_day.get_tooltip_text() == "1,200 words dictated"
-                assert not app.status_button.get_visible()
+                assert app.status_button.get_visible()
+                assert app.status_button.get_parent() is not None
                 assert app.theme_button.get_parent() is not app.navigation
                 assert app.usage_buttons[date(2024, 2, 1)].has_css_class("level-1")
                 assert app.usage_buttons[date(2024, 2, 2)].has_css_class("level-0")
@@ -135,6 +151,123 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
             return False
 
         GLib.timeout_add(350, verify)
+
+    run(path, on_activate=activated)
+    if failures:
+        raise failures[0]
+
+
+@pytest.mark.skipif(
+    os.environ.get("CAELUM_DESKTOP_TESTS") != "1", reason="Opt-in native GTK desktop test"
+)
+def test_corrupt_history_keeps_service_controls_and_delete_requires_confirmation(tmp_path, monkeypatch):
+    import time
+
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import GLib, Gtk
+
+    from caelum.config import Config, save
+    from caelum.desktop import run
+    from caelum.onboarding import Progress
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr("caelum.desktop.microphones", lambda: [])
+    monkeypatch.setattr("caelum.desktop.request", lambda _: {
+        "state": "error", "pending_audio": True, "error_kind": "offline",
+    })
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    Progress(4, True).save(path)
+    failures = []
+
+    def activated(app):
+        app.history.path.parent.mkdir(parents=True, exist_ok=True)
+        app.history.path.write_text("This is not a SQLite database")
+        app.refresh()
+        deadline = time.monotonic() + 8
+
+        def verify():
+            try:
+                if "History could not be read" not in app.notice.get_text():
+                    assert time.monotonic() < deadline, "History failure was not surfaced"
+                    return True
+                assert app.status_label.get_text() == "Awaiting retry"
+                assert app.retry_button.get_visible() and app.retry_button.get_sensitive()
+                assert app.cancel_button.get_visible()
+                app.render_service({"state": "recording"})
+                assert app.status_label.get_text() == "Listening"
+                assert app.cancel_button.get_visible()
+                # A single deletion is reversible until the confirmation is accepted.
+                deleted = []
+                app.history.delete = deleted.append
+                app.work = lambda operation, done=None: done(operation()) if done else operation()
+                import json
+                def malformed(_):
+                    raise json.JSONDecodeError("bad reply", "{", 0)
+                app.message("")
+                monkeypatch.setattr("caelum.desktop.request", malformed)
+                app.refresh()
+                assert not app.status_refreshing
+                assert app.status_label.get_text() == "Listening"
+                assert "status unavailable" in app.notice.get_text()
+                app.message("")
+                monkeypatch.setattr("caelum.desktop.request", lambda _: {"state": "recording"})
+                app.refresh()
+                assert app.status_label.get_text() == "Listening"
+                app.confirm_delete({"id": "example"})
+                dialog = next(w for w in Gtk.Window.list_toplevels()
+                              if isinstance(w, Gtk.MessageDialog))
+                assert deleted == []
+                dialog.response(Gtk.ResponseType.CANCEL)
+                assert deleted == []
+                app.confirm_delete({"id": "example"})
+                dialog = next(w for w in Gtk.Window.list_toplevels()
+                              if isinstance(w, Gtk.MessageDialog))
+                dialog.response(Gtk.ResponseType.ACCEPT)
+                assert deleted == ["example"]
+                app.message("")
+                app.message("Test failure", "error")
+                app.message("Test information")
+                assert app.notice.get_text() == "Test failure"
+                app.dismiss_notice()
+                assert app.notice.get_text() == "Test information"
+                app.dismiss_notice()
+                assert not app.notice_row.get_visible()
+                app.cancel_button.grab_focus()
+                app.render_service({"state": "hidden"})
+                assert app.window.get_focus() is app.status_button
+                # Cached idle state must not bypass a fresh active-recording check.
+                calls = []
+                def active_request(action):
+                    calls.append(action)
+                    return {"state": "recording"} if action == "status" else None
+                monkeypatch.setattr("caelum.desktop.request", active_request)
+                app.stop_service()
+                dialog = next(w for w in Gtk.Window.list_toplevels()
+                              if isinstance(w, Gtk.MessageDialog))
+                assert "shutdown" not in calls
+                dialog.response(Gtk.ResponseType.CANCEL)
+                assert "shutdown" not in calls
+                app.quit_caelum()
+                dialog = next(w for w in Gtk.Window.list_toplevels()
+                              if isinstance(w, Gtk.MessageDialog))
+                dialog.response(Gtk.ResponseType.CANCEL)
+                assert "shutdown" not in calls
+                app.stop_service()
+                dialog = next(w for w in Gtk.Window.list_toplevels()
+                              if isinstance(w, Gtk.MessageDialog))
+                dialog.response(Gtk.ResponseType.ACCEPT)
+                assert calls.count("shutdown") == 1
+                assert app.notice.get_text() == "Dictation service stopped."
+            except BaseException as error:
+                failures.append(error)
+            app.quit()
+            return False
+
+        GLib.timeout_add(50, verify)
 
     run(path, on_activate=activated)
     if failures:
