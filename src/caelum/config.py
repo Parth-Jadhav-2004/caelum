@@ -12,8 +12,9 @@ from urllib.parse import urlparse
 class App:
     backend: str = "auto"
     hotkey: str = "SUPER + ALT + V"
+    recording_mode: str = "hold"
     strategy: str = "single"
-    max_recording_seconds: int = 120
+    max_recording_seconds: int = 180
     minimum_recording_ms: int = 200
     retry_expiry_seconds: int = 60
     reduced_motion: bool = False
@@ -102,6 +103,8 @@ def validate(config):
         raise ValueError("Retention must be between 1 and 3650 days")
     if not 0 <= config.desktop.stt_usd_per_hour <= 1000:
         raise ValueError("STT hourly rate must be between 0 and 1000 USD")
+    if a.recording_mode not in ("hold", "toggle"):
+        raise ValueError("recording_mode must be hold or toggle")
     if a.strategy not in ("single", "chunked"):
         raise ValueError("strategy must be single or chunked")
     if not 1 <= a.max_recording_seconds <= 600 or not 100 <= a.minimum_recording_ms <= 2000:

@@ -54,3 +54,14 @@ async def test_active_session_rejects_reload(context, attribute):
     with pytest.raises(RuntimeError, match="Finish or cancel"):
         await reload_settings(core, bindings, provider, path)
     bindings.remove.assert_not_awaited()
+
+
+async def test_reload_recording_mode_without_changing_shortcut(context):
+    core, bindings, provider, path = context
+    updated = Config()
+    updated.app.recording_mode = "toggle"
+    save(updated, path)
+    await reload_settings(core, bindings, provider, path)
+    assert bindings.recording_mode == core.config.app.recording_mode == "toggle"
+    bindings.remove.assert_awaited_once()
+    bindings.install.assert_awaited_once()

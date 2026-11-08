@@ -143,8 +143,9 @@ def control_command():
 
 
 class Bindings:
-    def __init__(self, hotkey):
+    def __init__(self, hotkey, recording_mode="hold"):
         self.hotkey = hotkey
+        self.recording_mode = recording_mode
         self.installed = False
 
     async def install(self):
@@ -177,16 +178,16 @@ class Bindings:
           c.held=true; c.token=c.token+1
           c.escape:set_enabled(true)
           local w=hl.get_active_window()
-          send("start", " " .. (w and w.address or "none"))
+          send("{'toggle' if self.recording_mode == 'toggle' else 'start'}", " " .. (w and w.address or "none"))
         end
         local function stop()
-          if c.held then c.held=false; send("stop") end
+          if c.held then c.held=false; {'send("stop")' if self.recording_mode == 'hold' else ''} end
         end
         """
         for shortcut, key, _ in starts:
             code += f"""
             table.insert(c.binds,hl.bind({json.dumps(shortcut)}, start,
-              {{description="Caelum hold to dictate", non_consuming={str(modifier_only).lower()}}}))
+              {{description="Caelum {'hold to dictate' if self.recording_mode == 'hold' else 'toggle dictation'}", non_consuming={str(modifier_only).lower()}}}))
             table.insert(c.binds,hl.bind({json.dumps(key)}, stop,
               {{release=true,ignore_mods=true,non_consuming=true,transparent=true,
                 description="Caelum release"}}))

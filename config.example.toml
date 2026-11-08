@@ -3,8 +3,9 @@
 backend = "auto" # auto, hyprland, or portable (GNOME/KDE/X11/manual copy)
 hotkey = "SUPER + ALT + V"
 # Modifier-only shortcuts such as "CTRL + SUPER" also work in either press order.
+recording_mode = "hold" # "hold" or "toggle" (press once to start, again to stop)
 strategy = "single" # "chunked" is experimental; benchmark before enabling
-max_recording_seconds = 120
+max_recording_seconds = 180
 minimum_recording_ms = 200
 retry_expiry_seconds = 60
 reduced_motion = false

@@ -56,8 +56,9 @@ def portal_trigger(hotkey):
 class Bindings:
     save_only = True
 
-    def __init__(self, hotkey):
+    def __init__(self, hotkey, recording_mode="hold"):
         self.hotkey = hotkey
+        self.recording_mode = recording_mode
         self.installed = False
         self.bus = None
         self.session = None
@@ -242,9 +243,12 @@ class Bindings:
                     raise RuntimeError("Desktop shortcut session closed")
                 if event == "Activated" and token is None:
                     token = "portal-" + uuid.uuid4().hex
-                    await self.core.handle("start", token)
+                    await self.core.handle(
+                        "toggle" if self.recording_mode == "toggle" else "start", token
+                    )
                 elif event == "Deactivated" and token is not None:
-                    await self.core.handle("stop", token)
+                    if self.recording_mode == "hold":
+                        await self.core.handle("stop", token)
                     token = None
 
         worker = asyncio.create_task(events())

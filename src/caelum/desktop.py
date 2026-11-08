@@ -196,6 +196,8 @@ def service_presentation(status):
             "Ready",
             "Use Record or your approved desktop shortcut to begin."
             if status.get("backend") == "portable"
+            else "Press your shortcut to start; press again to stop."
+            if status.get("recording_mode") == "toggle"
             else "Hold your shortcut to begin.",
         ),
         "starting": ("Starting microphone", "Preparing to record."),
@@ -667,8 +669,9 @@ def run(path=None, *, on_activate=None):
         def update_hotkey(self, hotkey):
             self.current_hotkey = hotkey
             escaped = GLib.markup_escape_text(hotkey)
+            verb = "Press" if getattr(self, "current_recording_mode", self.config.app.recording_mode) == "toggle" else "Hold"
             self.shortcut_label.set_markup(
-                f'Hold <span foreground="{self.hotkey_color}"><b>{escaped}</b></span> to dictate'
+                f'{verb} <span foreground="{self.hotkey_color}"><b>{escaped}</b></span> to dictate'
             )
 
         def build_home(self):
@@ -1111,8 +1114,11 @@ def run(path=None, *, on_activate=None):
             self.mic = Gtk.DropDown.new_from_strings(["System default"])
             microphone = self.token_menu(self.mic, lambda: [name for name, _ in self.devices])
             recording = self.box(spacing=12)
-            self.sentence(recording, "Hold", self.record_key,
-                          "to talk, and listen through", microphone)
+            self.recording_mode = Gtk.DropDown.new_from_strings(["Hold to talk", "Press to toggle"])
+            self.recording_mode.set_selected(1 if self.config.app.recording_mode == "toggle" else 0)
+            mode = self.token_menu(self.recording_mode, lambda: ["Hold to talk", "Press to toggle"])
+            self.sentence(recording, "Use", mode, "with", self.record_key)
+            self.sentence(recording, "Listen through", microphone)
             mic_test = self.box(False, 14)
             self.meter_bars = []
             bars = self.box(False, 4)
@@ -1269,6 +1275,7 @@ def run(path=None, *, on_activate=None):
             self.preset.connect("notify::selected", self.select_preset)
             self.tidy.connect("notify::selected", self.select_tidy)
             self.mic.connect("notify::selected", lambda *_: self.queue_autosave())
+            self.recording_mode.connect("notify::selected", lambda *_: self.queue_autosave())
             self.hotkey.connect("changed", lambda *_: self.queue_autosave())
             self.retention.connect("value-changed", self.retention_changed)
             self.history_enabled.connect("toggled", lambda *_: self.queue_autosave())
@@ -1555,6 +1562,7 @@ def run(path=None, *, on_activate=None):
             self.history_enabled.set_active(self.config.desktop.history_enabled)
             self.hotkey.set_text(self.config.app.hotkey)
             self.record_key.set_label(self.config.app.hotkey.title())
+            self.recording_mode.set_selected(1 if self.config.app.recording_mode == "toggle" else 0)
             self.retention.set_value(self.config.desktop.retention_days)
             self.syncing_setup = True
             self.set_devices([(name, value) for name, value in self.devices if value is not None])
@@ -1765,6 +1773,7 @@ def run(path=None, *, on_activate=None):
         def settings_draft(self):
             updated = self.provider_draft()
             updated.app.hotkey = self.hotkey.get_text().strip().upper()
+            updated.app.recording_mode = ("hold", "toggle")[self.recording_mode.get_selected()]
             updated.app.microphone = self.devices[self.mic.get_selected()][1]
             updated.desktop.history_enabled = self.history_enabled.get_active()
             updated.desktop.retention_days = self.retention.get_value_as_int()
@@ -2032,6 +2041,7 @@ def run(path=None, *, on_activate=None):
             self.status_detail.set_text(detail if state == "error" else "")
             self.status_detail.set_visible(state == "error")
             hotkey = self.display_hotkey(status.get("hotkey", self.config.app.hotkey) if status else self.config.app.hotkey)
+            self.current_recording_mode = status.get("recording_mode", self.config.app.recording_mode) if status else self.config.app.recording_mode
             self.update_hotkey(hotkey)
             if status and status.get("storage_error"):
                 self.message("Dictation works, but history could not be saved. Check disk permissions.")
@@ -2081,7 +2091,7 @@ def run(path=None, *, on_activate=None):
                 strict=True,
             ):
                 widget.set_text(str(value))
-            signature = (rows, recent, self.search.get_text(), self.config.desktop.history_enabled, hotkey)
+            signature = (rows, recent, self.search.get_text(), self.config.desktop.history_enabled, hotkey, self.current_recording_mode)
             changed = signature != self.history_signature
             if changed:
                 self.history_signature = signature
@@ -2098,7 +2108,8 @@ def run(path=None, *, on_activate=None):
             for row in recent if changed else []:
                 self.recent.append(self.recent_row(row))
             if changed and not recent:
-                empty = self.label(f"Nothing yet. Hold {hotkey} and start talking.", "recent-empty", True)
+                verb = "Press" if self.current_recording_mode == "toggle" else "Hold"
+                empty = self.label(f"Nothing yet. {verb} {hotkey} and start talking.", "recent-empty", True)
                 self.recent.append(empty)
             for row in rows if changed else []:
                 self.history_rows.append(self.history_card(row))

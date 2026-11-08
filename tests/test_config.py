@@ -8,6 +8,7 @@ from caelum.config import load
     "content",
     [
         '[app]\nstrategy="magic"',
+        '[app]\nrecording_mode="magic"',
         "[stt]\nconcurrency=50",
         "[stt]\noverlap_seconds=10",
         '[cleanup]\nbase_url="http://untrusted.example/api"',
@@ -36,3 +37,15 @@ def test_modifier_only_shortcut(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text('[app]\nhotkey="CTRL + SUPER"')
     assert load(path).app.hotkey == "CTRL + SUPER"
+
+
+def test_recording_defaults_and_toggle_roundtrip(tmp_path):
+    from caelum.config import Config, save
+
+    config = Config()
+    assert config.app.max_recording_seconds == 180
+    assert config.app.recording_mode == "hold"
+    config.app.recording_mode = "toggle"
+    path = tmp_path / "config.toml"
+    save(config, path)
+    assert load(path).app.recording_mode == "toggle"

@@ -116,3 +116,17 @@ def test_control_command_quotes_paths_with_spaces(tmp_path, monkeypatch):
     assert shlex.split(control_command())[:3] == [
         "env", f"PYTHONPATH={tmp_path / 'app library'}", str(tmp_path / "Python runtime/python")
     ]
+
+
+async def test_toggle_shortcut_starts_on_press_and_ignores_release(monkeypatch):
+    monkeypatch.setattr(
+        "caelum.linux.hypr_json", AsyncMock(side_effect=[{"configProvider": "lua"}, []])
+    )
+    command = AsyncMock(return_value="ok")
+    monkeypatch.setattr("caelum.linux.command", command)
+    await Bindings("SUPER + ALT + V", "toggle").install()
+    code = command.call_args.args[-1]
+    assert 'send("toggle", " " ..' in code
+    assert 'send("stop")' not in code
+    assert 'if c.held then return end' in code
+    assert 'if c.held then c.held=false;  end' in code

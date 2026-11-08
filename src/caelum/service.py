@@ -103,19 +103,26 @@ async def reload_settings(core, bindings, provider, path=None):
             raise RuntimeError("Finish or cancel dictation before applying settings")
         updated = await asyncio.to_thread(load, path)
         previous = bindings.hotkey
+        previous_mode = getattr(bindings, "recording_mode", "hold")
         if backend_name(updated) != backend_name(core.config):
             raise RuntimeError("Restart the service to change desktop backend")
         if previous != updated.app.hotkey and getattr(bindings, "save_only", False):
             raise RuntimeError("Restart the service to change the desktop portal shortcut")
-        if previous != updated.app.hotkey:
+        if previous != updated.app.hotkey or (
+            previous_mode != updated.app.recording_mode
+            and not getattr(bindings, "save_only", False)
+        ):
             await bindings.remove()
             bindings.hotkey = updated.app.hotkey
+            bindings.recording_mode = updated.app.recording_mode
             try:
                 await bindings.install()
             except Exception:
                 bindings.hotkey = previous
+                bindings.recording_mode = previous_mode
                 await bindings.install()
                 raise
+        bindings.recording_mode = updated.app.recording_mode
         core.config = updated
         provider.config = updated
         provider.semaphore = asyncio.Semaphore(updated.stt.concurrency)
@@ -137,14 +144,14 @@ async def serve(config, config_path=None):
     path.unlink(missing_ok=True)
     native = backend_name(config) == "hyprland"
     if native:
-        bindings, hud = Bindings(config.app.hotkey), HUD(config.app)
+        bindings, hud = Bindings(config.app.hotkey, config.app.recording_mode), HUD(config.app)
         locked = session_locked
     else:
         from .portable import HUD as PortableHUD
         from .portable import Bindings as PortableBindings
         from .portable import session_locked as locked
 
-        bindings, hud = PortableBindings(config.app.hotkey), PortableHUD(config.app)
+        bindings, hud = PortableBindings(config.app.hotkey, config.app.recording_mode), PortableHUD(config.app)
     provider = Providers(config)
     core = Orchestrator(config, provider, hud, bindings)
     if not native:
@@ -219,6 +226,7 @@ async def serve(config, config_path=None):
                 if message["action"] == "status":
                     result["storage_error"] = storage_error
                     result["hotkey"] = core.config.app.hotkey
+                    result["recording_mode"] = core.config.app.recording_mode
                     result["backend"] = "hyprland" if native else "portable"
                     result["shortcut_mode"] = "native" if native else bindings.mode
                     result["shortcut_description"] = (
@@ -262,7 +270,7 @@ async def serve(config, config_path=None):
         for task in tasks:
             task.add_done_callback(failed)
         print(
-            f"Caelum ready · hold {config.app.hotkey} · Escape cancels"
+            f"Caelum ready · {config.app.recording_mode} {config.app.hotkey} · Escape cancels"
             if native
             else f"Caelum ready · {bindings.description} · manual paste",
             flush=True,

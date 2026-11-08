@@ -65,6 +65,7 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert not app.entries[("cleanup", "model")].get_text()
                 app.tidy.set_selected(1)
                 assert app.entries[("cleanup", "model")].get_text() == "openai/gpt-oss-20b"
+                app.recording_mode.set_selected(1)
                 app.mic.set_selected(1)
                 app.retention.set_value(45)
                 app.retention.set_value(46)
@@ -100,6 +101,7 @@ def test_sentence_settings_autosave_and_advanced(tmp_path, monkeypatch):
                 assert writes == [46]
                 assert saved.app.hotkey == "CTRL + SUPER"
                 assert saved.app.microphone == "USB mic"
+                assert saved.app.recording_mode == "toggle"
                 assert saved.desktop.retention_days == 46
                 assert saved.stt.language == "en"
                 assert not saved.desktop.check_updates
