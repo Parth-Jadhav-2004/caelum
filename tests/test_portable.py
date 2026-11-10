@@ -162,6 +162,10 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
 
     from caelum.service import serve
 
+    monkeypatch.setattr(
+        "caelum.orchestrator.RecordingMedia",
+        lambda: SimpleNamespace(pause=AsyncMock(), resume=AsyncMock()),
+    )
     config = Config()
     config.app.backend = "portable"
     # Cleanup verification must never gate recording, even with an invalid model/key.

@@ -4,7 +4,7 @@ Hold a shortcut, speak, and get the text back in the app you were using.
 
 Caelum is dictation for Linux desktops. You bring a [Groq](https://console.groq.com) API key. Speech goes to that provider for transcription. Finished text is saved on your computer. The recording itself is not.
 
-**Caelum 0.3.8 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.8). Install and compatibility details are in the [Linux guide](docs/linux.md).
+**Caelum 0.3.9 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.9). Install and compatibility details are in the [Linux guide](docs/linux.md).
 
 ## Install
 
@@ -12,13 +12,13 @@ Pick the package for your distribution. Debian is not currently packaged.
 
 ```sh
 # Ubuntu 24.04
-sudo apt install ./caelum_0.3.8-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.3.9-1_ubuntu-24.04_amd64.deb
 
 # Arch
-sudo pacman -U ./caelum-0.3.8-1-x86_64.pkg.tar.zst
+sudo pacman -U ./caelum-0.3.9-1-x86_64.pkg.tar.zst
 
 # Fedora 43
-sudo dnf install ./caelum-0.3.8-1.fedora43.x86_64.rpm
+sudo dnf install ./caelum-0.3.9-1.fedora43.x86_64.rpm
 ```
 
 Packages are published for Ubuntu 24.04 and 26.04, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
@@ -62,6 +62,7 @@ History lives in `~/.local/share/caelum/history.sqlite3`. It is readable by your
 ## If something fails
 
 - Press **Escape** during a Hyprland recording to cancel. On other desktops, use **Cancel** in Caelum.
+- Playing media pauses automatically while the microphone records and resumes as soon as recording stops, including cancellation. This works with Linux MPRIS-compatible players and browsers; players that were already paused stay paused.
 - Choose **Hold to talk** or **Press to toggle** in Settings. Toggle starts recording on one shortcut press and stops on the next. Escape cancels.
 - Presses shorter than 200 ms, and silence, insert nothing.
 - If the network fails, the recording stays in memory for up to 60 seconds. Use **Retry** or **Cancel** in the notification, or:
@@ -130,5 +131,5 @@ check GitHub for new versions, approve a verified download, and authorize instal
 Caelum then restarts automatically. Source/AUR installations keep
 using their package manager. [Updater behavior and release setup](docs/updates.md).
 
-Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.8](docs/release-0.3.8.md).
+Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.9](docs/release-0.3.9.md).
 

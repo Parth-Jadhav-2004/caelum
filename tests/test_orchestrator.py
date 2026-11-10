@@ -31,6 +31,7 @@ def core(monkeypatch):
         cleanup=AsyncMock(return_value=("Private spoken words.", True)),
     )
     result = Orchestrator(Config(), provider, HUD(), bindings)
+    result.media = SimpleNamespace(pause=AsyncMock(), resume=AsyncMock())
     result.session = "test-session"
     result.started = result.released = time.monotonic()
     result.target = SimpleNamespace(output="eDP-1")
@@ -294,3 +295,66 @@ async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, 
     assert core.state == "error"
     assert core.pcm is not None
     await core.cancel(feedback=False)
+
+
+@pytest.mark.parametrize("ending", ["stop", "toggle", "cancel", "pause", "limit", "error", "silence"])
+async def test_media_pauses_before_capture_and_resumes_when_capture_ends(core, monkeypatch, ending):
+    from unittest.mock import Mock
+
+    order = []
+    capture = SimpleNamespace(
+        size=32000, speech_ms=0 if ending == "silence" else 100,
+        level=0, history=[0] * 17, full=False, error=None, speaking=False,
+        start=Mock(side_effect=lambda: order.append("capture-start")),
+        stop=Mock(side_effect=lambda: order.append("capture-stop")),
+        discard=Mock(), snapshot=Mock(return_value=b"audio"),
+    )
+    core.media.pause.side_effect = lambda: order.append("media-pause")
+    core.media.resume.side_effect = lambda: order.append("media-resume")
+    core.pcm = None
+    core.finalize = AsyncMock()
+    monkeypatch.setattr("caelum.orchestrator.Capture", lambda _: capture)
+    monkeypatch.setattr("caelum.orchestrator.target_at_press", AsyncMock(return_value=core.target))
+    await core.handle("start", "media-session")
+    assert order == ["media-pause", "capture-start"]
+    core.media.resume.assert_not_awaited()
+    if ending in {"limit", "error"}:
+        core.poll_task.cancel()
+        await asyncio.gather(core.poll_task, return_exceptions=True)
+        capture.full = ending == "limit"
+        capture.error = "disconnected" if ending == "error" else None
+        await core.poll()
+    else:
+        await core.handle("stop" if ending == "silence" else ending)
+    if core.work:
+        await core.work
+    assert order == ["media-pause", "capture-start", "capture-stop", "media-resume"]
+    assert core.capture is None
+
+
+async def test_microphone_start_failure_restores_media(core, monkeypatch):
+    from unittest.mock import Mock
+
+    core.pcm = None
+    capture = SimpleNamespace(
+        start=Mock(side_effect=OSError("No microphone")), stop=Mock(), discard=Mock(),
+    )
+    monkeypatch.setattr("caelum.orchestrator.Capture", lambda _: capture)
+    monkeypatch.setattr("caelum.orchestrator.target_at_press", AsyncMock(return_value=core.target))
+    await core.handle("start", "failed-microphone")
+    core.media.pause.assert_awaited_once()
+    core.media.resume.assert_awaited_once()
+    assert core.state == "error"
+    assert core.capture is None
+
+
+async def test_feedback_failure_during_release_still_stops_capture_and_restores_media(core):
+    from unittest.mock import Mock
+
+    core.capture = SimpleNamespace(stop=Mock())
+    capture = core.capture
+    core.hud.emit = AsyncMock(side_effect=RuntimeError("HUD closed"))
+    with pytest.raises(RuntimeError, match="HUD closed"):
+        await core.release()
+    capture.stop.assert_called_once()
+    core.media.resume.assert_awaited_once()

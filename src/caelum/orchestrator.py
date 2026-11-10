@@ -16,6 +16,7 @@ from .linux import (
     target_at_press,
     wayland_env,
 )
+from .media import RecordingMedia
 from .providers import ProviderError
 from .segmenter import Chunker
 
@@ -82,6 +83,7 @@ class Orchestrator:
         self.paused = False
         self.stopping = False
         self.error_kind = ""
+        self.media = RecordingMedia()
 
     async def event(self, state=None, error_code=""):
         if state:
@@ -144,8 +146,9 @@ class Orchestrator:
                 self.metrics = {}
                 await self.event("starting")
                 await self.bindings.active(True)
-                self.capture = Capture(self.config.app)
                 try:
+                    await self.media.pause()
+                    self.capture = Capture(self.config.app)
                     await asyncio.to_thread(self.capture.start)
                     await self.event("listening")
                 except Exception:
@@ -227,10 +230,15 @@ class Orchestrator:
             )
 
     async def abort_capture(self):
-        if self.capture:
-            capture, self.capture = self.capture, None
-            await asyncio.to_thread(capture.stop)
-            capture.discard()
+        try:
+            if self.capture:
+                capture, self.capture = self.capture, None
+                try:
+                    await asyncio.to_thread(capture.stop)
+                finally:
+                    capture.discard()
+        finally:
+            await self.media.resume()
 
     async def release(self):
         capture, self.capture = self.capture, None
@@ -238,8 +246,13 @@ class Orchestrator:
             return
         self.released = time.monotonic()
         # Immediately freeze the presentation; closing PortAudio runs off the event loop.
-        await self.event("processing")
-        await asyncio.to_thread(capture.stop)
+        try:
+            await self.event("processing")
+        finally:
+            try:
+                await asyncio.to_thread(capture.stop)
+            finally:
+                await self.media.resume()
         duration = capture.size / (RATE * 2)
         self.metrics["capture_ms"] = duration * 1000
         if duration * 1000 < self.config.app.minimum_recording_ms:
