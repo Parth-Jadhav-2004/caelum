@@ -424,11 +424,17 @@ def run(path=None, *, on_activate=None):
             outer = self.box(False, 0)
             self.navigation = self.box(spacing=0)
             self.navigation.add_css_class("navigation")
-            self.navigation.set_size_request(184, -1)
+            self.navigation.set_size_request(200, -1)
+            self.navigation.set_hexpand(False)
+            identity = self.box(False, 10)
+            identity.add_css_class("sidebar-identity")
+            mark = self.line_icon("waveform")
+            mark.set_size_request(30, 30)
+            mark.add_css_class("sidebar-mark")
+            identity.append(mark)
             self.brand = self.label("Caelum", "wordmark")
-            self.brand.set_halign(Gtk.Align.CENTER)
-            self.brand.set_margin_bottom(24)
-            self.navigation.append(self.brand)
+            identity.append(self.brand)
+            self.navigation.append(identity)
             self.stack = Gtk.Stack()
             self.stack.set_hhomogeneous(False)
             self.stack.set_vhomogeneous(False)
@@ -445,7 +451,7 @@ def run(path=None, *, on_activate=None):
                 button.add_css_class("nav-item")
                 button.set_size_request(44, 44)
                 button.set_halign(Gtk.Align.FILL)
-                button.set_margin_bottom(6)
+                button.set_margin_bottom(4)
                 nav_content = self.box(False, 12)
                 nav_content.append(self.line_icon(icon))
                 nav_content.append(self.label(title))
@@ -454,10 +460,40 @@ def run(path=None, *, on_activate=None):
                 button.update_property([Gtk.AccessibleProperty.LABEL], [title])
                 button.connect("clicked", lambda _, name=name: self.navigate(name))
                 self.nav_buttons[name] = button
-                self.navigation.append(button)
+                if name != "settings":
+                    self.navigation.append(button)
             spacer = self.box()
             spacer.set_vexpand(True)
             self.navigation.append(spacer)
+            self.navigation.append(self.nav_buttons["settings"])
+            self.sidebar_footer = self.box(spacing=10)
+            self.sidebar_footer.add_css_class("sidebar-footer")
+            service = self.box(False, 8)
+            self.sidebar_dot = self.box(spacing=0)
+            self.sidebar_dot.add_css_class("status-dot")
+            self.sidebar_dot.set_halign(Gtk.Align.CENTER)
+            self.sidebar_dot.set_valign(Gtk.Align.CENTER)
+            service.append(self.sidebar_dot)
+            self.sidebar_status = self.label("Connecting…", "sidebar-status")
+            self.sidebar_status.set_hexpand(True)
+            self.sidebar_status.set_ellipsize(Pango.EllipsizeMode.END)
+            self.sidebar_status.set_max_width_chars(17)
+            service.append(self.sidebar_status)
+            self.sidebar_service = self.icon_button("pause", "Pause dictation", self.tray_dictation)
+            self.sidebar_service.add_css_class("sidebar-service")
+            service.append(self.sidebar_service)
+            self.sidebar_footer.append(service)
+            self.sidebar_shortcut = self.button("", lambda: self.navigate("settings"), "sidebar-shortcut")
+            shortcut = self.box(spacing=5)
+            self.sidebar_mode = self.label("Hold to talk", "sidebar-hint")
+            shortcut.append(self.sidebar_mode)
+            self.sidebar_keys = self.label(self.display_hotkey(self.config.app.hotkey), "sidebar-keys")
+            self.sidebar_keys.set_ellipsize(Pango.EllipsizeMode.END)
+            self.sidebar_keys.set_max_width_chars(22)
+            shortcut.append(self.sidebar_keys)
+            self.sidebar_shortcut.set_child(shortcut)
+            self.sidebar_footer.append(self.sidebar_shortcut)
+            self.navigation.append(self.sidebar_footer)
             self.theme = Gtk.DropDown.new_from_strings(["System", "Light", "Dark"])
             self.theme.set_selected(("system", "light", "dark").index(self.config.desktop.theme))
             self.theme_button = self.token_menu(self.theme, lambda: ["System", "Light", "Dark"])
@@ -465,6 +501,7 @@ def run(path=None, *, on_activate=None):
             self.theme_button.update_property([Gtk.AccessibleProperty.LABEL], ["Appearance"])
             self.theme.connect("notify::selected", self.change_theme)
             self.sidebar = Gtk.Revealer()
+            self.sidebar.set_hexpand(False)
             self.sidebar.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.sidebar.set_child(self.navigation)
             self.sidebar.set_reveal_child(self.config.desktop.sidebar_visible)
@@ -564,7 +601,12 @@ def run(path=None, *, on_activate=None):
                 context.set_line_cap(1)
                 context.set_line_join(1)
                 kind = area.icon_name
-                if kind == "sidebar-collapse":
+                if kind == "waveform":
+                    context.set_line_width(2.2)
+                    for x, height in ((4, 6), (8, 14), (12, 20), (16, 14), (20, 6)):
+                        context.move_to(x, 12 - height / 2)
+                        context.line_to(x, 12 + height / 2)
+                elif kind == "sidebar-collapse":
                     # Supplied Streamline/Iconoir glyph, scaled from its 16px viewBox.
                     context.translate(.75, .75)
                     context.scale(1.5, 1.5)
@@ -626,6 +668,16 @@ def run(path=None, *, on_activate=None):
                     context.line_to(12, 22)
                     context.move_to(9, 22)
                     context.line_to(15, 22)
+                elif kind == "pause":
+                    context.move_to(8, 5)
+                    context.line_to(8, 19)
+                    context.move_to(16, 5)
+                    context.line_to(16, 19)
+                elif kind == "play":
+                    context.move_to(8, 5)
+                    context.line_to(19, 12)
+                    context.line_to(8, 19)
+                    context.close_path()
                 elif kind == "stop":
                     context.rectangle(6, 6, 12, 12)
                 elif kind == "cancel":
@@ -1499,35 +1551,97 @@ def run(path=None, *, on_activate=None):
                 return
             if not self.available_update or self.update_busy:
                 return
-            dialog = Gtk.MessageDialog(
-                transient_for=self.window,
-                modal=True,
-                message_type=Gtk.MessageType.QUESTION,
-                buttons=Gtk.ButtonsType.NONE,
-                text=f"Download Caelum {self.available_update['version']}?",
-                secondary_text=(
-                    "The signed package will be downloaded and installed with administrator "
-                    "authorization, then Caelum will restart automatically. "
-                    "Finish any active dictation first. Your settings, keys, and history are kept."
-                ),
+            if getattr(self, "update_dialog", None):
+                self.update_dialog.present()
+                return
+            update = deepcopy(self.available_update)
+            dialog = Gtk.Window(
+                title="Update Caelum", transient_for=self.window, modal=True,
+                resizable=False, destroy_with_parent=True,
             )
-            dialog.add_button("Later", Gtk.ResponseType.CANCEL)
-            dialog.add_button("Update & restart", Gtk.ResponseType.ACCEPT)
-            dialog.set_default_response(Gtk.ResponseType.CANCEL)
+            self.update_dialog = dialog
+            dialog.add_css_class("caelum")
+            dialog.add_css_class("update-dialog")
+            # Use client-side decoration without a second title above the content.
+            dialog.set_titlebar(Gtk.Box())
+            dialog.set_default_size(500, -1)
+            content = self.box(spacing=22)
+            content.add_css_class("update-content")
+            dialog.set_child(content)
 
-            def responded(window, response):
-                window.destroy()
-                if response == Gtk.ResponseType.ACCEPT:
+            heading = self.box(False, 12)
+            title = self.label("Update Caelum", "update-title")
+            title.set_hexpand(True)
+            heading.append(title)
+            version = self.label(update["version"], "update-version")
+            version.set_valign(Gtk.Align.CENTER)
+            heading.append(version)
+            content.append(heading)
+            description = self.label(
+                "Download the latest version. Caelum will restart once the update is installed.",
+                "update-description", True,
+            )
+            description.set_max_width_chars(46)
+            content.append(description)
+
+            details = self.box(spacing=12)
+            kept = self.box(False, 10)
+            check = self.line_icon("check")
+            check.add_css_class("update-check")
+            check.set_valign(Gtk.Align.START)
+            kept.append(check)
+            reassurance = self.label(
+                "Your settings, keys, and history are kept.", "update-reassurance", True,
+            )
+            reassurance.set_max_width_chars(42)
+            kept.append(reassurance)
+            details.append(kept)
+            note = self.label(
+                "Finish any active dictation first. Administrator authorization will be requested.",
+                "update-note", True,
+            )
+            note.set_max_width_chars(52)
+            details.append(note)
+            content.append(details)
+
+            def responded(accept=False):
+                if self.update_dialog is not dialog:
+                    return
+                self.update_dialog = None
+                dialog.destroy()
+                if accept:
                     from .updates import stage
 
                     self.update_status.set_text("Downloading and verifying update…")
                     self.update_work(
-                        lambda: stage(self.available_update),
+                        lambda: stage(update),
                         lambda version: self.begin_updates(),
                     )
 
-            dialog.connect("response", responded)
+            actions = self.box(False, 10)
+            actions.set_halign(Gtk.Align.END)
+            actions.add_css_class("update-actions")
+            self.update_later = self.button("Later", responded, "update-later")
+            self.update_accept = self.button(
+                "Update & restart", lambda: responded(True), "update-primary",
+            )
+            actions.append(self.update_later)
+            actions.append(self.update_accept)
+            content.append(actions)
+            dialog.set_default_widget(self.update_later)
+            dialog.connect("close-request", lambda *_: (responded(), True)[1])
+            keys = Gtk.EventControllerKey()
+
+            def escape(_, keyval, keycode, state):
+                if keyval == Gdk.KEY_Escape:
+                    responded()
+                    return True
+                return False
+
+            keys.connect("key-pressed", escape)
+            dialog.add_controller(keys)
             dialog.present()
+            self.update_later.grab_focus()
 
         def discard_update(self):
             from .updates import discard_pending
@@ -1949,6 +2063,8 @@ def run(path=None, *, on_activate=None):
             return False
 
         def tray_dictation(self):
+            if getattr(self, "restarting_update", False):
+                return
             if self.service_running:
                 self.toggle_pause()
             else:
@@ -2030,6 +2146,22 @@ def run(path=None, *, on_activate=None):
             else:
                 pill_title = "Ready"
             self.status_label.set_text(pill_title)
+            self.sidebar_status.set_text("Ready to dictate" if pill_title == "Ready" else pill_title)
+            self.sidebar_status.set_tooltip_text(detail)
+            for name in ("ready", "paused", "stopped"):
+                self.sidebar_dot.remove_css_class(name)
+            self.sidebar_dot.add_css_class(
+                "paused" if self.paused else "ready" if status and state != "error" else "stopped"
+            )
+            service_action = (
+                "Start dictation service" if not status else
+                "Resume dictation" if self.paused else "Pause dictation"
+            )
+            self.sidebar_service.set_tooltip_text(service_action)
+            self.sidebar_service.update_property([Gtk.AccessibleProperty.LABEL], [service_action])
+            service_icon = self.sidebar_service.get_child()
+            service_icon.icon_name = "play" if not status or self.paused else "pause"
+            service_icon.queue_draw()
             if getattr(self, "tray", None):
                 self.tray.update(bool(status), self.paused, pill_title)
             for name in ("ready", "paused", "stopped"):
@@ -2043,6 +2175,13 @@ def run(path=None, *, on_activate=None):
             hotkey = self.display_hotkey(status.get("hotkey", self.config.app.hotkey) if status else self.config.app.hotkey)
             self.current_recording_mode = status.get("recording_mode", self.config.app.recording_mode) if status else self.config.app.recording_mode
             self.update_hotkey(hotkey)
+            mode_label = "Press to toggle" if self.current_recording_mode == "toggle" else "Hold to talk"
+            self.sidebar_mode.set_text(mode_label)
+            self.sidebar_keys.set_text(hotkey)
+            self.sidebar_shortcut.set_tooltip_text(f"{mode_label}: {hotkey}. Change in Settings.")
+            self.sidebar_shortcut.update_property(
+                [Gtk.AccessibleProperty.LABEL], [f"{mode_label}: {hotkey}. Change shortcut"]
+            )
             if status and status.get("storage_error"):
                 self.message("Dictation works, but history could not be saved. Check disk permissions.")
             elif not status and self.process and self.process.poll() is not None and self.process.returncode:

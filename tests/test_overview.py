@@ -54,15 +54,24 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                 assert not app.recovery.get_visible()
                 app.status_button.emit("clicked")
                 assert calls == ["start"]
+                assert app.sidebar_status.get_text() == "Stopped"
+                assert app.sidebar_service.get_tooltip_text() == "Start dictation service"
+                app.sidebar_service.emit("clicked")
+                assert calls == ["start", "start"]
 
                 app.render_data(({"state": "recording"}, rows, rows, summary))
                 assert app.status_label.get_text() == "Listening"
+                assert app.sidebar_status.get_text() == "Listening"
                 app.status_button.emit("clicked")
                 assert calls[-1] == "stop"
                 app.pause_button.emit("clicked")
                 assert "pause" in calls
                 app.render_data(({"state": "hidden", "paused": True}, rows, rows, summary))
                 assert app.status_label.get_text() == "Paused"
+                assert app.sidebar_status.get_text() == "Paused"
+                assert app.sidebar_service.get_tooltip_text() == "Resume dictation"
+                app.sidebar_service.emit("clicked")
+                assert "resume" in calls
                 app.pause_button.emit("clicked")
                 assert "resume" in calls
 
@@ -101,6 +110,21 @@ def test_overview_controls_data_copy_and_themes(tmp_path, monkeypatch):
                     == "Nothing yet. Hold Alt + Ctrl + D and start talking."
                 )
                 assert app.window.get_size_request().width == 480
+                app.render_data(({
+                    "state": "hidden", "recording_mode": "toggle", "hotkey": "CTRL + SUPER",
+                }, [], [], summary))
+                assert app.sidebar_status.get_text() == "Ready to dictate"
+                assert app.sidebar_mode.get_text() == "Press to toggle"
+                assert app.sidebar_keys.get_text() == "Ctrl + Super"
+                app.sidebar_shortcut.emit("clicked")
+                assert app.stack.get_visible_child_name() == "settings"
+                app.sidebar_service.emit("clicked")
+                assert calls[-1] == "pause"
+                app.restarting_update = True
+                count = len(calls)
+                app.sidebar_service.emit("clicked")
+                assert len(calls) == count
+                app.restarting_update = False
                 from datetime import date, datetime
 
                 app.usage_month = date(2024, 2, 1)

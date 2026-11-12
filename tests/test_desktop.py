@@ -94,21 +94,24 @@ def test_native_update_consent_queue_discard_and_restart(tmp_path, monkeypatch):
                 assert app.update_download.get_visible()
                 assert app.update_status.get_text() == "Update available"
                 app.prompt_update()
-                dialog = next(
-                    window
-                    for window in Gtk.Window.list_toplevels()
-                    if isinstance(window, Gtk.MessageDialog)
-                )
-                dialog.response(Gtk.ResponseType.CANCEL)
+                dialog = app.update_dialog
+                assert dialog.get_modal()
+                assert dialog.has_css_class("update-dialog")
+                assert dialog.get_default_widget() is app.update_later
+                app.prompt_update()
+                assert app.update_dialog is dialog  # One consent surface at a time.
+                app.update_later.emit("clicked")
+                assert app.update_dialog is None
+                app.prompt_update()
+                app.update_dialog.close()
+                assert app.update_dialog is None
                 assert downloads == []
                 assert app.update_download.get_sensitive()
                 app.prompt_update()
-                dialog = next(
-                    window
-                    for window in Gtk.Window.list_toplevels()
-                    if isinstance(window, Gtk.MessageDialog)
-                )
-                dialog.response(Gtk.ResponseType.ACCEPT)
+                dialog = app.update_dialog
+                assert dialog.get_modal()
+                assert dialog.has_css_class("update-dialog")
+                app.update_accept.emit("clicked")
                 assert downloads == [update]
                 assert len(restarts) == 1
                 assert not app.update_check.get_sensitive()
