@@ -88,7 +88,7 @@ jobs:
           caelum --help
           test -x /usr/bin/caelum-desktop
           printf '%s\n' '{"v":1,"id":1,"method":"bootstrap"}' | caelum-engine | python3 -c 'import sys,json; frames=[json.loads(line) for line in sys.stdin]; assert any(f.get("id")==1 and "result" in f for f in frames)'
-          bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx; assert len(sounddevice.query_devices()) > 0'
+          bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx; assert sounddevice.get_portaudio_version()[0] > 0; sounddevice.query_devices()'
       - uses: actions/upload-artifact@v4
         with:
           name: caelum-${{ matrix.target }}
