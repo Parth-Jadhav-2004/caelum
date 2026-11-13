@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Run CI checks against an isolated, hardware-free PulseAudio server.
 set -euo pipefail
+# Minimal Arch containers do not run systemd-sysusers during package install.
+if ! getent group pulse >/dev/null; then groupadd --system pulse; fi
+if ! id pulse >/dev/null 2>&1; then
+  useradd --system --gid pulse --home-dir /var/run/pulse --shell /usr/bin/nologin pulse
+fi
 pulse_dir=$(mktemp -d)
 chown pulse:pulse "$pulse_dir"
 export PULSE_SERVER="unix:$pulse_dir/native"
