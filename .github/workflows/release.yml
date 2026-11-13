@@ -48,11 +48,11 @@ jobs:
         run: |
           if command -v apt-get >/dev/null; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv build-essential pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf zstd libportaudio2 pulseaudio
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv build-essential pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf zstd libportaudio2 pulseaudio pulseaudio-utils
           elif command -v pacman >/dev/null; then
             pacman -Syu --noconfirm git curl python base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf zstd portaudio pulseaudio
           else
-            dnf install -y git curl python3 gcc gcc-c++ make pkgconf-pkg-config webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf zstd rpm-build portaudio openssl-devel pulseaudio
+            dnf install -y git curl python3 gcc gcc-c++ make pkgconf-pkg-config webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf zstd rpm-build portaudio openssl-devel pulseaudio pulseaudio-utils
           fi
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -61,6 +61,9 @@ jobs:
         with:
           node-version: 24
       - uses: astral-sh/setup-uv@v6
+      - name: Verify isolated audio server before compiling
+        shell: bash
+        run: bash scripts/ci-audio-smoke.sh true
       - name: Build native executable and full Python payload
         shell: bash
         run: |
@@ -85,15 +88,7 @@ jobs:
           caelum --help
           test -x /usr/bin/caelum-desktop
           printf '%s\n' '{"v":1,"id":1,"method":"bootstrap"}' | caelum-engine | python3 -c 'import sys,json; frames=[json.loads(line) for line in sys.stdin]; assert any(f.get("id")==1 and "result" in f for f in frames)'
-          # Newer PortAudio builds initialize PulseAudio during import. Provide
-          # a hardware-free server so this checks the installed audio library too.
-          pulse_dir=$(mktemp -d)
-          trap 'pulseaudio --kill || true; rm -rf "$pulse_dir"' EXIT
-          export PULSE_SERVER="unix:$pulse_dir/native"
-          pulseaudio -n --daemonize=yes --exit-idle-time=-1 --use-pid-file=yes \
-            --load="module-native-protocol-unix socket=$pulse_dir/native auth-anonymous=1" \
-            --load="module-null-sink sink_name=ci"
-          PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx; assert len(sounddevice.query_devices()) > 0'
+          bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx; assert len(sounddevice.query_devices()) > 0'
       - uses: actions/upload-artifact@v4
         with:
           name: caelum-${{ matrix.target }}
