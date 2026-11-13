@@ -5,8 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from dbus_next import Message, MessageType, Variant
-
 from caelum.config import Config
 from caelum.portable import (
     HUD,
@@ -17,6 +15,7 @@ from caelum.portable import (
     portal_trigger,
     session_locked,
 )
+from dbus_next import Message, MessageType, Variant
 
 
 def test_backend_selection(monkeypatch):

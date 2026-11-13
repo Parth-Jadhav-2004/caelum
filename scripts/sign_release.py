@@ -17,7 +17,7 @@ def sign(directory, private_key, now=None):
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
         raise ValueError("Only stable major.minor.patch releases can be published")
-    public_key = ROOT / "src/caelum/update-public.pem"
+    public_key = ROOT / "python/caelum/update-public.pem"
     encoded = subprocess.check_output(
         ["openssl", "pkey", "-in", str(private_key), "-pubout", "-outform", "DER"],
     )

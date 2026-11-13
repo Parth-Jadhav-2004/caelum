@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-
 from caelum import pulse
 from caelum.audio import Capture
 from caelum.config import App

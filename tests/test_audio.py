@@ -2,7 +2,6 @@ import io
 import wave
 
 import numpy as np
-
 from caelum.audio import BLOCK, RATE, Capture, wav_bytes
 from caelum.config import App
 

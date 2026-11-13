@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
     "ubuntu-24.04": ("deb", "3.12"),
+    "debian-12": ("deb", "3.11"),
     "ubuntu-26.04": ("deb", "3.14"),
     "arch": ("arch", "3.14"),
     "fedora-43": ("rpm", "3.14"),
@@ -61,6 +62,9 @@ def build(target, output, epoch):
     kind, python = TARGETS[target]
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     upper = f"3.{int(python.split('.')[1]) + 1}"
+    run("python3", ROOT / "scripts/dev-sidecar.py")
+    run("npm", "ci")
+    run("npm", "run", "tauri", "build", "--", "--no-bundle")
     with tempfile.TemporaryDirectory(prefix="caelum-package-") as directory:
         work = Path(directory)
         stage = work / "stage"
@@ -96,7 +100,7 @@ def build(target, output, epoch):
             requirements,
         )
         shutil.copytree(
-            ROOT / "src/caelum", library / "caelum", ignore=shutil.ignore_patterns("__pycache__")
+            ROOT / "python/caelum", library / "caelum", ignore=shutil.ignore_patterns("__pycache__")
         )
         shutil.copy2(ROOT / "config.example.toml", library / "caelum/config.example.toml")
         write(
@@ -121,6 +125,13 @@ exec /usr/bin/python3 -m caelum.cli "$@"
 """,
             executable=True,
         )
+        for name, source in (
+            ("caelum-desktop", ROOT / "src-tauri/target/release/caelum-desktop"),
+            ("caelum-engine", next((ROOT / "src-tauri/binaries").glob("caelum-engine-*"))),
+        ):
+            destination = stage / "usr/bin" / name
+            shutil.copy2(source, destination)
+            destination.chmod(0o755)
         applications = stage / "usr/share/applications"
         applications.mkdir(parents=True)
         shutil.copy2(
@@ -129,7 +140,7 @@ exec /usr/bin/python3 -m caelum.cli "$@"
         )
         icons = stage / "usr/share/icons/hicolor/scalable/apps"
         icons.mkdir(parents=True)
-        for source in (ROOT / "src/caelum/icons/hicolor/scalable/apps").glob("*.svg"):
+        for source in (ROOT / "python/caelum/icons/hicolor/scalable/apps").glob("*.svg"):
             shutil.copy2(source, icons / source.name)
         docs = stage / "usr/share/doc/caelum"
         docs.mkdir(parents=True)
@@ -155,7 +166,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
-Depends: python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, pulseaudio-utils, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
+Depends: libwebkit2gtk-4.1-0, libayatana-appindicator3-1, python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, pulseaudio-utils, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
 Description: Cloud dictation with optional local history
@@ -188,6 +199,8 @@ builddate = {epoch}
 packager = Caelum release build
 size = {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file())}
 arch = x86_64
+depend = webkit2gtk-4.1
+depend = libappindicator-gtk3
 depend = python>={python}
 depend = python<{upper}
 depend = python-gobject
@@ -226,7 +239,7 @@ License: LicenseRef-Caelum-No-License-Declared
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
-Requires: python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, pulseaudio-utils, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
+Requires: webkit2gtk4.1, libappindicator-gtk3, python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, pulseaudio-utils, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
 %description
 Cloud dictation with optional local history. Audio goes to transcription; text goes
 to refinement when enabled. Clipboard managers and exports keep independent copies.
@@ -237,6 +250,8 @@ cp -a {stage}/. %{{buildroot}}/
 %files
 /opt/caelum
 /usr/bin/caelum
+/usr/bin/caelum-desktop
+/usr/bin/caelum-engine
 /usr/share/applications/io.caelum.Dictation.desktop
 /usr/share/icons/hicolor/scalable/apps/caelum.svg
 /usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-
 from caelum import credentials
 
 
@@ -77,7 +76,6 @@ def test_invalid_key_not_saved(value):
 
 async def test_saved_key_is_used_by_provider_without_environment(monkeypatch):
     import httpx
-
     from caelum.config import Config
     from caelum.providers import Providers
 

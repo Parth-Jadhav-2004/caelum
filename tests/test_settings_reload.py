@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from caelum.config import Config, save
 from caelum.service import reload_settings
 

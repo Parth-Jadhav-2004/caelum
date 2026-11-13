@@ -1,5 +1,4 @@
 import pytest
-
 from caelum.benchmark import percentile, wer
 from caelum.config import load
 

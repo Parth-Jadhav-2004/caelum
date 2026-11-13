@@ -8,7 +8,7 @@ __pycache__/
 config.toml
 environment
 *.pem
-!src/caelum/update-public.pem
+!python/caelum/update-public.pem
 *.key
 *credentials*.json
 *.sqlite
@@ -32,3 +32,9 @@ voice_dictation_implementation_plan.md
 website/
 docs/product-page-design.md
 docs/product-page-components.html
+
+node_modules/
+src-tauri/target/
+src-tauri/binaries/
+
+*.tsbuildinfo

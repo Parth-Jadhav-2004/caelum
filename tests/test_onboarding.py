@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-
 from caelum.config import Config
 from caelum.onboarding import Progress, check_shortcut, practice, record_sample, validate_providers
 from caelum.providers import ProviderError

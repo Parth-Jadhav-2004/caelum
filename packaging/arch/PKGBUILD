@@ -1,27 +1,21 @@
-# Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
+# Build from the checked-out release tree; dependency payload is locked in uv.lock.
 pkgname=caelum
-pkgver=0.3.9
+pkgver=0.4.0
 pkgrel=1
-pkgdesc='Cloud dictation with optional local history'
+pkgdesc='Linux dictation with Tauri and local transcript history'
 arch=('x86_64')
 url='https://github.com/Parth-Jadhav-2004/caelum'
 license=('custom')
-depends=('python>=3.14' 'python<3.15' 'python-gobject' 'python-cairo' 'gtk4' 'portaudio' 'libpulse' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd')
-makedepends=('python-build' 'python-installer' 'python-hatchling')
-depends+=('python-dbus-next' 'python-httpx' 'python-numpy' 'python-sounddevice')
-optdepends=('gtk4-layer-shell: Hyprland recording overlay' 'wl-clipboard: Hyprland automatic paste')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('RELEASE_SOURCE_SHA256')
-
+depends=('python>=3.14' 'python<3.15' 'webkit2gtk-4.1' 'libappindicator-gtk3' 'portaudio' 'libpulse' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd' 'openssl' 'polkit' 'python-gobject' 'python-cairo' 'gtk4')
+makedepends=('git' 'rust' 'nodejs' 'npm' 'uv' 'zstd')
+optdepends=('gtk4-layer-shell: native Hyprland recording overlay')
+source=("git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
 build() {
-  cd "$pkgname-$pkgver"
-  python -m build --wheel --no-isolation
+  cd "$srcdir/$pkgname"
+  python scripts/build_package.py arch
 }
-
 package() {
-  cd "$pkgname-$pkgver"
-  python -m installer --destdir="$pkgdir" dist/*.whl
-  install -Dm644 packaging/io.caelum.Dictation.desktop "$pkgdir/usr/share/applications/io.caelum.Dictation.desktop"
-  install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum.svg"
-  install -Dm644 src/caelum/icons/hicolor/scalable/apps/caelum-symbolic.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg"
+  cd "$srcdir/$pkgname"
+  bsdtar --exclude=.PKGINFO -xf "dist/caelum-$pkgver-1-x86_64.pkg.tar.zst" -C "$pkgdir"
 }

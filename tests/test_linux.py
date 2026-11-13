@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from caelum.linux import Bindings, control_command, insert, shortcut_keys
 
 

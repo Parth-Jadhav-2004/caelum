@@ -5,9 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from dbus_next import MessageType, Variant
-
 from caelum.media import PATH, PLAYER, RecordingMedia
+from dbus_next import MessageType, Variant
 
 
 class Bus:

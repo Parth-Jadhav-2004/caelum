@@ -3,7 +3,6 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from caelum.config import Config, load, save
 from caelum.history import History
 

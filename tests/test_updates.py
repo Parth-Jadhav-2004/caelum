@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from caelum import updates
 from caelum.desktop import install_queued_update
 from caelum.service import prepare_update
@@ -428,7 +427,7 @@ async def test_idle_dictation_can_stop_for_update():
 def test_restart_stops_daemon_before_installing(release, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
     calls = []
-    monkeypatch.setattr("caelum.desktop.request", lambda action: calls.append(action))
+    monkeypatch.setattr("caelum.desktop_services.request", lambda action: calls.append(action))
     monkeypatch.setattr(updates, "apply_pending", lambda: calls.append("install"))
     assert install_queued_update()
     assert calls == ["prepare-update", "install"]
@@ -438,7 +437,7 @@ def test_restart_leaves_active_dictation_untouched(release, monkeypatch):
     def busy(_):
         raise RuntimeError("Finish dictation")
 
-    monkeypatch.setattr("caelum.desktop.request", busy)
+    monkeypatch.setattr("caelum.desktop_services.request", busy)
     monkeypatch.setattr(updates, "apply_pending", lambda: pytest.fail("unexpected install"))
     with pytest.raises(RuntimeError, match="Finish dictation"):
         install_queued_update()
@@ -448,8 +447,8 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     signer = importlib.import_module("sign_release")
     root = tmp_path / "repo"
-    (root / "src/caelum").mkdir(parents=True)
-    (root / "src/caelum/update-public.pem").write_bytes(release.public.read_bytes())
+    (root / "python/caelum").mkdir(parents=True)
+    (root / "python/caelum/update-public.pem").write_bytes(release.public.read_bytes())
     (root / "pyproject.toml").write_text('[project]\nversion="0.3.0"\n')
     monkeypatch.setattr(signer, "ROOT", root)
     assets = tmp_path / "assets"
@@ -463,6 +462,7 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
         (assets / name).write_bytes(release.payload)
     signer.sign(assets, release.private, now=release.now)
     assert set(signer.TARGETS) == {
+        "debian-12",
         "ubuntu-24.04",
         "ubuntu-26.04",
         "arch",
@@ -477,6 +477,6 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
     assert set(manifest["assets"]) == set(signer.TARGETS)
     assert asset == release.asset
     assert manifest["expires"] == release.now + 90 * 86400
-    (root / "src/caelum/update-public.pem").write_bytes(b"wrong key")
+    (root / "python/caelum/update-public.pem").write_bytes(b"wrong key")
     with pytest.raises(ValueError, match="does not match"):
         signer.sign(assets, release.private)

@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-
 from caelum.config import Config
 from caelum.providers import ProviderError, Providers
 from caelum.quality import validate_cleanup

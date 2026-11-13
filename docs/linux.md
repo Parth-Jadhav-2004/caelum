@@ -1,187 +1,54 @@
-# Linux installation and compatibility
+# Linux prerequisites
 
-Caelum 0.3 is a **cross-distro preview**, not a claim that every desktop has been
-qualified. The native Hyprland path has been exercised on this development machine.
-The portable backend is covered by automated integration tests; Ubuntu, Debian,
-Fedora, and their GNOME/KDE sessions still need hardware acceptance testing.
+Build inside the target distro; do not reuse an Arch-linked executable on Debian.
 
-## Download the package for your OS
+- Arch/Omarchy: `base-devel rust nodejs npm uv webkit2gtk-4.1 libappindicator-gtk3
+  librsvg patchelf portaudio libpulse libnotify libsecret wl-clipboard xclip
+  python-gobject python-cairo gtk4 gtk4-layer-shell zstd`.
+- Debian/Ubuntu: `build-essential pkg-config libwebkit2gtk-4.1-dev
+  libayatana-appindicator3-dev librsvg2-dev patchelf libportaudio2 pulseaudio-utils
+  libnotify-bin libglib2.0-bin libsecret-tools wl-clipboard xclip python3-venv`.
+  Optional native HUD: `python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-4.0`
+  and gtk4-layer-shell (not shipped by all supported releases).
+- Fedora: `gcc gcc-c++ make pkgconf-pkg-config webkit2gtk4.1-devel
+  libappindicator-gtk3-devel librsvg2-devel patchelf portaudio pulseaudio-utils
+  libnotify libsecret python3-gobject python3-cairo gtk4 rpm-build`.
 
-The GitHub release contains x86-64 packages for Ubuntu 24.04 (Python 3.12),
-Ubuntu 26.04 (Python 3.14), Arch (Python 3.14), and Fedora 43 (Python 3.14).
-Debian is not currently packaged. Choose your exact OS/version.
-Packages declare their Python minor-version requirements and include locked
-Python dependencies; GTK, PyGObject, Cairo, and PortAudio come from the OS.
-The vendored dependencies do not replace distro Python modules.
+Install Node 24+, current stable Rust, and uv for source builds. Native packages
+install the required runtime libraries automatically. gtk4-layer-shell is optional
+on portable desktops and required for native Hyprland mode; `caelum doctor`
+reports missing native integration. Use `app.backend = "portable"` explicitly
+when layer-shell/native Lua integration is unavailable.
 
-Install downloaded packages with the native package manager:
+`caelum doctor`, `caelum devices`, `caelum models stt`, and `caelum control status`
+remain available. A Wayland desktop login needs a working XDG runtime directory,
+session D-Bus, login1 lock feedback, microphone access, and the appropriate portal
+for global shortcuts. If shortcut permission is declined, use Record/Finish.
+Caelum does not install broad keyboard hooks or bypass compositor permissions.
 
-```sh
-sudo apt install ./caelum_0.3.9-1_ubuntu-24.04_amd64.deb
-sudo pacman -U ./caelum-0.3.9-1-x86_64.pkg.tar.zst
-sudo dnf install ./caelum-0.3.9-1.fedora43.x86_64.rpm
-```
+On Hyprland the existing bindings are installed dynamically and removed by exact
+handle; no user compositor config is rewritten. Native insertion targets the
+original app and falls back to clipboard if focus identity changes. Lock/suspend
+signals cancel capture; lock feedback failures fail closed. The native HUD does
+not activate or steal keyboard focus. Portable mode uses notifications and saved
+history/manual copy. This distinction is intentional.
 
-Open **Caelum** from the app launcher, or run `caelum app`. First launch opens setup for provider/key entry, local microphone testing, shortcut selection, and an explicitly consented practice dictation. Reopen it from Settings → Advanced → Manage key, or Manage keys in the provider status when a key is missing. Opening Caelum starts the dictation service. The system tray provides Open Caelum, Settings, Start/Pause/Resume dictation, and Quit Caelum.
-Package installation does not configure credentials, enable autostart, or start the recording service; opening the app starts the service and registers the configured shortcut. Configuration remains in `~/.config/caelum`;
-history remains in `~/.local/share/caelum`. Uninstalling does not erase these files.
-This project does not claim an AUR or Flathub listing.
+Tauri uses WebKitGTK on Linux. GPU/driver rendering issues require testing on the
+deployment host: https://v2.tauri.app/develop/debug/linux-graphics/ . Do not force
+XWayland globally merely to make a layer-shell surface appear.
 
-The desktop entry is `io.caelum.Dictation.desktop`, matching the app's Wayland
-identity so application switchers resolve its waveform icon. On the first app
-launch after upgrading, older Caelum-generated user launchers are migrated to
-that identity while preserving their launch command and configuration path. The
-old entry remains usable but is hidden from application menus to avoid duplicates.
-Custom launchers are left unchanged. Fully quit and reopen Caelum after upgrading
-so an already-running older process does not retain its previous icon.
+For software-rendered/Xvfb environments, this refactor's native smoke test required
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` to avoid a blank WebView. If the same symptom
+occurs with a particular GPU/driver, try that environment variable for the Caelum
+process only. It is not set globally or forced on normal desktop sessions.
 
-## Desktop behavior
-
-The default `backend = "auto"` selects native Hyprland when its session is present;
-otherwise it selects the portable backend. You can set `[app] backend = "portable"`
-to exercise the portable path on Hyprland or use an older Hyprland without Lua.
-Restart the dictation service after changing backends.
-
-**GNOME, KDE, XFCE and other GTK-capable Linux desktops, Wayland or X11:** start the
-service, choose **Record**, then **Finish recording**. Completed text is saved
-locally. Choose **Copy text** in Recent dictations or History, then paste in your
-chosen application. This avoids restricted focus inspection and background
-synthetic input. The service uses logind lock feedback and cancels on lock/suspend.
-A desktop session with working logind and notification support is required.
-
-Where `org.freedesktop.portal.GlobalShortcuts` is implemented, starting the service
-requests a hold-to-record shortcut from your desktop. Accept/configure it in the
-system dialog. A declined or unavailable portal leaves the Record buttons usable.
-Modifier-only shortcuts need a letter/key on this backend. Restart the service to
-change a portal shortcut; the system dialog may override the requested trigger.
-Notifications show recording/processing states without a focus-taking overlay.
-
-On desktops without that portal, create a custom shortcut in the desktop's
-Keyboard settings with command **`caelum control toggle`**. Press once to start,
-again to finish. `caelum control cancel` cancels, and `caelum control retry` retries
-a failed request. Start the service before using these commands. Generic desktops
-do not globally intercept Escape; use Cancel in Caelum or a custom cancel shortcut.
-
-**Native Hyprland:** hold the configured chord, release to finalize. Target-addressed
-paste and the click-through recording pill remain available. This needs Hyprland's
-Lua API, `wl-copy`, and GTK4 layer shell. Omarchy is optional; other Hyprland
-sessions use logind when the Omarchy lock helper is absent.
-
-Run `caelum doctor` to see required checks and optional capabilities separately.
-It never records or uploads audio. Optional portal availability is not a failure.
-
-## Microphones and Bluetooth headsets
-
-On PipeWire/PulseAudio desktops, Settings lists actual input sources rather than
-JACK client ports or playback monitors. Selected inputs use stable `pulse:` source
-names; existing uniquely named microphone settings remain compatible. Capture and
-the local microphone test use the same path, with the audio server converting the
-device's native rate to 16 kHz mono. Disconnected selected sources fail rather than
-silently recording another microphone. ALSA-only systems retain PortAudio capture.
-
-For Bluetooth earbuds such as CMF Buds 2, select the earbuds in Settings and run
-**Test mic**. WirePlumber normally switches from A2DP playback to the HFP/HSP headset
-profile while recording, then restores playback afterward. This can briefly lower
-playback quality. If automatic switching is disabled, select the headset/hands-free
-profile in your desktop audio settings; A2DP alone does not expose the buds' mic.
-The test is local-only and never uploads or saves audio. `pactl` and `parec` are
-provided by `pulseaudio-utils` on Ubuntu/Fedora and `libpulse` on Arch; these clients
-also work with PipeWire and do not require replacing it with a PulseAudio daemon.
-
-If earbuds show **Connected** but the test receives no audio, disconnect and
-reconnect just those earbuds in Bluetooth settings, then run **Test mic** again.
-Pairing can remain connected while the headset's audio transport has failed.
-Caelum reports stalled capture separately from a quiet microphone, and the local
-test reports whether speech was detected. Reconnecting does not require deleting
-the pairing or resetting the Bluetooth adapter.
-
-If repeated A2DP/headset switching fails and kernel logs show corrupted SCO
-packets or unknown connection handles, the symptoms can match a
-[reported Bluetooth transport bug](https://github.com/bluez/bluez/issues/2562).
-Selecting CVSD manually may not help while mSBC is still advertised. A reversible
-user-session workaround is a WirePlumber configuration fragment containing:
-
-```ini
-monitor.bluez.properties = {
-  bluez5.enable-msbc = false
-}
-```
-
-Place it under `~/.config/wireplumber/wireplumber.conf.d/`, restart the user
-WirePlumber service, and disconnect/reconnect the headset to clear the broken
-transport. Restarting that service briefly interrupts audio. This disables
-wideband Bluetooth voice for all headsets in that user session; microphone audio
-uses lower-fidelity CVSD, while normal A2DP music codecs remain enabled. Do not
-change this configuration during a dictation. Removing the fragment and
-restarting the service restores the default codec negotiation. See
-[WirePlumber's Bluetooth configuration](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/bluetooth.html).
-
-If `bluez5.enable-msbc = false` alone does not stabilize capture, an explicit
-codec allowlist can be tested in the same fragment:
-
-```ini
-monitor.bluez.properties = {
-  bluez5.enable-msbc = false
-  bluez5.codecs = [ sbc sbc_xq aac cvsd ]
-}
-```
-
-Restart WirePlumber and reconnect the earbuds after changing it. This further
-limits Bluetooth playback to SBC/SBC-XQ/AAC for that user; other headsets will
-not offer codecs such as LDAC or aptX while the restriction is active. It is a
-machine-level workaround, not a universal app fix. Verify several longer
-recordings with normal playback restored between them, not just one short test.
-
-## Configuration and credentials
-
-`caelum init` creates a config only when it does not already exist. Configure your
-providers there. Manage provider keys in setup; packaged installs include secret-tool for the desktop keyring, with a disclosed private-file fallback if unavailable. Environment keys are still supported. The bundled
-native-package launcher also loads `~/.config/caelum/environment` as a shell file;
-use permissions `600`. Never put credentials in release packages or the repository.
-Source checkouts use `scripts/run.sh` to load that same private file.
-
-## Source installation
-
-Python 3.11 or newer is required; use the distro Python for GI/Cairo compatibility.
-Install uv using its official instructions, then install system prerequisites:
-
-```sh
-# Ubuntu 24.04+/Debian 12+
-sudo apt install python3 python3-venv python3-gi python3-cairo gir1.2-gtk-4.0 libportaudio2 pulseaudio-utils libnotify-bin libglib2.0-bin libsecret-tools wl-clipboard xclip
-# Arch
-sudo pacman -S python python-gobject python-cairo gtk4 portaudio libpulse libnotify glib2 libsecret wl-clipboard xclip
-# Fedora
-sudo dnf install python3 python3-gobject python3-cairo gobject-introspection gtk4 portaudio pulseaudio-utils libnotify glib2 libsecret wl-clipboard xclip
-
-./scripts/setup.sh
-.venv/bin/caelum init
-./scripts/run.sh app
-```
-
-Install your desktop's appropriate `xdg-desktop-portal` backend for optional global
-shortcuts; older portal versions may not implement this interface. The base app
-does not depend on Hyprland or gtk4-layer-shell. History-off delivery uses
-`wl-copy` (`wl-clipboard`) on Wayland or `xclip` on X11. Install these clipboard
-tools before using history-off dictation from a source checkout.
-
-## Release process
-
-Provision the pinned Ed25519 public key and protected release-environment secret
-as described in [signed releases and updates](updates.md) before pushing a stable
-`v<project version>` tag. CI tests Ubuntu 24.04/26.04, Arch, and Fedora 43,
-builds and smoke-installs every target package, signs the update
-manifest, uploads all assets to a draft, then publishes the complete stable
-release after environment approval. Missing or mismatched keys stop publication.
-Version and locked dependencies come from `pyproject.toml` and `uv.lock`.
-`scripts/build_package.py TARGET` builds the same payload locally (uv + zstd;
-RPM additionally needs rpmbuild). The Settings footer handles signed downloads
-and next-app-launch installation for official updater-enabled native packages.
-
-The Arch recipe in `packaging/arch` stays in the repository and is not a release
-asset. It uses distro Python dependencies (python-sounddevice may require the AUR
-or Omarchy repository); the prebuilt Arch package instead vendors locked dependencies.
-
-Flatpak is intentionally not shipped in this preview: microphone routing,
-background service lifetime, credentials, and shortcut permissions need a tested
-sandbox implementation before a Flathub submission would be appropriate. Windows,
-macOS, Ubuntu 22.04's stock Python 3.10, and non-logind sessions are not qualified.
+On NVIDIA Wayland (including hybrid Intel/NVIDIA laptops), Caelum now sets
+`__NV_DISABLE_EXPLICIT_SYNC=1` before creating its main WebView. This addresses
+Hyprland's `wp_linux_drm_syncobj_surface_v1: Missing acquire timeline`, surfaced
+by GDK as `Error 71 (Protocol error)`. It retains the accelerated rendering path.
+The workaround applies only when the NVIDIA kernel module is loaded, Wayland is
+available, and X11 is not explicitly preferred. Existing values are respected:
+`__NV_DISABLE_EXPLICIT_SYNC=0` opts out. An automatically applied value is removed
+from the Python sidecar's environment so the native recording overlay is unchanged.
+The `libayatana-appindicator is deprecated` message is a separate nonfatal warning
+from Tauri's tray dependency; it does not explain the Wayland protocol failure.

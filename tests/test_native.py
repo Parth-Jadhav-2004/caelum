@@ -9,7 +9,6 @@ import time
 from contextlib import suppress
 
 import pytest
-
 from caelum.config import App
 from caelum.linux import Bindings, hypr_json, runtime_dir, target_at_press
 from caelum.orchestrator import HUD

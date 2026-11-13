@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "project": {
+    "name": "caelum",
+    "productType": "Linux voice dictation desktop app",
+    "stack": [
+      "Tauri 2",
+      "React",
+      "TypeScript",
+      "shadcn/ui",
+      "Tailwind 4"
+    ]
+  },
+  "sources": {
+    "tokens": [],
+    "components": [],
+    "assets": [
+      "assets"
+    ],
+    "instructions": []
+  },
+  "design": {
+    "colorMode": "dark-first",
+    "colors": {},
+    "typography": {},
+    "spacing": {},
+    "radius": {},
+    "shadows": {},
+    "motion": {},
+    "density": "comfortable"
+  },
+  "components": {
+    "installed": [],
+    "preferredPrimitives": [
+      "shadcn/ui"
+    ],
+    "patterns": []
+  },
+  "constraints": {
+    "must": [
+      "shadcn primitives",
+      "real capture energy only",
+      "keyboard navigation",
+      "reduced motion",
+      "preserve Linux integration"
+    ],
+    "avoid": [
+      "gradients",
+      "glassmorphism",
+      "decorative motion"
+    ]
+  },
+  "decisions": [],
+  "evidence": [
+    "21st search transcription dashboard: decorative hero/glass results rejected; official shadcn registry used."
+  ],
+  "generatedAt": "2026-11-13T12:56:05.383Z"
+}

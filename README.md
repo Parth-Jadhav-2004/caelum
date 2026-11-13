@@ -1,135 +1,108 @@
 # Caelum
 
-Hold a shortcut, speak, and get the text back in the app you were using.
+A Linux-first voice dictation application: Tauri 2, React, TypeScript, shadcn/ui,
+Tailwind CSS, Lucide, Motion, Zustand, and TanStack Query around the existing
+Python capture and transcription engine. Dark first, with light/system appearance.
 
-Caelum is dictation for Linux desktops. You bring a [Groq](https://console.groq.com) API key. Speech goes to that provider for transcription. Finished text is saved on your computer. The recording itself is not.
+Audio is sent to the configured transcription provider (Groq by default). Optional
+cleanup sends text to its configured provider. Final transcripts can be stored in
+local SQLite; microphone recordings are never stored. Local history is not encrypted.
+Clipboard managers and exports retain independent copies.
 
-**Caelum 0.3.9 is a public preview** for x86-64 Linux. Download the package that matches your OS from [GitHub Releases](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.3.9). Install and compatibility details are in the [Linux guide](docs/linux.md).
+## Development
 
-## Install
-
-Pick the package for your distribution. Debian is not currently packaged.
-
-```sh
-# Ubuntu 24.04
-sudo apt install ./caelum_0.3.9-1_ubuntu-24.04_amd64.deb
-
-# Arch
-sudo pacman -U ./caelum-0.3.9-1-x86_64.pkg.tar.zst
-
-# Fedora 43
-sudo dnf install ./caelum-0.3.9-1.fedora43.x86_64.rpm
-```
-
-Packages are published for Ubuntu 24.04 and 26.04, Arch, and Fedora 43. Python libraries are bundled. GTK and audio libraries come from your distribution.
-
-Open **Caelum** from the app launcher, or run `caelum app`. Opening the app starts the dictation service, reusing it if already running. Installing the package does not start recording or enable autostart.
-
-Uninstalling the package leaves `~/.config/caelum` and `~/.local/share/caelum` in place.
-
-## Get a key and dictate
-
-1. Open Caelum. First launch opens setup; Settings → **Manage keys** reopens it when a key is missing.
-2. Read the privacy explanation, choose a provider, and follow **Get a free key**. Free usage has provider limits.
-3. Enter the key and select **Continue** to save and validate it. Caelum uses the desktop keyring. If unavailable, it clearly reports an owner-only, unencrypted private-file fallback. Keys can be replaced or deleted here.
-4. Continue to validate the key and every selected model, run the three-second **local-only** microphone test, then choose a shortcut. Desktop permission dialogs may appear when the service starts; portable desktops also offer manual recording.
-5. Explicitly consent to upload a five-second practice sample. Practice text appears inside setup, with an optional Copy action; it is not pasted elsewhere or saved to history. A successful practice enables **Finish**. **Resume later** preserves your place; reopening rechecks provider access.
-6. Once setup is complete, dictate:
-   - **Hyprland:** hold the shortcut shown in Caelum, then release. Caelum pastes once into the original window.
-   - **Other desktops:** choose **Record**, then **Finish recording**. Copy the completed text from Caelum and paste it yourself.
-
-Existing environment keys and mode-600 `~/.config/caelum/environment` files remain supported. Keys saved in setup take precedence. Deleting a key in setup disables legacy environment fallback for that key until you save a replacement; edit shell/environment files separately to remove their copies.
-
-Opening the window does not turn on the microphone. On desktops with a system tray, closing the window keeps Caelum available there. The tray menu offers **Open Caelum**, **Settings**, **Start/Pause/Resume dictation**, and **Quit Caelum**. Quit stops the app and service and discards pending audio. Pause ignores the shortcut until you resume.
-
-A new install transcribes only. In Settings, the **Groq** preset turns on optional cleanup with the same key. **Transcription only** leaves the raw transcript. **Custom provider** is for another OpenAI-compatible endpoint. Put base URLs and model names under **Advanced**, then use **Check connection**. That check confirms the key can see the model list. It does not upload audio.
-
-If cleanup is slow, unavailable, or not configured, you still get the transcript. Caelum labels that result as unrefined.
-
-## What the app includes
-
-- **Home** shows total words dictated, recording minutes, the five latest dictations, and a monthly daily-usage calendar. The sidebar can be opened or closed.
-- **History** keeps completed transcripts, with search, copy, delete, and export. Audio, the raw provider transcript, and the source app are not stored.
-- **Statistics** shows total words, today’s and this month’s words, speaking rate, and daily activity. Total words starts from existing saved history and accumulates future saved dictations; deletion and retention do not reduce it. Dictations deleted before this counter was introduced cannot be recovered. With history saving off, new dictations do not add to this counter.
-- **Settings** covers the provider, shortcut, microphone, a three-second local microphone check, theme, and how long history is kept. Changes save automatically. Language and provider details are under **Advanced**. The microphone check stays on your machine.
-- **Bluetooth microphone fallback (Linux)** uses an available built-in ALSA input when a selected Bluetooth microphone disconnects, including during recording. The saved Bluetooth selection is preserved and used again on the next recording after reconnection. A stalled headset that is still detected reports a capture error rather than silently switching microphones; missing non-Bluetooth selections also remain errors.
-- **Launcher and login** can be turned on from Settings. Neither is enabled by the installer.
-
-Turn off **Save dictation history** in Settings → Advanced to stop saving new transcripts (`desktop.history_enabled = false`). Existing entries remain until deleted or expired. With history off, portable desktops copy directly using `wl-copy` on Wayland or `xclip` on X11; paste manually.
-
-History lives in `~/.local/share/caelum/history.sqlite3`. It is readable by your user and is not encrypted by Caelum. Delete an entry, or delete all of them, from History. The default retention period is 30 days and is applied the next time history is read or written.
-
-## If something fails
-
-- Press **Escape** during a Hyprland recording to cancel. On other desktops, use **Cancel** in Caelum.
-- Playing media pauses automatically while the microphone records and resumes as soon as recording stops, including cancellation. This works with Linux MPRIS-compatible players and browsers; players that were already paused stay paused.
-- Choose **Hold to talk** or **Press to toggle** in Settings. Toggle starts recording on one shortcut press and stops on the next. Escape cancels.
-- Presses shorter than 200 ms, and silence, insert nothing.
-- If the network fails, the recording stays in memory for up to 60 seconds. Use **Retry** or **Cancel** in the notification, or:
-
-  ```sh
-  caelum control retry
-  caelum control cancel
-  caelum control status
-  ```
-
-- Switching apps while you are speaking copies the text and asks you to paste it. Caelum does not pull focus back to paste.
-- Recordings stop at 180 seconds unless you raise that limit, up to 600 seconds.
-
-`caelum doctor` checks the local setup. It does not record or upload audio.
-
-## Privacy
-
-Caelum keeps recorded audio out of saved files. Keys use the desktop keyring, with a private-file fallback when unavailable. The provider receives the audio and text you explicitly send.
-
-| What | Where it goes |
-| --- | --- |
-| Microphone audio | Your transcription provider, only while a dictation or an explicit retry is in progress |
-| Transcript text | Your refinement provider, when cleanup is turned on |
-| Finished text | Local history when enabled; clipboard for paste/recovery (portable history-on uses explicit Copy) |
-| API key | Desktop keyring; owner-only `credentials.json` fallback if unavailable. Legacy environment keys remain supported. |
-
-The local microphone test does not upload, play back, or save audio. Clipboard managers can keep a copy after Caelum is done with it. Exports are separate files and stay after you delete history. Contributor-tier models, if you point cleanup at one, can use submitted text for training under that provider’s policy. The default setup does not use one. Contributor refinement requires explicit training consent in setup for the exact endpoint and model; without it, Caelum uses raw transcription. Custom aliases cannot reveal a provider’s training policy.
-
-Read the full [privacy notes](docs/privacy.md) before you dictate anything you would not want a provider, a clipboard manager, or an unlocked screen to hold.
-
-## This preview
-
-Qualified Hyprland sessions paste into the original window. Other desktops copy the text for you to paste. A package for your distribution does not mean every desktop on that distribution has been tested on real hardware.
-
-Also outside this preview:
-
-- A system tray icon
-- Flatpak, Flathub, a published AUR package, and ARM builds
-- Windows and macOS
-- Offline speech recognition
-- Encrypted history
-
-GNOME and KDE hardware checks are still open. Portal shortcuts depend on the desktop. App-specific paste behavior varies.
-
-## Build from source
-
-Use this when you are changing Caelum. The packaged install above is the path for everyday use.
-
-Python 3.11 or newer is required. Install GTK 4, PyGObject, Cairo, PortAudio, and [uv](https://docs.astral.sh/uv/), then:
+Requires Node 24+, Rust stable, uv, Python 3.11+, PortAudio, WebKitGTK 4.1,
+a C/C++ toolchain, pkg-config, and libayatana-appindicator/libappindicator.
 
 ```sh
-./scripts/setup.sh
-.venv/bin/caelum init
-./scripts/run.sh app
+uv sync --locked --extra dev --python /usr/bin/python3
+npm ci
+npm run tauri dev
 ```
 
-`init` creates `~/.config/caelum/config.toml` and will not overwrite it. See [config.example.toml](config.example.toml). Manage keys in setup, or use the legacy environment file; never put them in TOML. `.env` is not loaded automatically.
+For the optional native Hyprland overlay, use the distro Python with its GI/Cairo
+modules available (`uv venv --system-site-packages --python /usr/bin/python3
+--allow-existing`) and install GTK4 and gtk4-layer-shell. The main window does
+not import PyGObject. Tauri's Linux WebView uses GTK3/WebKitGTK internally.
+
+The first run opens Provider → Microphone → Shortcut → Practice. Provider checks
+validate model access without uploading audio. The mic test is local. Practice
+requires explicit upload consent. Keys use Secret Service when available, otherwise
+an owner-only file with an explicit unencrypted-storage disclosure.
 
 ```sh
-.venv/bin/pytest -q
-.venv/bin/ruff check src tests
+npm run check                       # ESLint, React tests, strict TS, Vite build
+uv run ruff check python tests scripts
+uv run pytest -q
+uv run python scripts/generate-contracts.py
+cargo check --manifest-path src-tauri/Cargo.toml
+npm run tauri build -- --no-bundle   # native executable, packaging step below
 ```
 
-Official native builds with a pinned signing key include an update check in the **Settings footer**:
-check GitHub for new versions, approve a verified download, and authorize installation.
-Caelum then restarts automatically. Source/AUR installations keep
-using their package manager. [Updater behavior and release setup](docs/updates.md).
+`npm run dev` serves only the frontend; IPC requires `tauri dev`. The standalone
+web page is not a simulated transcription service.
 
-Further reading: [Linux installation](docs/linux.md), [privacy](docs/privacy.md), [architecture](docs/architecture.md), and [release notes for 0.3.9](docs/release-0.3.9.md).
+## Architecture
 
+- `src/features`: dashboard, retained-history statistics/calendar, searchable
+  transcripts, settings/advanced providers, and consented onboarding.
+- `src/components/ui`: shadcn components retrieved using the shadcn CLI.
+- `src/lib`: typed IPC and generated Python configuration types.
+- `src/hooks`, `src/stores`: native event subscription and Zustand navigation/status.
+- `src-tauri`: single-instance window, tray, capability policy, command transport,
+  bounded request timeouts, process supervision, and orderly shutdown.
+- `python/caelum`: existing PortAudio/NumPy audio, HTTPX/asyncio providers,
+  conservative cleanup/chunking, SQLite, TOML, key storage, MPRIS, D-Bus,
+  Hyprland and portal shortcuts. `sidecar.py` adapts these services over JSON lines.
+
+The existing UID-checked daemon socket remains compatible with `caelum control`.
+Native shortcuts retain target-addressed paste, Escape cancellation, lock/suspend
+safety, MPRIS pause/resume, and retryable audio held only in bounded memory.
+Portable desktops retain portal shortcuts where available, Record/Finish, explicit
+copy, and desktop notifications. Closing the main window keeps it alive only when
+a tray watcher is available; quitting stops the service after confirmation.
+
+Data paths and formats are preserved: `$XDG_CONFIG_HOME/caelum/config.toml`,
+credentials/setup metadata alongside it, and
+`$XDG_DATA_HOME/caelum/history.sqlite3`. Defaults fall back to standard XDG paths.
+No SQL schema migration or credential copying is performed.
+
+## Distribution packages
+
+Build **inside the target distribution**, with its system Python and native build
+libraries. The native package builder vendors the hashed `uv.lock` Python wheels
+under `/opt/caelum/lib`; end users do not run pip or create a virtual environment.
+System Python, audio libraries, WebKitGTK, and native helpers are declared package
+dependencies. GTK4/GI/Cairo are needed only for the isolated native overlay.
+
+```sh
+python3 scripts/build_package.py ubuntu-24.04
+python3 scripts/build_package.py ubuntu-26.04
+python3 scripts/build_package.py debian-12
+python3 scripts/build_package.py fedora-43
+python3 scripts/build_package.py arch
+```
+
+Outputs go to `dist/`: `.deb`, `.rpm`, or `.pkg.tar.zst`. Install using `apt install
+./…deb`, `dnf install ./…rpm`, or `pacman -U …pkg.tar.zst`. The Arch PKGBUILD
+in `packaging/arch` invokes the same builder; it checks out the matching release Git tag. GitHub Actions builds, installs, and smoke-tests each target
+package before publishing signed update metadata. Release signing still requires
+the existing Ed25519 signing secret; no signing key is included in this repository.
+
+Direct `tauri build` bundles are development artifacts: use the native package
+builder for the complete vendored Python payload and distro dependency metadata.
+
+## Platform limits and acceptance
+
+Tauri cannot place ordinary windows reliably on Wayland or provide the original
+click-through layer-shell contract. `python/caelum/hud.py` is intentionally retained
+as a separate GTK4 layer-shell helper; it is the only GTK4 UI. It never becomes a
+competing main window. GNOME and other compositors without layer-shell use portable
+notifications rather than a falsely equivalent overlay. Native Hyprland integration
+requires the existing Lua-capable compositor API. Other desktops use manual paste.
+
+Read [migration mapping](docs/migration.md), [architecture](docs/architecture.md),
+[Linux prerequisites](docs/linux.md), and [acceptance checks](docs/acceptance.md).
+Hardware recording, real provider uploads, desktop permissions, tray behavior,
+suspend/lock, and installation on each distribution require host acceptance testing.
+Do not interpret passing mocked tests as production certification.

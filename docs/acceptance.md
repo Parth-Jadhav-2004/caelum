@@ -1,49 +1,70 @@
-# Phase 1 qualification checklist
+# Tauri refactor acceptance
 
-Implementation is complete enough to run locally; production/release acceptance is intentionally separate from mocked tests. No unchecked item below is claimed as passed.
+Passing automated tests and compiling the app do not certify physical desktop
+behavior. Check the items below on the release host before publishing.
 
-## Automated evidence available
+## Automated checks
 
-- [x] Lossless PCM/WAV encoding, bounded capture, quiet-audio retention, hysteresis.
-- [x] Multipart Groq contract, sample offsets, bounded rate-limit retries, sanitized failures.
-- [x] Cleanup timeout/raw fallback, number/URL/repetition validation, no false refining state when disabled.
-- [x] Timestamp seam matching, spoken repetition retention, missing/conflicting seam repair.
-- [x] Single final dispatch, no transcript in HUD messages, cancellation, retry expiry, retry blocking.
-- [x] Focus/PID safety and distinct clipboard fallback.
-- [x] Native layer-shell overlay, keyboard NONE, exclusive zone 0, empty region protocol request.
-- [x] Compact 280×96 native surface containing the 232×48 pill; pinned output; unchanged active-window identity across state replay.
-- [x] Reversible native hotkey registration and context cancellation enable/disable.
-- [x] Real microphone start and cancellation with no cloud upload.
-- [x] Actual visible synthetic-text insertion into a disposable native GTK entry.
+```sh
+npm ci
+npm run check
+uv sync --locked --extra dev --python /usr/bin/python3
+uv run ruff check python tests scripts
+uv run pytest -q
+uv run python scripts/generate-contracts.py
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+npm run tauri build -- --no-bundle
+```
 
-## Manual/device/provider qualification still required
+The Python suite covers capture bounds, real WAV contracts, provider errors and
+cleanup fallback, chunk seams, session cancellation/retry, media controls,
+configuration/credential storage, history retention/export/lifetime totals,
+settings reload rollback, signed updates, sidecar protocol/EOF/process termination,
+consent gates, and failed-save preservation. React tests exercise recording,
+retry protection, device preference preservation, waveform data, shortcut capture,
+and destructive-history confirmation. The retired GTK main-window tests were
+removed with their widgets; four real Hyprland tests remain opt-in.
 
-- [ ] Credential-authenticated Groq and GPT-6 Luna requests; account-specific model access.
-- [ ] Paired real-provider corpus benchmark and release-to-visible-insertion p50/p90/p95.
-- [ ] Short/long/noisy/quiet/multilingual utterances, punctuation commands, identifiers and code.
-- [ ] Physical push/release in both modifier orders, autorepeat, rapid start/cancel/restart, modifier conflicts.
-- [ ] Pointer click/scroll/touch through pill **and shadow** to a controlled underlying app (empty input region is verified at protocol level; physical delivery is separate).
-- [ ] Browser/editor/chat/terminal/office caret focus, paste, closing target, changing focus/workspaces, fullscreen.
-- [ ] Screen reader announcements, high contrast, reduced motion, toolkit text scaling, visual comparison with SVG.
-- [ ] 100/125/150/200% scale, mixed monitors, small work areas, bottom dock reservations and output unplug.
-- [ ] Physical lock/suspend during capture/finalization; no post-unlock microphone restart or late insertion.
-- [ ] HUD crash, daemon hard kill, config reload, device unplug, actual network/rate-limit failures, notification recovery actions.
-- [ ] Physical key-down to first visible feedback ≤100 ms warm; cold-start measurement reported separately.
+## Release-host checks (not established by mocks)
 
-Run native tests only in an interactive Omarchy login with the repository daemon stopped. The insertion fixture temporarily focuses its own test window, restores the previous active window, and preserves a text clipboard in memory. Test clipboard data is never logged; non-text clipboard formats are outside this fixture's preservation guarantee.
+- [ ] First run and resumed key management, separate provider keys, keyring unlock
+  and owner-only unencrypted fallback disclosure; provider failures never reveal keys.
+- [ ] Real local microphone test and consented practice; no audio written to disk.
+- [ ] USB/Bluetooth/default-device capture, missing sources, unplug/reconnect.
+- [ ] Actual Groq transcription and optional cleanup, history saving on/off,
+  raw fallback, empty speech, quota/offline retry, expiry and discard.
+- [ ] Physical hold/toggle hotkey, both modifier orders, Escape and conflicts;
+  portable portal approval/rejection and manual Record/Finish fallback.
+- [ ] Main window Home/Statistics/History/Settings, search/copy/export/delete,
+  autosave errors, sidebar, dark/light/system, keyboard-only and screen reader.
+- [ ] Native overlay appears on the intended output, stays click-through,
+  preserves focus, and dismisses correctly; scale 100–200%, mixed monitors.
+- [ ] Portable notification feedback and manual-copy workflow on GNOME/KDE/X11.
+- [ ] MPRIS pauses only playing media and resumes safely after completion/cancel.
+- [ ] Lock/suspend cancels capture; no late insertion after unlock.
+- [ ] Closing hides only with a working tray; watcher loss reopens the window;
+  tray open/pause/resume/quit, active-work quit confirmation, second-instance activation.
+- [ ] Parent/sidecar/HUD failure stops recording; no orphan capture/hotkey bindings.
+- [ ] App-launcher discovery and next-login autostart with provider credentials.
+- [ ] Install each target-native .deb/.rpm/Arch package in a clean desktop image,
+  launch without pip, upgrade existing 0.3.9 data, signed update/restart and rejection
+  of corrupted/expired/wrong-target packages.
 
-## Phase 2 desktop evidence
+Native tests require an interactive Omarchy login and no running daemon:
+`CAELUM_NATIVE_TESTS=1 uv run pytest tests/test_native.py -q`. They can temporarily
+focus their disposable test window and preserve a text clipboard in memory;
+non-text clipboard formats are outside the fixture's preservation guarantee.
+The normal test suite isolates XDG config/data/runtime directories and does not
+use real provider credentials or microphone capture.
 
-- [x] Atomic settings round-trip, private permissions, failed-save preservation.
-- [x] Automatic persistence with legacy disabled-setting migration; final-only schema; deduplicated session IDs.
-- [x] Literal search, deletion, retention, sensitive export, rate snapshots, retained-data aggregate math.
-- [x] Pause/cancel/resume and completion hook after final insertion; storage-hook failure never retries insertion.
-- [x] Idle settings reload, microphone changes, shortcut-conflict rollback, active-session rejection.
-- [x] Native GTK smoke check mounts all four pages, checks the 820px minimum width, and toggles the sidebar with isolated storage.
-- [ ] Physical shortcut recorder and conflicting-shortcut apply/recovery through the complete UI.
-- [ ] Physical device selection/disconnect and local input-meter test across USB/Bluetooth hardware.
-- [ ] Real dictation saved through the daemon, then searched/copied/exported/deleted through the UI.
-- [ ] App-launcher discovery and actual next-login autostart with credentials.
-- [ ] Screen-reader navigation, large fonts, mixed-DPI monitors, packaging/upgrade and crash-recovery qualification.
+## Local refactor verification
 
-System tray, other operating systems, and encrypted database support remain future work, not passed acceptance items.
+See docs/verification.md for the checks actually run for this working tree. The
+four opt-in native tests are deliberately not inferred from the headless window
+smoke test. Smoke scripts for extracted packages are available:
+
+```sh
+/usr/bin/python3 scripts/smoke_package.py /tmp/extracted-package
+python3 scripts/smoke_desktop.py /tmp/extracted-package --screenshot /tmp/caelum-setup.png
+python3 scripts/smoke_desktop.py /tmp/extracted-package --completed-setup --screenshot /tmp/caelum-home.png
+```
