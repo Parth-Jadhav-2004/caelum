@@ -1,5 +1,6 @@
 """Signed native-package updates; no network or privileged work at import time."""
 
+import base64
 import hashlib
 import json
 import os
@@ -63,32 +64,148 @@ def compatible(info):
     )
 
 
+def trusted_public_keys(directory, *, now=None):
+    """Trust is installed with the package, never supplied by a download or XDG file.
+
+    Legacy installations without a bundle retain their original pinned key.
+    An installed policy is authoritative: malformed/expired policies fail closed.
+    """
+    directory = Path(directory)
+    policy = directory / "update-trust.json"
+    if not policy.exists() and not policy.is_symlink():
+        return [read_regular(directory / "update-public.pem", 4096)]
+    bundle = json.loads(read_regular(policy, 32768))
+    if (
+        bundle.get("schema") != 1
+        or not isinstance(bundle.get("keys"), list)
+        or not 1 <= len(bundle["keys"]) <= 4
+    ):
+        raise ValueError("Invalid installed update trust policy")
+    now = int(time.time()) if now is None else now
+    keys, seen = [], set()
+    for entry in bundle["keys"]:
+        if not isinstance(entry, dict) or set(entry) != {
+            "id",
+            "pem",
+            "not_before",
+            "not_after",
+            "revoked",
+        }:
+            raise ValueError("Invalid update key record")
+        if (
+            not isinstance(entry["pem"], str)
+            or len(entry["pem"]) > 4096
+            or type(entry["revoked"]) is not bool
+        ):
+            raise ValueError("Invalid update key")
+        if (
+            any(type(entry[field]) is not int for field in ("not_before", "not_after"))
+            or not 0 <= entry["not_before"] < entry["not_after"]
+        ):
+            raise ValueError("Invalid update key validity")
+        der = subprocess.check_output(
+            ["/usr/bin/openssl", "pkey", "-pubin", "-outform", "DER"],
+            input=entry["pem"].encode(),
+            stderr=subprocess.DEVNULL,
+            env=SAFE_ENV,
+            timeout=2,
+        )
+        identifier = hashlib.sha256(der).hexdigest()
+        if (
+            len(der) != 44
+            or not der.startswith(bytes.fromhex("302a300506032b6570032100"))
+            or entry["id"] != identifier
+            or identifier in seen
+        ):
+            raise ValueError("Update key identity mismatch")
+        seen.add(identifier)
+        if not entry["revoked"] and entry["not_before"] <= now < entry["not_after"]:
+            keys.append(entry["pem"].encode())
+    if not keys:
+        raise ValueError("No active update verification keys; use a trusted native package")
+    return keys
+
+
+def public_key_id(public):
+    der = subprocess.check_output(
+        ["/usr/bin/openssl", "pkey", "-pubin", "-outform", "DER"],
+        input=public,
+        stderr=subprocess.DEVNULL,
+        env=SAFE_ENV,
+        timeout=2,
+    )
+    if len(der) != 44 or not der.startswith(bytes.fromhex("302a300506032b6570032100")):
+        raise ValueError("An Ed25519 update key is required")
+    return hashlib.sha256(der).hexdigest()
+
+
+def signature_candidates(signature):
+    if len(signature) == 64:
+        return {None: signature}
+    try:
+        bundle = json.loads(signature)
+        entries = bundle["signatures"]
+        if bundle["schema"] != 1 or not isinstance(entries, list) or not 1 <= len(entries) <= 4:
+            raise ValueError()
+        result = {}
+        for entry in entries:
+            identifier = entry["key_id"]
+            if (
+                not isinstance(identifier, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", identifier)
+                or identifier in result
+            ):
+                raise ValueError()
+            raw = base64.b64decode(entry["signature"], validate=True)
+            if len(raw) != 64:
+                raise ValueError()
+            result[identifier] = raw
+        return result
+    except (ValueError, KeyError, TypeError) as error:
+        raise ValueError("Invalid update signature bundle") from error
+
+
 def verify_manifest(raw, signature, info, *, key=None, now=None):
-    if len(raw) > 65536 or len(signature) != 64:
+    if len(raw) > 65536 or not 0 < len(signature) <= 4096:
         raise ValueError("Invalid update signature or metadata size")
     with tempfile.TemporaryDirectory(prefix="caelum-verify-", dir="/tmp") as directory:
         work = Path(directory)
         (work / "manifest").write_bytes(raw)
-        (work / "signature").write_bytes(signature)
-        result = subprocess.run(
-            [
-                "/usr/bin/openssl",
-                "pkeyutl",
-                "-verify",
-                "-pubin",
-                "-inkey",
-                str(key or BASE / "update-public.pem"),
-                "-rawin",
-                "-in",
-                str(work / "manifest"),
-                "-sigfile",
-                str(work / "signature"),
-            ],
-            capture_output=True,
-            env=SAFE_ENV,
-            timeout=10,
-        )
-        if result.returncode:
+        signatures = signature_candidates(signature)
+        keys = [read_regular(Path(key), 4096)] if key else trusted_public_keys(BASE, now=now)
+        verified = False
+        for public in keys:
+            matching = (
+                signatures.get(None)
+                if None in signatures
+                else signatures.get(public_key_id(public))
+            )
+            if matching is None:
+                continue
+            (work / "signature").write_bytes(matching)
+            (work / "public.pem").write_bytes(public)
+            result = subprocess.run(
+                [
+                    "/usr/bin/openssl",
+                    "pkeyutl",
+                    "-verify",
+                    "-pubin",
+                    "-inkey",
+                    str(work / "public.pem"),
+                    "-rawin",
+                    "-in",
+                    str(work / "manifest"),
+                    "-sigfile",
+                    str(work / "signature"),
+                ],
+                capture_output=True,
+                env=SAFE_ENV,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                verified = True
+                break
+        if not verified:
             raise ValueError("Update signature verification failed; nothing was installed")
     manifest = json.loads(raw)
     if manifest.get("schema") != 1:
@@ -164,6 +281,12 @@ def check():
             root = RELEASES + "/latest/download/"
             raw = fetch(client, root + "update.json", 65536)
             signature = fetch(client, root + "update.json.sig", 64)
+            if (BASE / "update-trust.json").exists():
+                try:
+                    signature = fetch(client, root + "update-signatures.json", 4096)
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code != 404:
+                        raise
         manifest, _ = verify_manifest(raw, signature, info)
     except httpx.HTTPError as error:
         raise RuntimeError(
@@ -237,7 +360,7 @@ def install_verified(pending):
     if os.geteuid() != 0 or not info or not compatible(info):
         raise RuntimeError("Updates require the official matching native package")
     raw = read_regular(pending / "update.json", 65536)
-    signature = read_regular(pending / "update.json.sig", 64)
+    signature = read_regular(pending / "update.json.sig", 4096)
     manifest, asset = verify_manifest(raw, signature, info)
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
         raise ValueError("Refusing to downgrade or reinstall Caelum")
@@ -273,7 +396,7 @@ def apply_pending():
         raise RuntimeError("Use your package manager after changing OS or Python versions")
     manifest, asset = verify_manifest(
         read_regular(pending / "update.json", 65536),
-        read_regular(pending / "update.json.sig", 64),
+        read_regular(pending / "update.json.sig", 4096),
         info,
     )
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):

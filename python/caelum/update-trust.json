@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "keys": [
+    {
+      "id": "3f37324ee2caeb6695f3ff0883fd842929ec530e3b7f0ec0186a47d160941ddd",
+      "pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkBCi/KzXTkCCSxGOSMX2d8/iKNdvEf+Bxbw3WHcgJYI=\n-----END PUBLIC KEY-----\n",
+      "not_before": 0,
+      "not_after": 4102444800,
+      "revoked": false
+    }
+  ]
+}

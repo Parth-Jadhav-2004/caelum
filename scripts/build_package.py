@@ -152,6 +152,19 @@ exec /usr/bin/python3 -m caelum.cli "$@"
             ROOT / "LICENSE",
         ):
             shutil.copy2(source, docs / source.name)
+        licenses = stage / "usr/share/licenses/caelum"
+        licenses.mkdir(parents=True)
+        shutil.copy2(ROOT / "LICENSE", licenses / "LICENSE")
+        from collect_licenses import collect
+
+        collect(ROOT, licenses / "third-party")
+        (docs / "copyright").write_text(
+            (ROOT / "LICENSE").read_text()
+            + "\n"
+            + (ROOT / "THIRD_PARTY_NOTICES.md").read_text()
+            + "\nDependency license texts: /usr/share/licenses/caelum/third-party/\n"
+            + "Vendored Python license metadata: /opt/caelum/lib/*.dist-info/\n"
+        )
         write(
             docs / "build-info.txt",
             f"Caelum {version}\nTarget: {target}\nPython: {python}\n"
@@ -263,6 +276,7 @@ cp -a {stage}/. %{{buildroot}}/
 /usr/share/icons/hicolor/scalable/apps/caelum.svg
 /usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg
 /usr/share/doc/caelum
+%license /usr/share/licenses/caelum
 """,
             )
             run(

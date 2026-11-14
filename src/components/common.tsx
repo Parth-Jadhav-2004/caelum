@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Copy, Check, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,7 @@ export function Confirm({
   onConfirm: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <AlertDialog
       open={open}
@@ -75,7 +76,23 @@ export function Confirm({
         if (!value && !busy) onCancel();
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent
+        onOpenAutoFocus={() => {
+          returnFocus.current =
+            document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocus.current?.isConnected
+            ? returnFocus.current
+            : document.getElementById("main-content");
+          if (target) {
+            event.preventDefault();
+            target.focus();
+          }
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{detail}</AlertDialogDescription>
