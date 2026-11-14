@@ -137,6 +137,16 @@ async def connection_status(config):
     results = []
     try:
         for title, settings in (("Transcription", config.stt), ("Refinement", config.cleanup)):
+            if title == "Transcription" and config.stt.engine == "local":
+                try:
+                    await provider.models(settings)
+                    results.append("Transcription: local executable and model found (offline)")
+                except ProviderError as error:
+                    results.append(f"Transcription: {error}")
+                continue
+            if title == "Refinement" and config.stt.engine == "local":
+                results.append("Refinement: off (offline mode)")
+                continue
             if not settings.model:
                 results.append(f"{title}: off (raw transcription)")
                 continue

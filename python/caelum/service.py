@@ -136,7 +136,11 @@ async def reload_settings(core, bindings, provider, path=None):
 
 
 async def serve(config, config_path=None):
-    if not await asyncio.to_thread(credential, config.stt.key_env):
+    if config.stt.engine == "local":
+        from .local_stt import check_local
+
+        check_local(config.stt)
+    if config.stt.engine != "local" and not await asyncio.to_thread(credential, config.stt.key_env):
         raise ValueError(
             "Add the transcription key in Settings → Open setup / Manage keys "
             "before starting Caelum; run caelum doctor"

@@ -25,6 +25,10 @@ class App:
 
 @dataclass
 class STT:
+    engine: str = "cloud"
+    local_binary: str = "whisper-cli"
+    local_model_path: str = ""
+    local_timeout_seconds: float = 300.0
     base_url: str = "https://api.groq.com/openai/v1"
     model: str = "whisper-large-v3-turbo"
     key_env: str = "GROQ_API_KEY"
@@ -38,6 +42,7 @@ class STT:
 
 @dataclass
 class Cleanup:
+    style: str = "light"
     base_url: str = "https://api.groq.com/openai/v1"
     key_env: str = "GROQ_API_KEY"
     model: str = ""
@@ -79,6 +84,8 @@ def load(path=None):
         values = data.get(section, {}).copy()
         if set(values) - {f.name for f in fields(cls)}:
             raise ValueError(f"Unknown option in {section}")
+        if section == "cleanup" and "style" not in values:
+            values["style"] = "thorough" if values.get("reasoning_effort") == "high" else "light"
         defaults = cls()
         for key, value in values.items():
             expected = getattr(defaults, key)
@@ -96,6 +103,14 @@ def load(path=None):
 
 def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
+    if s.engine not in ("cloud", "local"):
+        raise ValueError("Transcription engine must be cloud or local")
+    if not s.local_binary.strip() or not 10 <= s.local_timeout_seconds <= 1800:
+        raise ValueError("Local binary and timeout are invalid")
+    if len(s.vocabulary) > 4000:
+        raise ValueError("Custom vocabulary must be at most 4000 characters")
+    if c.style not in ("light", "thorough", "email", "casual", "code"):
+        raise ValueError("Unknown cleanup style")
     if a.backend not in ("auto", "hyprland", "portable"):
         raise ValueError("backend must be auto, hyprland, or portable")
     if config.desktop.theme not in ("system", "light", "dark"):
