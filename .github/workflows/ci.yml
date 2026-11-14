@@ -23,10 +23,11 @@ jobs:
         with:
           enable-cache: true
           version: "0.13.1"
-      - run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - run: sudo apt-get update && sudo apt-get install -y libportaudio2 dbus-daemon
       - run: uv sync --locked --extra dev
       - run: uv run ruff check python tests scripts
       - run: uv run pytest -q
+      - run: dbus-run-session -- env CAELUM_DBUS_TESTS=1 uv run pytest -q tests/test_media_dbus.py
       - run: python3 scripts/scan_privacy.py
       - run: npm ci
       - run: npm run check

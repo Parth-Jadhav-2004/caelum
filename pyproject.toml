@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "caelum-dictation"
 version = "0.4.1"
 description = "Private-by-default dictation for Linux desktops"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = [

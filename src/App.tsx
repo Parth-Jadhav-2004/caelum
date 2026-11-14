@@ -204,7 +204,17 @@ export default function App() {
               })
             }
           >
-            <Sidebar collapsible="icon">
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:p-3 focus:text-foreground"
+            >
+              Skip to content
+            </a>
+            <Sidebar
+              collapsible="icon"
+              role="navigation"
+              aria-label="Main navigation"
+            >
               <SidebarHeader className="px-4 py-7">
                 <SidebarMenu>
                   <SidebarMenuItem>
@@ -232,6 +242,11 @@ export default function App() {
                       <SidebarMenuButton
                         isActive={
                           page === id || (id === "settings" && page === "setup")
+                        }
+                        aria-current={
+                          page === id || (id === "settings" && page === "setup")
+                            ? "page"
+                            : undefined
                         }
                         tooltip={title}
                         onClick={() => navigate(id)}
@@ -279,7 +294,11 @@ export default function App() {
                   <kbd className="text-xs">Ctrl K</kbd>
                 </Button>
               </header>
-              <main className="min-w-0 flex-1 overflow-auto">
+              <div
+                id="main-content"
+                tabIndex={-1}
+                className="min-w-0 flex-1 overflow-auto"
+              >
                 {engineError && (
                   <div
                     role="alert"
@@ -334,7 +353,7 @@ export default function App() {
                   </motion.div>
                   <FrontendReady />
                 </Suspense>
-              </main>
+              </div>
             </SidebarInset>
           </SidebarProvider>
           <CommandDialog open={command} onOpenChange={setCommand}>

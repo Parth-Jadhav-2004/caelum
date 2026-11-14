@@ -161,6 +161,7 @@ export function Settings({
   });
   const [testing, setTesting] = useState(false),
     [checking, setChecking] = useState(false),
+    [updateStatus, setUpdateStatus] = useState(""),
     [update, setUpdate] = useState<string | null>(null),
     [confirmUpdate, setConfirmUpdate] = useState(false);
   const [connection, setConnection] = useState(""),
@@ -533,7 +534,7 @@ export function Settings({
                 ? `Version ${update} available`
                 : pending.data
                   ? "A verified update is queued."
-                  : "Signed native packages; package-manager updates remain available."
+                  : "Checks signed stable releases only. Prereleases require manual installation."
             }
           >
             <div className="flex gap-2">
@@ -546,17 +547,34 @@ export function Settings({
                     return;
                   }
                   setChecking(true);
+                  setUpdateStatus("Checking stable releases…");
                   void action(() => ipc("updates.check", {}))
                     .then((result) => {
-                      if (result) setUpdate(result.version);
-                      else if (result === null)
-                        setConnection("Caelum is up to date.");
+                      if (result) {
+                        setUpdate(result.version);
+                        setUpdateStatus(
+                          `Version ${result.version} is available.`,
+                        );
+                      } else if (result === null) {
+                        setUpdate(null);
+                        setUpdateStatus(
+                          "No newer stable release is available. Prereleases are installed manually.",
+                        );
+                      } else {
+                        setUpdateStatus("Could not check updates. Try again.");
+                      }
                     })
                     .finally(() => setChecking(false));
                 }}
               >
                 <RefreshCw />
                 {update || pending.data ? "Update & restart" : "Check updates"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => void action(() => invoke("open_releases"))}
+              >
+                View releases
               </Button>
               {pending.data && (
                 <Button
@@ -573,6 +591,9 @@ export function Settings({
               )}
             </div>
           </Row>
+          <p role="status" className="text-xs text-muted-foreground">
+            {updateStatus}
+          </p>
           <Row title="Check updates when Caelum opens">
             <Switch
               aria-label="Check updates on launch"

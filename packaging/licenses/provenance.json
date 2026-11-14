@@ -1,0 +1,51 @@
+[
+  {
+    "dependency": "alloc-stdlib-0.3.0",
+    "source": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0a81fd6928ea3b33c8cd484aa4575d50ffb98012/LICENSE",
+    "file": "cargo/alloc-stdlib-0.3.0/LICENSE",
+    "sha256": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+  },
+  {
+    "dependency": "dlopen2-0.8.2",
+    "source": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+    "file": "cargo/dlopen2-0.8.2/LICENSE",
+    "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+  },
+  {
+    "dependency": "dlopen2_derive-0.4.3",
+    "source": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+    "file": "cargo/dlopen2_derive-0.4.3/LICENSE",
+    "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+  },
+  {
+    "dependency": "tauri-plugin-2.7.2",
+    "source": "https://raw.githubusercontent.com/tauri-apps/tauri/59b63ab500da9859f12d8888c3298bc29bba0b92/LICENSE-MIT",
+    "file": "cargo/tauri-plugin-2.7.2/LICENSE-MIT",
+    "sha256": "9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d"
+  },
+  {
+    "dependency": "react-remove-scroll-bar-2.3.8",
+    "source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+    "note": "npm 2.3.8 omits a license file and declares MIT; publisher repository snapshot currently labels package 2.3.7. This retains its MIT text and author attribution.",
+    "file": "npm/react-remove-scroll-bar-2.3.8/LICENSE",
+    "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84"
+  },
+  {
+    "dependency": "libappindicator-sys-0.9.0",
+    "source": "libappindicator 0.9.0 published workspace, commit eafd1e3682a1247f595410266091e9684021cb6f",
+    "file": "cargo/libappindicator-sys-0.9.0/LICENSE-APACHE",
+    "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+  },
+  {
+    "dependency": "libappindicator-sys-0.9.0",
+    "source": "libappindicator 0.9.0 published workspace, commit eafd1e3682a1247f595410266091e9684021cb6f",
+    "file": "cargo/libappindicator-sys-0.9.0/LICENSE-MIT",
+    "sha256": "eb227437252b2a7a9c1fc342c93ade1f3d7ce38cc6dd754f613db07d53ceff0b"
+  },
+  {
+    "dependency": "selectors-0.38.0",
+    "source": "MPL-2.0 standard license text from cssparser 0.37.0; selectors declares MPL-2.0 and its original source archive is included",
+    "file": "cargo/selectors-0.38.0/LICENSE-MPL-2.0",
+    "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+  }
+]

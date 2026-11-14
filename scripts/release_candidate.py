@@ -129,7 +129,13 @@ def verify(directory, sha, run_id=None, run_attempt=None, now=None):
     if (
         {path.name for path in directory.iterdir()}
         - expected
-        - {"candidate.json", "update.json", "update.json.sig", "SHA256SUMS"}
+        - {
+            "candidate.json",
+            "update.json",
+            "update.json.sig",
+            "update-signatures.json",
+            "SHA256SUMS",
+        }
     ):
         raise ValueError("Unexpected files in candidate directory")
     for name, info in manifest["files"].items():

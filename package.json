@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "tauri": "bash scripts/desktop.sh",
-    "check": "npm run lint && npm test && npm run build"
+    "check": "npm run lint && npm run check:themes && npm test && npm run build && npm run check:bundle",
+    "check:themes": "node scripts/check-theme-contrast.mjs",
+    "check:bundle": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -38,6 +40,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "axe-core": "^4.14.0",
+    "culori": "^4.0.2",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
