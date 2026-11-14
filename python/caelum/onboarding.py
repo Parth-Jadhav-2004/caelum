@@ -14,7 +14,8 @@ from .portable import backend_name
 from .providers import ProviderError, Providers
 
 PRIVACY = (
-    "Audio is sent to your transcription provider. When refinement is on, text is sent "
+    "In cloud mode, audio is sent to your transcription provider. Local mode uses whisper.cpp "
+    "on this computer and disables cloud refinement. In cloud mode, when refinement is on, text is sent "
     "to your refinement provider. Regular dictations save final text in local history when "
     "Save dictation history is on (disable it in Settings → History & desktop) "
     "and may use the clipboard. Practice text stays in this setup window unless you copy it. "
@@ -54,6 +55,11 @@ async def validate_providers(config, credential_resolver=None):
     provider = Providers(config, credential_resolver=credential_resolver)
     try:
         for title, settings in (("Transcription", config.stt), ("Refinement", config.cleanup)):
+            if title == "Transcription" and config.stt.engine == "local":
+                await provider.models(settings)
+                continue
+            if title == "Refinement" and config.stt.engine == "local":
+                continue
             if not settings.model:
                 if title == "Transcription":
                     raise ValueError("Choose a transcription model")

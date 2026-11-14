@@ -161,7 +161,7 @@ class Orchestrator:
                     return
                 self.chunker = (
                     Chunker(self.provider, self.config.stt)
-                    if self.config.app.strategy == "chunked"
+                    if self.config.app.strategy == "chunked" and self.config.stt.engine != "local"
                     else None
                 )
                 self.poll_task = asyncio.create_task(self.poll())
@@ -274,7 +274,8 @@ class Orchestrator:
     async def finalize(self, session):
         try:
             async with asyncio.timeout(
-                self.config.stt.timeout_seconds * 2 + self.config.cleanup.timeout_seconds + 5
+                (self.config.stt.local_timeout_seconds if self.config.stt.engine == "local"
+                 else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
             ):
                 await self.event("processing")
                 began = time.monotonic()

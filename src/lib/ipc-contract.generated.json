@@ -83,6 +83,18 @@
               "stt": {
                 "type": "object",
                 "properties": {
+                  "engine": {
+                    "type": "string"
+                  },
+                  "local_binary": {
+                    "type": "string"
+                  },
+                  "local_model_path": {
+                    "type": "string"
+                  },
+                  "local_timeout_seconds": {
+                    "type": "number"
+                  },
                   "base_url": {
                     "type": "string"
                   },
@@ -112,6 +124,10 @@
                   }
                 },
                 "required": [
+                  "engine",
+                  "local_binary",
+                  "local_model_path",
+                  "local_timeout_seconds",
                   "base_url",
                   "model",
                   "key_env",
@@ -127,6 +143,9 @@
               "cleanup": {
                 "type": "object",
                 "properties": {
+                  "style": {
+                    "type": "string"
+                  },
                   "base_url": {
                     "type": "string"
                   },
@@ -147,6 +166,7 @@
                   }
                 },
                 "required": [
+                  "style",
                   "base_url",
                   "key_env",
                   "model",
@@ -565,6 +585,18 @@
               "stt": {
                 "type": "object",
                 "properties": {
+                  "engine": {
+                    "type": "string"
+                  },
+                  "local_binary": {
+                    "type": "string"
+                  },
+                  "local_model_path": {
+                    "type": "string"
+                  },
+                  "local_timeout_seconds": {
+                    "type": "number"
+                  },
                   "base_url": {
                     "type": "string"
                   },
@@ -599,6 +631,9 @@
               "cleanup": {
                 "type": "object",
                 "properties": {
+                  "style": {
+                    "type": "string"
+                  },
                   "base_url": {
                     "type": "string"
                   },

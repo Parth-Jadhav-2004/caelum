@@ -14,6 +14,7 @@ import { ipc, type Config } from "@/lib/ipc";
 import { action, Heading, Confirm } from "@/components/common";
 import { useApp } from "@/stores/app";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -38,14 +39,16 @@ export function Choice({
   value,
   items,
   change,
+  disabled = false,
 }: {
+  disabled?: boolean;
   label: string;
   value: string;
   items: [string, string][];
   change: (value: string) => void;
 }) {
   return (
-    <Select value={value} onValueChange={change}>
+    <Select value={value} onValueChange={change} disabled={disabled}>
       <SelectTrigger aria-label={label} className="w-full sm:w-56">
         <SelectValue />
       </SelectTrigger>
@@ -307,54 +310,123 @@ export function Settings({
             <CardContent>
               <Row
                 title="Transcribe with"
-                detail="OpenAI-compatible provider configuration is in Advanced."
+                detail="Offline uses whisper.cpp and a model already on this computer. Cloud configuration is in Advanced."
               >
                 <Choice
                   label="Transcription provider"
                   value={
-                    config.stt.base_url === "https://api.groq.com/openai/v1"
-                      ? "groq"
-                      : "custom"
+                    config.stt.engine === "local"
+                      ? "local"
+                      : config.stt.base_url === "https://api.groq.com/openai/v1"
+                        ? "groq"
+                        : "custom"
                   }
                   items={[
+                    ["local", "Local · offline"],
                     ["groq", "Groq"],
                     ["custom", "Custom provider"],
                   ]}
                   change={(v) => {
-                    if (v === "groq")
+                    if (v === "local") set("stt", "engine", "local");
+                    else if (v === "groq")
                       change({
                         ...config,
                         stt: {
                           ...config.stt,
+                          engine: "cloud",
                           base_url: "https://api.groq.com/openai/v1",
                           model: "whisper-large-v3-turbo",
                           key_env: "GROQ_API_KEY",
                         },
                       });
-                    else
+                    else {
+                      set("stt", "engine", "cloud");
                       setConnection(
                         "Configure custom provider URL and models in Advanced.",
                       );
+                    }
                   }}
+                />
+              </Row>
+              {config.stt.engine === "local" && (
+                <>
+                  <Row
+                    title="whisper.cpp executable"
+                    detail="Install whisper.cpp separately. Enter whisper-cli or its full path. No automatic downloads."
+                  >
+                    <Input
+                      aria-label="Local executable"
+                      value={config.stt.local_binary}
+                      onChange={(e) =>
+                        set("stt", "local_binary", e.target.value)
+                      }
+                    />
+                  </Row>
+                  <Row
+                    title="Local model file"
+                    detail="Full path to a downloaded whisper.cpp GGML model. Audio stays in memory; cloud cleanup is disabled in offline mode."
+                  >
+                    <Input
+                      aria-label="Local model file"
+                      placeholder="/path/to/ggml-base.bin"
+                      value={config.stt.local_model_path}
+                      onChange={(e) =>
+                        set("stt", "local_model_path", e.target.value)
+                      }
+                    />
+                  </Row>
+                  <Row
+                    title="Local transcription timeout"
+                    detail="Seconds allowed for inference on this computer (10–1800)."
+                  >
+                    <Input
+                      aria-label="Local transcription timeout"
+                      type="number"
+                      min={10}
+                      max={1800}
+                      value={config.stt.local_timeout_seconds}
+                      onChange={(e) =>
+                        set(
+                          "stt",
+                          "local_timeout_seconds",
+                          Number(e.target.value),
+                        )
+                      }
+                    />
+                  </Row>
+                </>
+              )}
+              <Row
+                title="Custom vocabulary"
+                detail="Names, technical terms, and spellings to help recognition. Separate with commas or new lines; these are hints, not guaranteed replacements. Sent only to your chosen transcription engine."
+              >
+                <Textarea
+                  aria-label="Custom vocabulary"
+                  className="w-full sm:w-72"
+                  maxLength={4000}
+                  value={config.stt.vocabulary}
+                  onChange={(e) => set("stt", "vocabulary", e.target.value)}
                 />
               </Row>
               <Row
                 title="Tidy the text"
-                detail="Optional cleanup. Raw transcription is retained if cleanup is unavailable."
+                detail={
+                  config.stt.engine === "local"
+                    ? "Disabled in offline mode. Your cloud cleanup preferences are preserved."
+                    : "Optional cloud cleanup. Styles preserve your meaning; raw text is kept if cleanup fails."
+                }
               >
                 <Choice
                   label="Text cleanup"
-                  value={
-                    !config.cleanup.model
-                      ? "off"
-                      : config.cleanup.reasoning_effort === "high"
-                        ? "high"
-                        : "low"
-                  }
+                  disabled={config.stt.engine === "local"}
+                  value={!config.cleanup.model ? "off" : config.cleanup.style}
                   items={[
                     ["off", "Off"],
-                    ["low", "Lightly"],
-                    ["high", "Thoroughly"],
+                    ["light", "Light"],
+                    ["thorough", "Thorough"],
+                    ["email", "Email"],
+                    ["casual", "Casual"],
+                    ["code", "Code"],
                   ]}
                   change={(v) =>
                     change({
@@ -365,7 +437,8 @@ export function Settings({
                           v === "off"
                             ? ""
                             : config.cleanup.model || "openai/gpt-oss-20b",
-                        reasoning_effort: v === "off" ? "" : v,
+                        style: v === "off" ? config.cleanup.style : v,
+                        reasoning_effort: v === "thorough" ? "high" : "low",
                       },
                     })
                   }

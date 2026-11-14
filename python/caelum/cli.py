@@ -52,7 +52,18 @@ async def doctor(config):
         checks[binary] = bool(shutil.which(binary))
     checks["desktop_session"] = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
     checks["runtime_directory"] = bool(os.environ.get("XDG_RUNTIME_DIR"))
+    if config.stt.engine == "local":
+        from .local_stt import check_local
+        from .providers import ProviderError
+
+        try:
+            check_local(config.stt)
+            checks["local_transcription_ready"] = True
+        except ProviderError:
+            checks["local_transcription_ready"] = False
     for name, provider in (("stt", config.stt), ("cleanup", config.cleanup)):
+        if config.stt.engine == "local":
+            continue
         if name == "cleanup" and not config.cleanup.model:
             continue
         from .credentials import get as credential
