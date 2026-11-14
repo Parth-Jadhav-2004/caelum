@@ -11,7 +11,7 @@ import httpx
 
 from .audio import RATE, wav_bytes
 from .credentials import get as credential
-from .quality import PROMPT, normalize, validate_cleanup
+from .quality import cleanup_prompt, normalize, validate_cleanup
 
 
 def contributor_scope(provider):
@@ -104,6 +104,11 @@ class Providers:
         return {"Authorization": f"Bearer {key}"}
 
     async def models(self, provider):
+        if provider is self.config.stt and provider.engine == "local":
+            from .local_stt import check_local
+
+            check_local(provider)
+            return [provider.model]
         try:
             response = await self.client.get(
                 provider.base_url.rstrip("/") + "/models",
@@ -123,6 +128,12 @@ class Providers:
     async def stt(self, pcm, start=0, end=None):
         cfg = self.config.stt
         end = end if end is not None else start + len(pcm) // 2
+        if cfg.engine == "local":
+            from .local_stt import transcribe
+
+            async with self.semaphore:
+                text = await transcribe(cfg, pcm)
+                return Transcript(normalize(text), [], start, end)
         data = {
             "model": cfg.model,
             "response_format": "verbose_json",
@@ -189,7 +200,7 @@ class Providers:
 
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
-        if not cfg.model:
+        if self.config.stt.engine == "local" or not cfg.model:
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
@@ -230,7 +241,7 @@ class Providers:
                             else {}
                         ),
                         "messages": [
-                            {"role": "system", "content": PROMPT},
+                            {"role": "system", "content": cleanup_prompt(cfg.style)},
                             {"role": "user", "content": raw},
                         ],
                     },

@@ -34,3 +34,16 @@ def validate_cleanup(raw, result):
     if any(token.rstrip(".,!?") not in result for token in protected):
         return raw, False
     return result, True
+
+
+STYLE_PROMPTS = {
+    "light": "Make only minimal punctuation and capitalization corrections.",
+    "thorough": "Carefully correct grammar and organize sentences into readable paragraphs.",
+    "email": "Format as an email with readable paragraphs. Preserve any dictated greeting and signature; invent neither.",
+    "casual": "Keep a conversational tone, contractions, and informal wording. Use natural punctuation.",
+    "code": "Preserve code, identifiers, casing, indentation, and technical syntax exactly. Never wrap output in Markdown fences.",
+}
+
+
+def cleanup_prompt(style):
+    return PROMPT + "\n" + STYLE_PROMPTS[style]

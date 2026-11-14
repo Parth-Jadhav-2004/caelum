@@ -4,7 +4,7 @@ A Linux-first voice dictation application: Tauri 2, React, TypeScript, shadcn/ui
 Tailwind CSS, Lucide, Motion, Zustand, and TanStack Query around the existing
 Python capture and transcription engine. Dark first, with light/system appearance.
 
-Audio is sent to the configured transcription provider (Groq by default). Optional
+Cloud mode sends audio to the configured transcription provider (Groq by default). Optional
 cleanup sends text to its configured provider. Final transcripts can be stored in
 local SQLite; microphone recordings are never stored. Local history is not encrypted.
 Clipboard managers and exports retain independent copies.
@@ -139,3 +139,20 @@ metadata, and corresponding MPL-2.0 crate sources under
 3.15 removes an API used by the retained D-Bus dependency, so metadata prevents
 installation on that interpreter until the dependency is updated. Development
 uses `.python-version` (3.14); native packages use their target system Python.
+
+## Vocabulary, offline transcription, and cleanup styles
+
+Settings → General includes custom vocabulary (up to 4000 characters), shared by
+cloud and local recognition. Names and technical terms act as recognition hints.
+Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
+existing conservative validation and fall back to raw text on failure.
+
+For offline dictation, install whisper.cpp separately and download a compatible
+GGML model. In Settings select **Local · offline**, enter the `whisper-cli`
+executable and full model path, save, then use **Check**. No API key is required.
+Model downloads are explicit and are not performed by Caelum. CPU inference speed
+and memory depend on the model and hardware; use a smaller model or increase the
+local timeout on slower machines. Local mode processes whole recordings, keeps
+WAV audio in an anonymous Linux memory file, and terminates inference on cancel.
+It never falls back to cloud transcription and disables cloud cleanup, preserving
+its preferences for later. Update checks remain controlled separately.

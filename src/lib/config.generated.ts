@@ -13,6 +13,10 @@ export interface AppConfig {
   silence_dbfs: number
 }
 export interface STTConfig {
+  engine: string
+  local_binary: string
+  local_model_path: string
+  local_timeout_seconds: number
   base_url: string
   model: string
   key_env: string
@@ -24,6 +28,7 @@ export interface STTConfig {
   concurrency: number
 }
 export interface CleanupConfig {
+  style: string
   base_url: string
   key_env: string
   model: string
