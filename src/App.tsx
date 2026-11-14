@@ -63,11 +63,23 @@ const pages = [
   { id: "history", title: "History", icon: Clock3 },
   { id: "settings", title: "Settings", icon: SettingsIcon },
 ] as const;
+function FrontendReady() {
+  useEffect(() => {
+    // Mount inside Suspense so the smoke probe cannot pass on a loading shell.
+    const timer = window.setTimeout(() => {
+      void invoke("frontend_ready").catch(() => {});
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return null;
+}
 export default function App() {
   const page = useApp((s) => s.page),
     navigate = useApp((s) => s.navigate),
-    status = useApp((s) => s.status);
+    status = useApp((s) => s.status),
+    engineError = useApp((s) => s.engineError);
   const [quitting, setQuitting] = useState(false),
+    [restarting, setRestarting] = useState(false),
     [command, setCommand] = useState(false),
     [config, setConfig] = useState<Config | null>(null),
     [saveState, setSaveState] = useState("Saved automatically");
@@ -139,6 +151,7 @@ export default function App() {
     setSaveState("Saving…");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
+      timer.current = null;
       void action(() => commit(next));
     }, 450);
   }
@@ -267,6 +280,26 @@ export default function App() {
                 </Button>
               </header>
               <main className="min-w-0 flex-1 overflow-auto">
+                {engineError && (
+                  <div
+                    role="alert"
+                    className="mx-5 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm sm:mx-10"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">Engine unavailable</p>
+                      <p>{engineError}</p>
+                      <p className="text-muted-foreground">
+                        Requests are not replayed automatically.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setRestarting(true)}
+                    >
+                      Restart Caelum
+                    </Button>
+                  </div>
+                )}
                 <Suspense fallback={<Skeleton className="m-8 h-80" />}>
                   <motion.div
                     key={page}
@@ -299,6 +332,7 @@ export default function App() {
                       <Setup config={config} commit={commit} />
                     )}
                   </motion.div>
+                  <FrontendReady />
                 </Suspense>
               </main>
             </SidebarInset>
@@ -350,6 +384,21 @@ export default function App() {
               }
               await chain.current.catch(() => {});
               await invoke("quit_app", { discard: true });
+            }}
+          />
+          <Confirm
+            open={restarting}
+            title="Restart Caelum?"
+            detail="An active or retryable recording may be discarded, and unsaved settings may be lost. Recording and transcription requests will not be replayed."
+            confirm="Restart Caelum"
+            onCancel={() => setRestarting(false)}
+            onConfirm={async () => {
+              if (timer.current) {
+                clearTimeout(timer.current);
+                await commit(config).catch(() => {});
+              }
+              await chain.current.catch(() => {});
+              await invoke("restart_app", { discard: true });
             }}
           />
           <Toaster richColors closeButton />

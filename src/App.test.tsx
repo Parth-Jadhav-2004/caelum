@@ -1,10 +1,14 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
 import App from "./App";
+import { invoke } from "@tauri-apps/api/core";
 import { ipc, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async () => undefined),
+}));
 vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
@@ -28,6 +32,7 @@ const config = {
 beforeEach(() => {
   useApp.setState({
     page: "home",
+    engineError: null,
     status: {
       running: true,
       state: "hidden",
@@ -45,6 +50,7 @@ beforeEach(() => {
         credentials: {},
         autostart: false,
       };
+    if (method === "status") return useApp.getState().status;
     if (method === "history" || method === "devices") return [];
     if (method === "summary") return { daily: {}, activity: {} };
     return { saved: true };
@@ -125,6 +131,7 @@ it("changes and saves the palette independently, then restores it on reload", as
         credentials: {},
         autostart: false,
       };
+    if (method === "status") return useApp.getState().status;
     if (method === "history" || method === "devices") return [];
     if (method === "summary") return { daily: {}, activity: {} };
     return { saved: true };
@@ -132,4 +139,62 @@ it("changes and saves the palette independently, then restores it on reload", as
   mount();
   await screen.findByRole("combobox", { name: "Color theme" });
   expect(document.documentElement.dataset.colorTheme).toBe("ocean");
+});
+
+it("shows engine failure and requires confirmation before restarting without replay", async () => {
+  mount();
+  await screen.findByRole("heading", { name: "Dictation" });
+  act(() =>
+    useApp.setState({
+      status: null,
+      engineError: "Python engine disconnected.",
+    }),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("Engine unavailable");
+  expect(invoke).not.toHaveBeenCalledWith("restart_app", { discard: true });
+  await userEvent.click(screen.getByRole("button", { name: "Restart Caelum" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent("will not be replayed");
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Restart Caelum" }),
+  );
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("restart_app", { discard: true }),
+  );
+  expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
+});
+it("can recover after a failed settings save without replaying the save on restart", async () => {
+  const implementation = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "settings.save"
+      ? Promise.reject(new Error("Engine disconnected"))
+      : implementation(method as never, params as never)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: "Dictation" });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    await screen.findByRole("combobox", { name: "Color theme" }),
+  );
+  await userEvent.click(screen.getByRole("option", { name: "Ocean" }));
+  await waitFor(() =>
+    expect(ipc).toHaveBeenCalledWith("settings.save", expect.anything()),
+  );
+  act(() =>
+    useApp.setState({
+      status: null,
+      engineError: "Python engine disconnected.",
+    }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Restart Caelum" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent("unsaved settings may be lost");
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Restart Caelum" }),
+  );
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("restart_app", { discard: true }),
+  );
+  expect(
+    vi.mocked(ipc).mock.calls.filter(([method]) => method === "settings.save"),
+  ).toHaveLength(1);
 });

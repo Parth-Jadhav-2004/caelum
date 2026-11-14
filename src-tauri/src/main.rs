@@ -1,29 +1,28 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod graphics;
+mod transport;
+use transport::{EngineError, Frame, Reply, Requests};
 
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::Duration,
 };
 use tauri::{Emitter, Manager};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::BufReader,
     process::{Child, ChildStdin, Command},
-    sync::{oneshot, Mutex},
+    sync::Mutex,
 };
 
-type Reply = Result<Value, String>;
 struct Engine {
-    input: Mutex<ChildStdin>,
+    requests: Arc<Requests<ChildStdin>>,
     child: Mutex<Child>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Reply>>>>,
-    sequence: AtomicU64,
-    alive: Arc<AtomicBool>,
+    closed: AtomicBool,
+    app: tauri::AppHandle,
 }
 impl Engine {
     async fn spawn(app: tauri::AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
@@ -50,97 +49,92 @@ impl Engine {
             .spawn()?;
         let input = child.stdin.take().ok_or("Missing engine stdin")?;
         let stdout = child.stdout.take().ok_or("Missing engine stdout")?;
-        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Reply>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let replies = pending.clone();
-        let alive = Arc::new(AtomicBool::new(true));
-        let reader_alive = alive.clone();
+        let app_handle = app.clone();
+        let requests = Arc::new(Requests::new(input));
+        let reader_requests = requests.clone();
         tauri::async_runtime::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.len() > 16 * 1_048_576 {
-                    break;
-                }
-                let Ok(frame) = serde_json::from_str::<Value>(&line) else {
-                    continue;
+            let mut reader = BufReader::new(stdout);
+            let failure = loop {
+                let bytes = match transport::read_frame(&mut reader, transport::MAX_RESPONSE).await
+                {
+                    Ok(Some(bytes)) => bytes,
+                    Ok(None) => {
+                        break EngineError::new(
+                            "disconnected",
+                            "Python engine disconnected. Restart Caelum.",
+                            false,
+                        )
+                    }
+                    Err(error) => break error,
                 };
-                if frame["v"] != 1 {
-                    continue;
+                if !reader_requests.alive() {
+                    break EngineError::new(
+                        "disconnected",
+                        "Python engine connection is unusable. Restart Caelum.",
+                        false,
+                    );
                 }
-                if let Some(id) = frame["id"].as_u64() {
-                    if let Some(sender) = replies.lock().await.remove(&id) {
-                        let result = match frame["error"].as_str() {
-                            Some(error) => Err(error.to_string()),
-                            None => Ok(frame["result"].clone()),
-                        };
-                        let _ = sender.send(result);
-                    }
-                } else if let Some(event) = frame["event"].as_str() {
-                    if event == "status" {
-                        if let Some(tray) = app.tray_by_id("caelum") {
-                            let title = frame["data"]["title"].as_str().unwrap_or("Connecting…");
-                            let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
+                match transport::parse(&bytes) {
+                    Ok(Frame::Reply(id, result)) => reader_requests.resolve(id, result),
+                    Ok(Frame::Event(event, data)) => {
+                        if event == "status" {
+                            if let Some(tray) = app.tray_by_id("caelum") {
+                                let title = data["title"].as_str().unwrap_or("Connecting…");
+                                let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
+                            }
                         }
+                        let _ = app.emit(&format!("engine:{event}"), data);
                     }
-                    if ["status", "microphone", "status-error"].contains(&event) {
-                        let _ = app.emit(&format!("engine:{event}"), &frame["data"]);
-                    }
+                    Err(error) => break error,
                 }
-            }
-            reader_alive.store(false, Ordering::SeqCst);
-            for (_, sender) in replies.lock().await.drain() {
-                let _ = sender.send(Err("Python engine disconnected. Restart Caelum.".into()));
-            }
-            let _ = app.emit("engine:disconnected", ());
+            };
+            reader_requests.fail(failure.clone());
+            let _ = app.emit("engine:disconnected", failure);
         });
         Ok(Self {
-            input: Mutex::new(input),
+            requests,
             child: Mutex::new(child),
-            pending,
-            sequence: AtomicU64::new(1),
-            alive,
+            closed: AtomicBool::new(false),
+            app: app_handle,
         })
     }
     async fn call(&self, method: &str, params: Value) -> Reply {
-        if !self.alive.load(Ordering::SeqCst) {
-            return Err("Python engine unavailable. Restart Caelum.".into());
+        let result = self
+            .requests
+            .call(method, params, transport::deadline(method))
+            .await;
+        if !self.requests.alive() {
+            if let Err(error) = &result {
+                let _ = self.app.emit("engine:disconnected", error);
+            }
         }
-        let id = self.sequence.fetch_add(1, Ordering::SeqCst);
-        let (sender, receiver) = oneshot::channel();
-        self.pending.lock().await.insert(id, sender);
-        let frame = format!(
-            "{}\n",
-            json!({"v":1,"id":id,"method":method,"params":params})
-        );
-        if frame.len() > 1_048_576 {
-            self.pending.lock().await.remove(&id);
-            return Err("Request too large".into());
-        }
-        let written = self.input.lock().await.write_all(frame.as_bytes()).await;
-        if written.is_err() {
-            self.pending.lock().await.remove(&id);
-            return Err("Python engine disconnected".into());
-        }
-        let reply = tokio::time::timeout(Duration::from_secs(180), receiver).await;
-        self.pending.lock().await.remove(&id);
-        match reply {
-            Ok(Ok(result)) => result,
-            _ => Err("Engine request timed out or disconnected".into()),
-        }
+        result
     }
     async fn close(&self) {
-        let _ = self.call("sample.cancel", json!({})).await;
-        let _ = self.call("shutdown", json!({"discard":true})).await;
-        let _ = self.input.lock().await.shutdown().await;
-        let mut child = self.child.lock().await;
-        if tokio::time::timeout(Duration::from_secs(12), child.wait())
-            .await
-            .is_err()
-        {
-            let _ = child.kill().await;
+        if self.closed.swap(true, Ordering::SeqCst) {
+            return;
         }
+        // One overall graceful budget, including writes and requests. Reserve
+        // two seconds for SIGKILL/reaping instead of stacking request timeouts.
+        transport::stop_child(
+            &self.child,
+            async {
+                let _ = self.call("sample.cancel", json!({})).await;
+                let _ = self.call("shutdown", json!({"discard":true})).await;
+                self.requests.finish_input().await;
+            },
+            Duration::from_secs(10),
+            Duration::from_secs(2),
+        )
+        .await;
+        self.requests.fail(EngineError::new(
+            "disconnected",
+            "Caelum is shutting down",
+            false,
+        ));
     }
 }
+
 struct Desktop {
     engine: Engine,
     quitting: AtomicBool,
@@ -152,11 +146,17 @@ async fn backend(method: String, params: Value, state: tauri::State<'_, Desktop>
 }
 #[tauri::command]
 async fn restart_app(
+    discard: Option<bool>,
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
-) -> Result<(), String> {
-    if state.engine.alive.load(Ordering::SeqCst) {
-        state.engine.call("shutdown", json!({})).await?;
+) -> Result<(), EngineError> {
+    if !discard.unwrap_or(false) && state.engine.requests.alive() {
+        // The daemon atomically checks idle state and stops accepting captures.
+        // Confirmed recovery may explicitly discard; ordinary update restarts may not.
+        state
+            .engine
+            .call("shutdown", json!({"discard":false}))
+            .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
     state.engine.close().await;
@@ -175,11 +175,11 @@ async fn quit_app(
     discard: bool,
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
-) -> Result<(), String> {
-    if state.engine.alive.load(Ordering::SeqCst) {
+) -> Result<(), EngineError> {
+    if !discard && state.engine.requests.alive() {
         state
             .engine
-            .call("shutdown", json!({"discard":discard}))
+            .call("shutdown", json!({"discard":false}))
             .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
@@ -193,6 +193,13 @@ fn show(app: &tauri::AppHandle) {
         let _ = window.set_focus();
     }
 }
+#[tauri::command]
+fn frontend_ready() {
+    // Explicit opt-in test probe: no transcript, configuration or credential data.
+    if std::env::var("CAELUM_SMOKE_TEST").as_deref() == Ok("1") {
+        eprintln!("CAELUM_FRONTEND_READY_V1");
+    }
+}
 fn main() {
     graphics::configure();
     tauri::Builder::default()
@@ -202,7 +209,8 @@ fn main() {
             backend,
             quit_app,
             restart_app,
-            open_key_console
+            open_key_console,
+            frontend_ready
         ])
         .setup(|app| {
             let handle = app.handle().clone();

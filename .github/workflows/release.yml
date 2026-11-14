@@ -1,37 +1,20 @@
-name: Linux release
+name: Linux candidate
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
-concurrency:
-  group: linux-release-${{ github.ref }}
-  cancel-in-progress: true
 permissions:
   contents: read
+# Main/PR pushes run fast checks only. Packaging is an explicit candidate build.
+concurrency:
+  group: candidate-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
-  test:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - uses: astral-sh/setup-uv@v6
-      - run: sudo apt-get update && sudo apt-get install -y libportaudio2
-      - run: uv sync --locked --extra dev
-      - run: uv run ruff check python tests scripts
-      - run: uv run pytest -q
-      - run: python3 scripts/scan_privacy.py
-      - run: npm ci
-      - run: npm run check
-      - run: uv run python scripts/generate-contracts.py && git diff --exit-code src/lib/config.generated.ts
+  checks:
+    uses: ./.github/workflows/ci.yml
   package:
     name: Package ${{ matrix.target }}
-    needs: test
-    runs-on: ubuntu-latest
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     container: ${{ matrix.image }}
     strategy:
       fail-fast: false
@@ -43,39 +26,49 @@ jobs:
           - {target: arch, image: 'archlinux:latest'}
           - {target: fedora-43, image: 'fedora:43'}
     steps:
-      - name: Install build dependencies
+      - name: Install build and native smoke dependencies
         shell: bash
         run: |
           if command -v apt-get >/dev/null; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv build-essential pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf zstd libportaudio2 pulseaudio pulseaudio-utils
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 python3-venv build-essential pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf zstd libportaudio2 pulseaudio pulseaudio-utils xvfb imagemagick dbus-x11 libgtk-4-1 gir1.2-gtk-4.0 python3-gi
           elif command -v pacman >/dev/null; then
-            pacman -Syu --noconfirm git curl python base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf zstd portaudio pulseaudio
+            pacman -Syu --noconfirm git curl python base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf zstd portaudio pulseaudio xorg-server-xvfb imagemagick dbus gtk4 python-gobject
           else
-            dnf install -y git curl python3 gcc gcc-c++ make pkgconf-pkg-config webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf zstd rpm-build portaudio openssl-devel pulseaudio pulseaudio-utils
+            dnf install -y git curl python3 gcc gcc-c++ make pkgconf-pkg-config webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf zstd rpm-build portaudio openssl-devel pulseaudio pulseaudio-utils xorg-x11-server-Xvfb ImageMagick dbus-daemon gtk4 python3-gobject
           fi
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          # The checked-in toolchain is selected after checkout, not floating stable.
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 24
-      - uses: astral-sh/setup-uv@v6
-      - name: Verify isolated audio server before compiling
-        shell: bash
-        run: bash scripts/ci-audio-smoke.sh true
-      - name: Build native executable and full Python payload
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+          version: "0.13.1"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: package-${{ matrix.target }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            package-${{ matrix.target }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock', 'uv.lock') }}-
+      - name: Build candidate packages
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            python3 -c 'import os,tomllib; assert os.environ["GITHUB_REF_NAME"] == "v" + tomllib.load(open("pyproject.toml","rb"))["project"]["version"]'
-          fi
+          rustup show active-toolchain
           uv sync --locked --extra dev --python /usr/bin/python3
-          uv run python scripts/generate-contracts.py
           python3 scripts/build_package.py '${{ matrix.target }}'
-          cargo test --manifest-path src-tauri/Cargo.toml
-      - name: Install package and verify backend without pip
+      - name: Install package and exercise IPC and simulated audio
+        timeout-minutes: 3
         shell: bash
         run: |
           if command -v apt-get >/dev/null; then
@@ -86,55 +79,48 @@ jobs:
             dnf install -y ./dist/*.rpm
           fi
           caelum --help
-          test -x /usr/bin/caelum-desktop
           printf '%s\n' '{"v":1,"id":1,"method":"bootstrap"}' | caelum-engine | python3 -c 'import sys,json; frames=[json.loads(line) for line in sys.stdin]; assert any(f.get("id")==1 and "result" in f for f in frames)'
-          bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable, sounddevice, numpy, httpx; assert sounddevice.get_portaudio_version()[0] > 0; sounddevice.query_devices()'
-      - uses: actions/upload-artifact@v4
+          bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable,sounddevice,numpy,httpx; assert sounddevice.get_portaudio_version()[0] > 0; sounddevice.query_devices()'
+      - name: Launch installed native GUI and verify React/bootstrap readiness
+        timeout-minutes: 2
+        run: python3 scripts/smoke_desktop.py / --screenshot dist/native-smoke.png
+      - name: Record build provenance
+        run: python3 scripts/release_candidate.py record dist '${{ matrix.target }}'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.target }}
+          path: |
+            dist/native-smoke.png
+            dist/native-smoke.log
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: caelum-${{ matrix.target }}
           path: |
             dist/*.deb
             dist/*.rpm
             dist/*.pkg.tar.zst
+            dist/build-info-*.json
           if-no-files-found: error
-  publish-release:
-    if: github.ref_type == 'tag'
+          retention-days: 14
+  assemble:
     needs: package
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: Require the pinned update verification key
-        run: test -s python/caelum/update-public.pem
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: caelum-*
           path: release-assets
           merge-multiple: true
-      - name: Sign update metadata
-        env:
-          CAELUM_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_UPDATE_SIGNING_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          key=$(mktemp)
-          trap 'rm -f "$key"' EXIT
-          chmod 600 "$key"
-          printf '%s\n' "$CAELUM_UPDATE_SIGNING_KEY" > "$key"
-          unset CAELUM_UPDATE_SIGNING_KEY
-          python3 scripts/sign_release.py release-assets "$key"
-      - name: Publish complete stable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Caelum $GITHUB_REF_NAME" --notes-file "docs/release-${GITHUB_REF_NAME#v}.md"
-          gh release upload "$GITHUB_REF_NAME" \
-            release-assets/*.deb \
-            release-assets/*.rpm \
-            release-assets/*.pkg.tar.zst \
-            release-assets/update.json \
-            release-assets/update.json.sig
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      - run: python3 scripts/release_candidate.py assemble release-assets
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14

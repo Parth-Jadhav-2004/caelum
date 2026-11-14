@@ -6,11 +6,13 @@ record audio, or contact providers. Inspect the PNG; liveness alone is not visua
 
 import argparse
 import os
+import select
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -36,7 +38,11 @@ def check(package, xvfb, screenshot, completed_setup=False, theme="t3-code", app
             "CAELUM_CONFIG": str(work / "config/config.toml"),
             "WEBKIT_DISABLE_DMABUF_RENDERER": "1",
             "LIBGL_ALWAYS_SOFTWARE": "1",
+            "CAELUM_SMOKE_TEST": "1",
         }
+        if os.geteuid() == 0:
+            # Only for ephemeral root CI containers, never the normal launcher.
+            env["WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS"] = "1"
         for name in (
             "WAYLAND_DISPLAY",
             "HYPRLAND_INSTANCE_SIGNATURE",
@@ -66,6 +72,9 @@ def check(package, xvfb, screenshot, completed_setup=False, theme="t3-code", app
             os.close(write_fd)
             app = None
             try:
+                if not select.select([read_fd], [], [], 10)[0]:
+                    os.close(read_fd)
+                    raise RuntimeError("Xvfb did not become ready within 10 seconds")
                 with os.fdopen(read_fd) as display:
                     env["DISPLAY"] = ":" + display.readline().strip()
                 app = subprocess.Popen(
@@ -75,13 +84,20 @@ def check(package, xvfb, screenshot, completed_setup=False, theme="t3-code", app
                     stderr=app_log,
                     start_new_session=True,
                 )
-                time.sleep(8)
+                deadline = time.monotonic() + 30
+                while "CAELUM_FRONTEND_READY_V1" not in (work / "app.log").read_text():
+                    if app.poll() is not None:
+                        raise RuntimeError("Native window exited; inspect the smoke log")
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(
+                            "React/bootstrap IPC did not become ready within 30 seconds"
+                        )
+                    time.sleep(0.1)
                 if app.poll() is not None:
-                    raise RuntimeError("Native window exited; check target distro libraries")
+                    raise RuntimeError("Native window exited after frontend readiness")
                 subprocess.run(
                     [
-                        "magick",
-                        "import",
+                        *(["magick", "import"] if shutil.which("magick") else ["import"]),
                         "-display",
                         env["DISPLAY"],
                         "-window",
@@ -92,9 +108,16 @@ def check(package, xvfb, screenshot, completed_setup=False, theme="t3-code", app
                     env=env,
                 )
             finally:
-                if app and app.poll() is None:
-                    os.killpg(app.pid, signal.SIGTERM)
-                    app.wait(timeout=10)
+                if app:
+                    with suppress(ProcessLookupError):
+                        os.killpg(app.pid, signal.SIGTERM)
+                    try:
+                        app.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        with suppress(ProcessLookupError):
+                            os.killpg(app.pid, signal.SIGKILL)
+                        app.wait(timeout=2)
+                shutil.copy2(work / "app.log", screenshot.with_suffix(".log"))
                 server.terminate()
                 server.wait(timeout=5)
     print(f"Native window captured for visual inspection: {screenshot}")

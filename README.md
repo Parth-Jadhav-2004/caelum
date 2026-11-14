@@ -121,3 +121,14 @@ T3 palettes are imported from a pinned, MIT-licensed upstream version; see
 [T3 Code comparison and public-release report](docs/t3code-comparison.md) records
 source references, actual release assets, implementation changes, and remaining
 qualification work. A [release note template](docs/release-template.md) is included.
+
+## Reliability and release workflow
+
+Requests and responses use [shared runtime contracts](docs/ipc.md), bounded
+transport deadlines and explicit error states. Recording/transcription operations
+are never automatically replayed after a transport failure.
+
+Pull requests run fast checks. Native distro packages are built through the
+manual candidate workflow, tested after installation, then promoted without
+rebuilding. See [releasing.md](docs/releasing.md) for candidate verification,
+resumable publication, immutable tags/assets, signing and recovery procedures.

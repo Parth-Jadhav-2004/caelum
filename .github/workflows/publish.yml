@@ -1,0 +1,91 @@
+name: Promote Linux candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Linux candidate workflow run ID (from main)
+        required: true
+        type: string
+      desktop_qualified:
+        description: Manual docs/acceptance.md checks completed for this candidate
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stable-publication
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+      attempt: ${{ steps.candidate.outputs.attempt }}
+      run_id: ${{ steps.candidate.outputs.run_id }}
+    steps:
+      - name: Verify the successful candidate's origin
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          QUALIFIED: ${{ inputs.desktop_qualified }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run_id = os.environ['RUN_ID']
+          if not re.fullmatch(r'[0-9]+', run_id) or os.environ['QUALIFIED'] != 'true':
+              raise SystemExit('A numeric candidate run ID and completed manual acceptance are required')
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path]))
+          repository = os.environ['GH_REPO']
+          run = api(f'repos/{repository}/actions/runs/{run_id}')
+          workflow = api(f'repos/{repository}/actions/workflows/release.yml')
+          default = api(f'repos/{repository}')['default_branch']
+          if (run['workflow_id'] != workflow['id'] or run['head_repository']['full_name'] != repository
+              or run['head_branch'] != default or run['event'] != 'workflow_dispatch'
+              or run['status'] != 'completed' or run['conclusion'] != 'success'
+              or not re.fullmatch(r'[a-f0-9]{40}', run['head_sha'])):
+              raise SystemExit('Select a completed successful candidate built from the default branch')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"sha={run['head_sha']}\nattempt={run['run_attempt']}\nrun_id={run_id}\n")
+          PY
+  publish:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: release-assets
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.resolve.outputs.run_id }}
+      - name: Verify candidate, sign metadata, and resume or publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ needs.resolve.outputs.sha }}
+          CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
+          CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
+          CAELUM_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_UPDATE_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$CAELUM_UPDATE_SIGNING_KEY" > "$key"
+          unset CAELUM_UPDATE_SIGNING_KEY
+          python3 scripts/publish_release.py release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$key"

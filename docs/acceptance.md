@@ -12,6 +12,8 @@ uv sync --locked --extra dev --python /usr/bin/python3
 uv run ruff check python tests scripts
 uv run pytest -q
 uv run python scripts/generate-contracts.py
+bash scripts/check-workflows.sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run tauri build -- --no-bundle
 ```
@@ -68,3 +70,11 @@ smoke test. Smoke scripts for extracted packages are available:
 python3 scripts/smoke_desktop.py /tmp/extracted-package --screenshot /tmp/caelum-setup.png
 python3 scripts/smoke_desktop.py /tmp/extracted-package --completed-setup --screenshot /tmp/caelum-home.png
 ```
+
+## Candidate promotion
+
+Follow [releasing.md](releasing.md). Package checks include a native WebKit/Xvfb
+launch that waits for real React/bootstrap readiness, plus per-target provenance.
+The automated gate does not replace the physical/session checklist above. Record
+the candidate run/SHA and manual results before attesting qualification in the
+promotion workflow. Published tags/assets cannot be replaced by that workflow.

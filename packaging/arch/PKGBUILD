@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='Linux dictation with Tauri and local transcript history'
 arch=('x86_64')
 url='https://github.com/Parth-Jadhav-2004/caelum'
-license=('custom')
+license=('MIT')
 depends=('python>=3.14' 'python<3.15' 'webkit2gtk-4.1' 'libappindicator-gtk3' 'portaudio' 'libpulse' 'libnotify' 'libsecret' 'wl-clipboard' 'xclip' 'glib2' 'systemd' 'openssl' 'polkit' 'python-gobject' 'python-cairo' 'gtk4')
 makedepends=('git' 'rust' 'nodejs' 'npm' 'uv' 'zstd')
 optdepends=('gtk4-layer-shell: native Hyprland recording overlay')

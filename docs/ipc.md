@@ -1,46 +1,69 @@
-# Desktop IPC v1
+# Desktop IPC and failure handling
 
-Only the Tauri process can write the Python sidecar's stdin. There is no local
-HTTP server, shared token file, or shell-command endpoint. The existing desktop
-control socket still authenticates the peer UID and serves the existing CLI and
-compositor shortcuts.
+Only the Tauri process writes the Python child's stdin; there is no local HTTP
+server, token file, or shell-command endpoint. The existing daemon control socket
+continues to authenticate peer UID for CLI and compositor controls.
 
-Request: `{"v":1,"id":1,"method":"status","params":{}}`.
-Response: `{"v":1,"id":1,"result":{…}}` or a sanitized `error` string.
-Event: `{"v":1,"event":"status","data":{…}}`.
-Rust emits allowlisted `engine:status`, `engine:microphone`, and
-`engine:status-error` events. On EOF it rejects pending requests and emits
-`engine:disconnected`. Request IDs are monotonic per desktop process. Incoming
-frames are bounded at 1 MiB and outgoing results at 16 MiB; overly large history
-results ask the user to narrow search. Requests time out after 180 seconds, with
-transport entries removed on success/error/timeout. There is no automatic replay
-of recording/deletion/credential mutations following a disconnect.
+Example request: `{"v":1,"id":1,"method":"status","params":{}}`.
+Replies carry the same ID and either `result` or `error`; events carry `event`
+and `data` without a request ID. Mutations remain serialized in Python, with
+explicit exceptions for cancellable samples and read operations. Settings are
+merged and semantically validated before atomic TOML replacement; partial patches
+preserve fields the client does not edit.
 
-`src/lib/ipc.ts` defines every frontend method's parameters and result. Python
-configuration fields are generated from dataclasses with
-`scripts/generate-contracts.py`; the regression test detects contract drift.
-The backend validates saved TOML again before atomically replacing the old file.
+React calls the Tauri `backend` command, Rust writes a JSONL v1 request to its
+managed Python child, and Python invokes existing services/HTTPX providers.
+The service daemon remains responsible for capture, history callbacks, media,
+shortcuts and the native HUD. These business operations have not moved to Rust.
 
-Read methods: bootstrap, status, devices, history, summary, updates.pending.
-Mutation families: control, service.start/stop, settings.save, history.delete/export,
-credentials.store/delete, setup.validate/finish, microphone.test, practice,
-sample.cancel, shortcut.check, launcher, updates.check/stage/apply/discard.
+`python/caelum/ipc_contract.py` defines request/result descriptors using the
+JSON Schema vocabulary `type`, `enum`, `anyOf`, `properties`, `required`,
+`additionalProperties` and `items`. This deliberately limited vocabulary has
+matching small Python/TypeScript validators; it is not a general-purpose JSON
+Schema implementation. Configuration property types come from Python dataclasses.
+`scripts/generate-contracts.py` generates configuration types and
+`src/lib/ipc-contract.generated.json`. CI checks both for drift. New methods
+must define parameters/results here and frontend method types; invalid requests
+are rejected before dispatch and successful results are checked on both sides.
+Configuration's existing semantic/range validation remains authoritative.
 
-Mutations are serialized except cancellable audio tests and read operations.
-A microphone test and regular recording cannot own capture at the same time.
-Pause/stop/shutdown check active work unless explicit discard is provided. Settings
-may be persisted while a recording is active but idle-only reload reports a warning.
-No stored fields are silently removed when the frontend edits only a subset.
+The v1 envelope retains its original `error` string for older consumers and adds
+`error_info: {code, message, retryable}`. Rust validates framing/version/envelopes
+and returns this typed error through Tauri. The frontend uses `IpcError` and
+human-readable messages. Provider authentication/permission/quota/model failures
+are blocked; rate limits/offline/provider timeouts can be eligible for an explicit
+retry. `retryable` never authorizes automatic replay of a mutation or paid request.
+Unexpected exception details and provider response bodies are not exposed.
 
-Provider setup stages typed keys in memory, verifies all configured model access,
-then saves keys. Cancellation before storage saves nothing. The UI explicitly
-reports Secret Service versus unencrypted private-file fallback. Practice is an
-independent five-second sample with explicit upload consent; no practice text is
-inserted or stored in history. EOF cancels active samples before service shutdown.
+Transport limits:
 
-The sidecar starts the existing daemon only on explicit startup/setup completion
-or normal post-setup app launch. Daemon stdout is redirected to stderr so it
-cannot corrupt protocol framing. The owned daemon monitors its parent PID;
-sidecar death stops capture through its normal shutdown path. Standalone services
-have no parent monitor. A disconnect requires explicit app restart, avoiding
-accidental replay or repeated audio uploads.
+- 1MiB requests; response lines bounded during reading to 16MiB, including newline.
+- At most 64 admitted Rust calls and 64 Python response tasks.
+- A single per-method deadline covers admission to the pipe mutex, writing, and
+  waiting for a response: reads/cancel 10s, start/save/shortcut 20s, shutdown/stop
+  12s, update download 180s, and other operations 90s.
+- Pending entries and admission permits are released even if a caller is aborted.
+  A cancelled/timed-out partial write poisons the pipe, since another JSON frame
+  could otherwise append to an incomplete request. No requests are replayed.
+- A reply timeout has an **unknown outcome**. Check status before a manual retry;
+  the underlying operation may have completed. Late replies are discarded.
+- Malformed frames/version mismatches disconnect the transport and reject all
+  pending requests. A persistent UI error and confirmed manual restart are
+  available; recovery never silently restarts capture or repeats uploads.
+- Shutdown has one 10s graceful budget for cancellation/shutdown/EOF and waiting,
+  followed by a 2s forced termination/reap budget. A second close is a no-op.
+  Existing pending-audio confirmation remains at the UI/daemon boundary.
+- Python allows accepted EOF work a short drain period, then signals cancellation
+  and cancels remaining tasks. Unchanged idle status is suppressed; live meter
+  updates retain real capture data. The frontend subscribes before requesting an
+  initial snapshot and ignores snapshots superseded by newer events.
+
+`sample.cancel` acknowledges a cancellation signal, not proof that an audio
+thread/provider has already stopped. The native sample lock and daemon control
+locks continue to prevent overlapping capture. Closing a transport cannot undo
+a previously committed history write or provider request.
+
+Rust fault tests cover malformed/bounded frames, stalled writes, reply timeouts,
+request admission, aborted callers, and forced child reaping. Python and frontend
+tests exercise request/result contracts, sanitized typed errors and confirmed
+restart without replay. No transcript or credential diagnostic upload was added.

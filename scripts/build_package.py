@@ -149,6 +149,7 @@ exec /usr/bin/python3 -m caelum.cli "$@"
             ROOT / "docs/linux.md",
             ROOT / "docs/privacy.md",
             ROOT / "THIRD_PARTY_NOTICES.md",
+            ROOT / "LICENSE",
         ):
             shutil.copy2(source, docs / source.name)
         write(
@@ -204,6 +205,7 @@ builddate = {epoch}
 packager = Caelum release build
 size = {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file())}
 arch = x86_64
+license = MIT
 depend = webkit2gtk-4.1
 depend = libappindicator-gtk3
 depend = python>={python}
@@ -240,7 +242,7 @@ optdepend = wl-clipboard: Hyprland automatic paste
 Version: {version}
 Release: 1
 Summary: Cloud dictation with optional local history
-License: LicenseRef-Caelum-No-License-Declared
+License: MIT
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no

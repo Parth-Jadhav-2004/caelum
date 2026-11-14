@@ -7,6 +7,17 @@ plus the local theme changes described below. Release inventories were checked
 against GitHub's release API. This is a focused source and release review, not a
 security audit or proof that either application is free of bugs.
 
+## Implementation follow-up — 14 November 2026
+
+The review below records the original comparison. Subsequent work implements
+bounded transport/shutdown, shared runtime IPC descriptors and typed errors,
+explicit confirmed recovery, fast CI, pinned/cached toolchains, installed GUI
+smoke gates, candidate provenance, and resumable immutable artifact promotion.
+See [ipc.md](ipc.md) and [releasing.md](releasing.md) for the current behavior.
+The project-license decision and physical/provider/Wayland qualification remain
+open. Cross-distro workflows must still run on GitHub after these changes are
+pushed; local checks alone do not establish that matrix.
+
 ## Assessment
 
 Keep Caelum's Tauri frontend and existing Python engine. T3 Code offers useful

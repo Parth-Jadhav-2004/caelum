@@ -14,6 +14,7 @@ from . import credentials
 from .config import config_path, load, save
 from .desktop_services import connection_status, microphones, request, service_presentation
 from .history import History
+from .ipc_contract import METHODS, error_payload, matches, validate_request
 from .onboarding import (
     PRIVACY,
     Progress,
@@ -45,6 +46,8 @@ class Backend:
             value["running"] = True
         except (FileNotFoundError, ConnectionRefusedError):
             value = {"running": False, "state": "hidden", "paused": False}
+        if value.get("feedback") == {}:
+            value.pop("feedback")
         title, detail = service_presentation(value if value["running"] else None)
         return {**value, "title": title, "detail": detail}
 
@@ -95,6 +98,14 @@ class Backend:
                     await self.process.wait()
         self.process = None
 
+    async def stop_idle(self):
+        await self.idle()
+        # Recheck under the daemon's control lock and block already queued starts.
+        # A shortcut can begin recording after the sidecar's status snapshot.
+        with suppress(FileNotFoundError, ConnectionRefusedError):
+            await asyncio.to_thread(request, "prepare-update")
+        await self.stop()
+
     async def dispatch(self, method, params):
         config = load(self.path)
         if method == "bootstrap":
@@ -131,9 +142,10 @@ class Backend:
                 raise RuntimeError("Finish the microphone test first")
             await self.start()
         elif method == "service.stop":
-            if not params.get("discard"):
-                await self.idle()
-            await self.stop()
+            if params.get("discard"):
+                await self.stop()
+            else:
+                await self.stop_idle()
         elif method == "control":
             action = params.get("action")
             if self.sample_lock.locked() and action in {"start", "retry"}:
@@ -305,9 +317,10 @@ class Backend:
 
             return (cache_dir() / "pending").is_dir()
         elif method == "shutdown":
-            if not params.get("discard"):
-                await self.idle()
-            await self.stop()
+            if params.get("discard"):
+                await self.stop()
+            else:
+                await self.stop_idle()
         else:
             raise ValueError("Unknown method")
         return {"ok": True}
@@ -336,6 +349,7 @@ async def run():
             method, params = message["method"], message.get("params", {})
             if not isinstance(method, str) or not isinstance(params, dict):
                 raise ValueError("Invalid request envelope")
+            validate_request(method, params)
             if method in {
                 "status",
                 "history",
@@ -349,23 +363,30 @@ async def run():
             else:
                 async with backend.mutation_lock:
                     result = await backend.dispatch(method, params)
+            if not matches(METHODS[method]["result"], result):
+                raise RuntimeError("Engine result does not match the desktop contract")
             frame = json.dumps({"v": VERSION, "id": identifier, "result": result}, allow_nan=False)
             if len(frame.encode()) > 16 * MAX_FRAME:
                 raise ValueError("Result is too large; narrow your history search")
             print(frame, flush=True)
         except Exception as error:
-            # Only explicit application errors cross IPC, never HTTP bodies or traceback.
-            detail = (
-                str(error)
-                if isinstance(error, (ValueError, RuntimeError))
-                else "Operation failed; check local permissions and desktop access"
+            info = error_payload(error)
+            # Preserve the JSONL v1 string for older clients; typed metadata is additive.
+            print(
+                json.dumps(
+                    {"v": VERSION, "id": identifier, "error": info["message"], "error_info": info}
+                ),
+                flush=True,
             )
-            print(json.dumps({"v": VERSION, "id": identifier, "error": detail}), flush=True)
 
     async def events():
+        previous = None
         while True:
             try:
-                emit("status", await backend.status())
+                status = await backend.status()
+                if status != previous:
+                    emit("status", status)
+                    previous = status
             except Exception:
                 emit("status-error", {"message": "Service status unavailable. Retrying…"})
             await asyncio.sleep(0.1)
@@ -387,6 +408,11 @@ async def run():
     finally:
         backend.cancelled.set()
         watcher.cancel()
+        # EOF/termination must not wait indefinitely for a provider operation.
+        if tasks:
+            await asyncio.wait(tasks, timeout=2)
+        for task in tasks:
+            task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await backend.stop()
         transport.close()

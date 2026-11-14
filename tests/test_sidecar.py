@@ -38,7 +38,8 @@ async def test_failed_save_preserves_original_config(backend):
     assert backend.path.read_bytes() == original
 
 
-async def test_busy_stop_does_not_discard_without_confirmation(backend, monkeypatch):
+@pytest.mark.parametrize("method", ["service.stop", "shutdown"])
+async def test_busy_stop_does_not_discard_without_confirmation(backend, monkeypatch, method):
     monkeypatch.setattr(
         backend,
         "status",
@@ -47,9 +48,9 @@ async def test_busy_stop_does_not_discard_without_confirmation(backend, monkeypa
     stop = AsyncMock()
     monkeypatch.setattr(backend, "stop", stop)
     with pytest.raises(RuntimeError, match="discard"):
-        await backend.dispatch("service.stop", {})
+        await backend.dispatch(method, {})
     stop.assert_not_awaited()
-    await backend.dispatch("service.stop", {"discard": True})
+    await backend.dispatch(method, {"discard": True})
     stop.assert_awaited_once()
 
 
@@ -155,12 +156,15 @@ async def test_configuration_contract_matches_python_dataclasses():
     root = Path(__file__).resolve().parents[1]
     output = root / "src/lib/config.generated.ts"
     previous = output.read_text()
+    runtime = root / "src/lib/ipc-contract.generated.json"
+    previous_runtime = runtime.read_text()
     spec = importlib.util.spec_from_file_location(
         "generate", root / "scripts/generate-contracts.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert output.read_text() == previous
+    assert runtime.read_text() == previous_runtime
     assert set(asdict(Config())) == {"app", "stt", "cleanup", "desktop"}
 
 
@@ -211,3 +215,135 @@ async def test_daemon_owner_loss_is_detected(monkeypatch):
     monkeypatch.setattr("caelum.service.os.getppid", lambda: 1)
     with pytest.raises(RuntimeError, match="owner exited"):
         await owner_monitor(999)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"action": "delete"}, {"action": "start", "discard": "yes"}, {"action": "start", "extra": 1}],
+)
+def test_runtime_contract_rejects_invalid_controls(params):
+    from caelum.ipc_contract import validate_request
+
+    with pytest.raises(ValueError, match="parameters"):
+        validate_request("control", params)
+
+
+def test_typed_errors_do_not_expose_unexpected_exception_details():
+    from caelum.ipc_contract import error_payload
+    from caelum.providers import ProviderError
+
+    assert error_payload(ProviderError("Rate limited", "rate_limit"))["retryable"]
+    assert not error_payload(ProviderError("Invalid key", "invalid_key"))["retryable"]
+    assert error_payload(KeyError("private-provider-body")) == {
+        "code": "internal",
+        "message": "Operation failed; check local permissions and desktop access",
+        "retryable": False,
+    }
+
+
+async def test_live_sidecar_rejects_bad_payload_without_mutation(tmp_path):
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "caelum.sidecar",
+        env={**os.environ, "CAELUM_CONFIG": str(tmp_path / "settings.toml")},
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await asyncio.wait_for(
+        process.communicate(
+            b'{"v":1,"id":1,"method":"control","params":{"action":"start","discard":"yes"}}\n'
+        ),
+        10,
+    )
+    reply = next(
+        json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 1
+    )
+    assert reply["error_info"]["code"] == "invalid_request"
+    assert not reply["error_info"]["retryable"]
+    assert process.returncode == 0
+
+
+def test_status_contract_accepts_real_feedback_and_extra_daemon_fields():
+    from caelum.ipc_contract import STATUS, matches
+
+    assert matches(
+        STATUS,
+        {
+            "running": True,
+            "state": "recording",
+            "title": "Recording",
+            "detail": "Release to stop",
+            "paused": False,
+            "error_kind": "",
+            "metrics": [],
+            "feedback": {
+                "state": "recording",
+                "elapsed_ms": 100,
+                "history": [0, 0.1],
+                "level": 0.1,
+                "session_id": "example",
+                "sequence": 2,
+                "output": "DP-1",
+                "error_code": "",
+            },
+        },
+    )
+
+
+async def test_empty_initial_daemon_feedback_is_omitted(backend, monkeypatch):
+    from caelum.ipc_contract import STATUS, matches
+
+    monkeypatch.setattr(
+        "caelum.sidecar.request", lambda _: {"state": "hidden", "paused": False, "feedback": {}}
+    )
+    status = await backend.status()
+    assert "feedback" not in status and matches(STATUS, status)
+
+
+async def test_guarded_shutdown_rechecks_daemon_after_idle_snapshot(backend, monkeypatch):
+    monkeypatch.setattr(
+        backend, "status", AsyncMock(return_value={"running": True, "state": "hidden"})
+    )
+    calls = []
+
+    def request(action):
+        calls.append(action)
+        raise RuntimeError("Finish dictation or discard pending audio before updating")
+
+    monkeypatch.setattr("caelum.sidecar.request", request)
+    stop = AsyncMock()
+    monkeypatch.setattr(backend, "stop", stop)
+    with pytest.raises(RuntimeError, match="Finish dictation"):
+        await backend.dispatch("shutdown", {})
+    assert calls == ["prepare-update"]
+    stop.assert_not_awaited()
+
+
+async def test_live_partial_settings_patch_preserves_existing_hidden_values(tmp_path):
+    path = tmp_path / "settings.toml"
+    config = Config()
+    config.stt.vocabulary = "Caelum, example vocabulary"
+    save(config, path)
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "caelum.sidecar",
+        env={**os.environ, "CAELUM_CONFIG": str(path)},
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await asyncio.wait_for(
+        process.communicate(
+            b'{"v":1,"id":1,"method":"settings.save","params":{"config":{"desktop":{"color_theme":"ocean"}}}}\n'
+        ),
+        10,
+    )
+    reply = next(
+        json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 1
+    )
+    assert reply["result"] == {"saved": True}
+    assert load(path).desktop.color_theme == "ocean"
+    assert load(path).stt.vocabulary == config.stt.vocabulary

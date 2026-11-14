@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible Caelum failure
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, audio, transcripts, or unredacted logs. See SECURITY.md for sensitive issues.
+  - type: input
+    id: version
+    attributes:
+      label: Caelum version and package filename
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Distro/version, desktop/compositor, Wayland or X11
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized error message and relevant diagnostics
+      description: Remove keys, private paths, transcripts and provider response bodies.

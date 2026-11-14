@@ -63,3 +63,35 @@ probe confirmed the automatic flag was absent from the sidecar and an explicit
 user flag was preserved. Three new Rust policy tests and Clippy passed; the
 optimized build and Arch package were rebuilt. These startup probes do not replace
 recording, resize, suspend, or other long-running interactive acceptance checks.
+
+## Reliability and CI/CD adoption — 14 November 2026
+
+The following results apply to the local changes after the theme update:
+
+- **331 pytest tests passed, 4 physical/session tests skipped**. Includes real
+  JSONL processes, partial settings preservation, typed-error sanitization,
+  guarded shutdown, provenance/checksum/expiry verification, interrupted draft
+  publication, immutable assets/tags, and rollback prevention. Release tests use
+  temporary signing keys and an in-memory GitHub implementation, not a real release.
+- **25 frontend tests passed** under the pinned Node 24.22.3 toolchain, including
+  runtime result validation, late initial status snapshots, disconnect handling,
+  and confirmed restart after save failure. Its strict TypeScript/Vite build passed.
+- **9 Rust tests passed**, including stalled pipes, bounded response framing,
+  admission control, cancellation cleanup and forced child reaping. Formatting
+  and Clippy with warnings denied passed under the pinned Rust 1.99.1 toolchain.
+- ESLint, strict TypeScript/Vite production build, Ruff, generated-contract
+  consistency, privacy scanning and Actionlint 1.7.12 passed. The existing entry
+  chunk-size warning remains informational; it is not hidden or treated as a
+  performance improvement.
+- The current optimized executable and full locked-wheel Arch package built
+  locally. The extracted package passed the native WebKit/Xvfb startup probe
+  after actual lazy-screen/bootstrap readiness; the Setup screenshot was visually
+  inspected. Nothing was installed over the user's application.
+- The CI/release scripts implement a five-distro installed-package matrix and
+  verified artifact promotion. These new GitHub jobs and live publication were
+  **not executed** from this unpushed working tree. Branch protection and release
+  environment review policy remain repository-administrator settings.
+
+See [releasing.md](releasing.md) and [ipc.md](ipc.md) for current procedures and
+limits. This work does not establish physical microphone/provider, Wayland,
+tray/MPRIS, or every-distro qualification, and does not choose Caelum's license.
