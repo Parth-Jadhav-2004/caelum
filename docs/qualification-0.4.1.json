@@ -1,0 +1,139 @@
+{
+  "date": "2026-11-14",
+  "host": "Omarchy",
+  "baseline_commit": "b46d62d6ba52bc3d0d1eef466fc10acf24c3d7d5",
+  "optimized_executable_sha256": "49906830ac0fb189459d782fcaaa3fc33699bfb01a4d3d165803ced95e811fd3",
+  "method": "Three sequential warm Xvfb/D-Bus fresh-XDG Setup launches per build; memory sampled 300ms after readiness; PSS covers all Tauri descendants; D-Bus helpers excluded. No caches flushed.",
+  "profiles": {
+    "baseline": [
+      {
+        "processes": 7,
+        "rss_kib": 603204,
+        "pss_kib": 286785,
+        "pss_processes_covered": 7,
+        "ready_ms": 1002.47,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      },
+      {
+        "processes": 7,
+        "rss_kib": 596068,
+        "pss_kib": 279788,
+        "pss_processes_covered": 7,
+        "ready_ms": 802.31,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      },
+      {
+        "processes": 7,
+        "rss_kib": 596360,
+        "pss_kib": 279922,
+        "pss_processes_covered": 7,
+        "ready_ms": 801.82,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      }
+    ],
+    "optimized": [
+      {
+        "processes": 7,
+        "rss_kib": 596188,
+        "pss_kib": 280589,
+        "pss_processes_covered": 7,
+        "ready_ms": 1002.3,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      },
+      {
+        "processes": 7,
+        "rss_kib": 597564,
+        "pss_kib": 282588,
+        "pss_processes_covered": 7,
+        "ready_ms": 802.03,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      },
+      {
+        "processes": 7,
+        "rss_kib": 592604,
+        "pss_kib": 277376,
+        "pss_processes_covered": 7,
+        "ready_ms": 802.94,
+        "width": 1100,
+        "height": 780,
+        "scale": 1,
+        "theme": "t3-code",
+        "appearance": "dark",
+        "scope": "Tauri and descendants; excludes D-Bus helpers"
+      }
+    ]
+  },
+  "baseline_bundle": {
+    "source": "b46d62d baseline frontend build",
+    "files": [
+      {
+        "file": "history-CE8h2qxc.js",
+        "bytes": 3552,
+        "gzip": 1670
+      },
+      {
+        "file": "index-BI_6BHrH.js",
+        "bytes": 642185,
+        "gzip": 197074
+      },
+      {
+        "file": "settings-BoFZ1h5e.js",
+        "bytes": 25608,
+        "gzip": 8635
+      },
+      {
+        "file": "setup-CKgQNpYB.js",
+        "bytes": 15245,
+        "gzip": 5808
+      }
+    ]
+  },
+  "optimized_bundle": {
+    "entry_bytes": 94278,
+    "largest_chunk_bytes": 218754,
+    "initial_static_gzip_bytes": 204601,
+    "total_js_bytes": 688268
+  },
+  "physical_audio": [
+    {
+      "input": "saved Bluetooth input",
+      "captured_ms": 5040,
+      "received_words": 3,
+      "word_error_rate": 1.0,
+      "phrase_accuracy_passed": false
+    },
+    {
+      "input": "built-in input",
+      "captured_ms": 5020,
+      "received_words": 6,
+      "word_error_rate": 0.5555555555555556,
+      "phrase_accuracy_passed": false
+    }
+  ],
+  "further_audio_tests": "Owner chose to leave exact-phrase accuracy unverified; no further recording."
+}

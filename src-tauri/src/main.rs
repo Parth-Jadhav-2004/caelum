@@ -213,6 +213,21 @@ fn main() {
             frontend_ready
         ])
         .setup(|app| {
+            if std::env::var("CAELUM_SMOKE_TEST").as_deref() == Ok("1") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let number = |name: &str, default: u32, minimum: u32, maximum: u32| {
+                        std::env::var(name)
+                            .ok()
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .unwrap_or(default)
+                            .clamp(minimum, maximum)
+                    };
+                    let _ = window.set_size(tauri::LogicalSize::new(
+                        number("CAELUM_SMOKE_WIDTH", 1100, 480, 1600),
+                        number("CAELUM_SMOKE_HEIGHT", 780, 480, 1200),
+                    ));
+                }
+            }
             let handle = app.handle().clone();
             let engine = tauri::async_runtime::block_on(Engine::spawn(handle.clone()))?;
             app.manage(Desktop {

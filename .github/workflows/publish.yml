@@ -80,12 +80,20 @@ jobs:
           CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
           CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
           CAELUM_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_UPDATE_SIGNING_KEY }}
+          CAELUM_LEGACY_UPDATE_SIGNING_KEY: ${{ secrets.CAELUM_LEGACY_UPDATE_SIGNING_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           key=$(mktemp)
-          trap 'rm -f "$key"' EXIT
-          chmod 600 "$key"
+          legacy_key=$(mktemp)
+          trap 'rm -f "$key" "$legacy_key"' EXIT
+          chmod 600 "$key" "$legacy_key"
           printf '%s\n' "$CAELUM_UPDATE_SIGNING_KEY" > "$key"
           unset CAELUM_UPDATE_SIGNING_KEY
-          python3 scripts/publish_release.py release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$key"
+          legacy_args=()
+          if [[ -n "$CAELUM_LEGACY_UPDATE_SIGNING_KEY" ]]; then
+            printf '%s\n' "$CAELUM_LEGACY_UPDATE_SIGNING_KEY" > "$legacy_key"
+            legacy_args=(--legacy-key "$legacy_key")
+          fi
+          unset CAELUM_LEGACY_UPDATE_SIGNING_KEY
+          python3 scripts/publish_release.py release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$key" "${legacy_args[@]}"
