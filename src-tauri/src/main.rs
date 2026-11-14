@@ -171,6 +171,14 @@ fn open_key_console() -> Result<(), String> {
         .map_err(|_| "Could not open your browser".into())
 }
 #[tauri::command]
+fn open_releases() -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg("https://github.com/Parth-Jadhav-2004/caelum/releases")
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "Could not open your browser".into())
+}
+#[tauri::command]
 async fn quit_app(
     discard: bool,
     app: tauri::AppHandle,
@@ -208,6 +216,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             backend,
             quit_app,
+            open_releases,
             restart_app,
             open_key_console,
             frontend_ready
