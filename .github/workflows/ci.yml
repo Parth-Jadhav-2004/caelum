@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -23,10 +23,11 @@ jobs:
         with:
           enable-cache: true
           version: "0.13.1"
-      - run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - run: sudo apt-get update && sudo apt-get install -y libportaudio2 dbus-daemon
       - run: uv sync --locked --extra dev
       - run: uv run ruff check python tests scripts
       - run: uv run pytest -q
+      - run: dbus-run-session -- env CAELUM_DBUS_TESTS=1 uv run pytest -q tests/test_media_dbus.py
       - run: python3 scripts/scan_privacy.py
       - run: npm ci
       - run: npm run check
@@ -39,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install native build libraries

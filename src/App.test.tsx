@@ -198,3 +198,29 @@ it("can recover after a failed settings save without replaying the save on resta
     vi.mocked(ipc).mock.calls.filter(([method]) => method === "settings.save"),
   ).toHaveLength(1);
 });
+
+it("shows stable update results beside the update controls and links to releases", async () => {
+  const implementation = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "updates.check"
+      ? Promise.resolve(null)
+      : method === "updates.pending"
+        ? Promise.resolve(false)
+        : implementation(method as never, params as never)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: "Dictation" });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Check updates" }),
+  );
+  const result = await screen.findByText(
+    "No newer stable release is available. Prereleases are installed manually.",
+  );
+  expect(result).toHaveAttribute("role", "status");
+  expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "View releases" }));
+  expect(invoke).toHaveBeenCalledWith("open_releases");
+});

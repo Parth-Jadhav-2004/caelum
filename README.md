@@ -132,3 +132,10 @@ Pull requests run fast checks. Native distro packages are built through the
 manual candidate workflow, tested after installation, then promoted without
 rebuilding. See [releasing.md](docs/releasing.md) for candidate verification,
 resumable publication, immutable tags/assets, signing and recovery procedures.
+
+Caelum is [MIT licensed](LICENSE). Packages include third-party license texts,
+metadata, and corresponding MPL-2.0 crate sources under
+`/usr/share/licenses/caelum/third-party/`. Python 3.11–3.14 is currently supported;
+3.15 removes an API used by the retained D-Bus dependency, so metadata prevents
+installation on that interpreter until the dependency is updated. Development
+uses `.python-version` (3.14); native packages use their target system Python.

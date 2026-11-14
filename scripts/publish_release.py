@@ -123,14 +123,14 @@ def reconcile(github, tag, directory, expected, release):
     return set(names)
 
 
-def publish(directory, sha, run_id, run_attempt, private_key, github=None):
+def publish(directory, sha, run_id, run_attempt, private_key, github=None, legacy_private_key=None):
     manifest = verify(directory, sha, run_id, run_attempt)
     tag = "v" + manifest["version"]
     notes = ROOT / "docs" / f"release-{manifest['version']}.md"
     if not notes.is_file() or not notes.read_text().strip():
         raise ValueError(f"Reviewed release notes are required: {notes.name}")
     # Candidate creation time makes signing deterministic across publisher reruns.
-    sign(directory, private_key, now=manifest["created"])
+    sign(directory, private_key, now=manifest["created"], legacy_private_key=legacy_private_key)
     checksums = directory / "SHA256SUMS"
     entries = {path.name: digest(path) for path in directory.iterdir() if path != checksums}
     checksums.write_text(
@@ -168,5 +168,13 @@ if __name__ == "__main__":
     parser.add_argument("run_id")
     parser.add_argument("run_attempt")
     parser.add_argument("private_key", type=Path)
+    parser.add_argument("--legacy-key", type=Path)
     args = parser.parse_args()
-    publish(args.directory, args.sha, args.run_id, args.run_attempt, args.private_key)
+    publish(
+        args.directory,
+        args.sha,
+        args.run_id,
+        args.run_attempt,
+        args.private_key,
+        legacy_private_key=args.legacy_key,
+    )

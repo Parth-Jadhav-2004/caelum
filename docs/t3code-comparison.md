@@ -14,8 +14,10 @@ bounded transport/shutdown, shared runtime IPC descriptors and typed errors,
 explicit confirmed recovery, fast CI, pinned/cached toolchains, installed GUI
 smoke gates, candidate provenance, and resumable immutable artifact promotion.
 See [ipc.md](ipc.md) and [releasing.md](releasing.md) for the current behavior.
-The project-license decision and physical/provider/Wayland qualification remain
-open. Cross-distro workflows must still run on GitHub after these changes are
+MIT licensing was subsequently approved by the owner. Upgrade, accessibility,
+profiling and dual-signature trust-rotation checks were added. Physical speech
+accuracy and the remaining interactive desktop cases stay explicitly qualified
+by the latest acceptance record. Cross-distro workflows must still run on GitHub after these changes are
 pushed; local checks alone do not establish that matrix.
 
 ## Assessment

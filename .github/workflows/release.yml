@@ -40,7 +40,7 @@ jobs:
           # The checked-in toolchain is selected after checkout, not floating stable.
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -78,6 +78,8 @@ jobs:
           else
             dnf install -y ./dist/*.rpm
           fi
+          test -s /usr/share/licenses/caelum/LICENSE
+          test -s /usr/share/licenses/caelum/third-party/inventory.json
           caelum --help
           printf '%s\n' '{"v":1,"id":1,"method":"bootstrap"}' | caelum-engine | python3 -c 'import sys,json; frames=[json.loads(line) for line in sys.stdin]; assert any(f.get("id")==1 and "result" in f for f in frames)'
           bash scripts/ci-audio-smoke.sh env PYTHONPATH=/opt/caelum/lib python3 -c 'import caelum.portable,sounddevice,numpy,httpx; assert sounddevice.get_portaudio_version()[0] > 0; sounddevice.query_devices()'
@@ -109,7 +111,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
