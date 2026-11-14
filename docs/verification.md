@@ -95,3 +95,9 @@ The following results apply to the local changes after the theme update:
 See [releasing.md](releasing.md) and [ipc.md](ipc.md) for current procedures and
 limits. This work does not establish physical microphone/provider, Wayland,
 tray/MPRIS, or every-distro qualification, and does not choose Caelum's license.
+
+## Public-readiness follow-up
+
+The latest scoped results, physical-test limitations, licensing, Python support,
+and measured performance are in [qualification-0.4.1.md](qualification-0.4.1.md).
+They supersede the earlier remaining-license and single-key-rotation statements.

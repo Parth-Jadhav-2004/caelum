@@ -80,6 +80,18 @@ Set required `source` and `native` checks in branch protection, and protect the
 GitHub repository settings are administrative configuration, separate from the
 checked-in workflows. Keep signing access out of candidate and pull-request jobs.
 
+## Public testing prereleases
+
+When automated candidate checks pass but manual acceptance is incomplete, publish
+only a clearly labeled GitHub prerelease (for example `v0.4.1-rc.1`) at the exact
+candidate SHA. Download `release-candidate`, run `scripts/release_candidate.py verify`
+with its source SHA/run/attempt, and attach those verified packages and provenance
+unchanged, plus `SHA256SUMS`. Use `gh release create --prerelease --latest=false`
+and the reviewed release notes. Do not run stable promotion, attest desktop
+qualification, or attach signed stable updater metadata. Package versions remain
+the candidate version; installing the prerelease is an explicit package-manager
+action. Any later package/code change needs a new candidate and prerelease tag.
+
 ## Interrupted releases and recovery
 
 Rerun `Promote Linux candidate` with the same successful run ID. Signing uses the
@@ -101,14 +113,47 @@ configuration/database compatibility. Never point the latest feed backward.
 
 ## Signing key rotation
 
-Keep offline backups and restricted access to the release key. Manifest expiry
-remains 90 days, so an old manifest cannot be treated as indefinitely current.
-If the key is lost or compromised, disable promotion/signing, revoke its CI
-secret, publish an incident notice without secrets, and distribute a reviewed
-package containing a replacement trusted public key through a trusted channel.
-The current updater pins one public key: uploading a newly signed manifest alone
-cannot rotate that trust. Seamless in-app key rotation would require a separate,
-reviewed transition design; it is not claimed by this implementation.
+`python/caelum/update-trust.json` is an installed, package-owned trust policy.
+It supports up to four Ed25519 public keys, SHA-256 DER fingerprints, activation
+and expiry timestamps, and explicit revocation. A missing policy preserves the
+old pinned-key behavior; a present malformed or inactive policy fails closed.
+No user/XDG file or downloaded public key can expand this trust.
+
+Normal releases still sign with the original key. To prepare a rotation:
+
+1. Generate/protect a replacement private key outside this repository. Keep its
+   private value out of logs and source. Add only its public PEM to the policy:
+
+   ```sh
+   python3 scripts/manage_update_keys.py add /path/to/new-public.pem \
+     --not-before <unix-time> --not-after <unix-time>
+   ```
+
+2. Ship a bridge package containing both public keys. Review the policy diff and
+   validity window, build a new candidate, and sign this bridge with the existing
+   release key. No production key was rotated by this refactor.
+3. For subsequent releases, put the new primary private key in
+   `CAELUM_UPDATE_SIGNING_KEY` and retain the original key in the optional
+   `CAELUM_LEGACY_UPDATE_SIGNING_KEY` release-environment secret. The publisher
+   emits a bounded `update-signatures.json` bundle plus the original 64-byte
+   `update.json.sig`. Older clients continue verifying the original signature;
+   newer clients select a signature matching an active installed key. Clients
+   skipping the bridge can still verify/install the dual-signed package.
+4. To revoke a key for newer clients, use
+   `python3 scripts/manage_update_keys.py revoke <fingerprint>` and ship the
+   reviewed policy in a package authenticated by another active key. The helper
+   refuses to remove the last active key. It never edits an installed user's policy.
+
+New manifests keep schema 1 and the same package hashes/90-day expiry. Staged
+multi-signature bundles are reverified by the privileged installer against the
+installed policy before invoking a package manager. Rotation without the original
+compatibility signing key is refused by the publisher, rather than silently
+breaking old updaters. Tests include the frozen v0.4.0 verifier.
+
+If a key is compromised, disable promotion, revoke its CI secret and distribute
+an incident notice and trusted recovery package. Old clients that only know that
+compromised key require a trusted out-of-band update; dual signing cannot undo
+trust already granted to a compromised key. Do not claim otherwise.
 
 ## Local verification
 

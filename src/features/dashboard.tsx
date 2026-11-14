@@ -35,6 +35,7 @@ export function Waveform({
   return (
     <div
       className="flex h-14 items-center justify-center gap-1.5"
+      role="img"
       aria-label="Microphone input level"
     >
       {values.map((value, i) => (
