@@ -276,6 +276,7 @@ cp -a {stage}/. %{{buildroot}}/
 /usr/share/icons/hicolor/scalable/apps/caelum.svg
 /usr/share/icons/hicolor/scalable/apps/caelum-symbolic.svg
 /usr/share/doc/caelum
+%license /usr/share/licenses/caelum
 """,
             )
             run(
