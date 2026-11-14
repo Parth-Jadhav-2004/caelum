@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Caelum - Dashboard (Idle)</title>
+  <link rel="stylesheet" href="base.css">
+  <style>
+    .app-icon { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <svg class="sidebar-icon" viewBox="0 0 24 24" class="app-icon">
+          <path d="M12 6v12M6 12h12M12 2l-2 4M12 2l2 4M12 22l-2-4M12 22l2-4"></path>
+        </svg>
+        <div>
+          <div style="font-size: 18px;">Caelum</div>
+          <div style="font-size: 12px; opacity: 0.7;">Voice dictation</div>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active">
+          <svg class="nav-icon" viewBox="0 0 24 24" class="app-icon">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          </svg>
+          <span>Home</span>
+        </a>
+        <a href="#" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" class="app-icon">
+            <path d="M18 20V10M12 20V4M6 20v-6"></path>
+          </svg>
+          <span>Statistics</span>
+        </a>
+        <a href="#" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" class="app-icon">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>History</span>
+        </a>
+        <a href="#" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 24 24" class="app-icon">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
+          </svg>
+          <span>Settings</span>
+        </a>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span>Service ready</span>
+        </div>
+        <div class="hotkey-display">SUPER + SPACE</div>
+      </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="content-header">
+        <span class="page-label">HOME</span>
+      </header>
+      
+      <div class="content-body">
+        <h1>DICTATION</h1>
+        <p class="page-subtitle">Record with the microphone button or your recording shortcut.</p>
+        
+        <!-- Recording Card -->
+        <div class="card">
+          <div class="recording-status">
+            <span class="status-dot"></span>
+            <span>READY</span>
+          </div>
+          
+          <div class="recording-pill">
+            <div class="recording-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" class="app-icon">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </div>
+            
+            <div class="waveform">
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+              <div class="waveform-bar" style="height: 4px;"></div>
+            </div>
+            
+            <div class="timer mono">SUPER + SPACE</div>
+            
+            <p style="font-size: 14px; opacity: 0.7; margin: 24px 0;">Ready to record. Press your shortcut or click Record below.</p>
+          </div>
+          
+          <div style="display: flex; justify-content: center; gap: 16px; padding-top: 16px; border-top: 1px solid #fff;">
+            <button class="btn btn-primary">
+              <svg class="btn-icon" viewBox="0 0 24 24" class="app-icon">
+                <circle cx="12" cy="12" r="10"></circle>
+              </svg>
+              Record
+            </button>
+            <button class="btn btn-secondary">
+              <svg class="btn-icon" viewBox="0 0 24 24" class="app-icon">
+                <path d="M10 9v6M14 9v6"></path>
+              </svg>
+              Pause
+            </button>
+          </div>
+          
+          <p style="text-align: center; font-size: 12px; opacity: 0.7; margin-top: 24px;">
+            Audio goes to your provider. Microphone recordings are never saved.
+          </p>
+        </div>
+        
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Words dictated · lifetime</div>
+            <div class="stat-value">12,847</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Recording minutes · saved history</div>
+            <div class="stat-value">142.5</div>
+          </div>
+        </div>
+        
+        <!-- Recent Dictations -->
+        <div class="divider"></div>
+        <div class="flex justify-between items-center mb-6">
+          <h2>RECENT DICTATIONS</h2>
+          <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">View all</button>
+        </div>
+        
+        <div class="transcript-card">
+          <div class="transcript-meta">
+            <span>2026-11-14 13:47</span>
+            <span>·</span>
+            <span>127 words</span>
+            <span>·</span>
+            <span>12.3s</span>
+          </div>
+          <div class="transcript-text">A little less typing, a little more room to think. This is what voice dictation should feel like.</div>
+        </div>
+        
+        <div class="transcript-card">
+          <div class="transcript-meta">
+            <span>2026-11-14 11:23</span>
+            <span>·</span>
+            <span>84 words</span>
+            <span>·</span>
+            <span>8.1s</span>
+          </div>
+          <div class="transcript-text">Pure black backgrounds with white text create maximum contrast and reduce eye strain.</div>
+        </div>
+        
+        <div class="transcript-card">
+          <div class="transcript-meta">
+            <span>2026-11-13 16:15</span>
+            <span>·</span>
+            <span>203 words</span>
+            <span>·</span>
+            <span>19.7s</span>
+          </div>
+          <div class="transcript-text">No gradients, no glassmorphism, no rounded corners. Just crisp lines and deliberate typography.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
