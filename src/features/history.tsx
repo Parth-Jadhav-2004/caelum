@@ -26,7 +26,6 @@ export function History() {
   return (
     <div className="space-y-8">
       <Heading
-        eyebrow="Your words, kept locally"
         title="History"
         detail="Completed dictations, never microphone audio. Search the latest 200 matches."
       />

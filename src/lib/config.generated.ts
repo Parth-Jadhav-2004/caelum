@@ -35,6 +35,7 @@ export interface DesktopConfig {
   history_enabled: boolean
   check_updates: boolean
   theme: string
+  color_theme: string
   sidebar_visible: boolean
   retention_days: number
   stt_usd_per_hour: number

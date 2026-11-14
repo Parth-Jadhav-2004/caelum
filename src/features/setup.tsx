@@ -128,10 +128,10 @@ export function Setup({
         eyebrow={`Step ${step + 1} of 4 · ${steps[step]}`}
         title={
           [
-            "A few words to get started.",
-            "Let’s hear you.",
-            "One shortcut. A clear thought.",
-            "Give your voice a little room.",
+            "Set up your provider",
+            "Test your microphone",
+            "Set your recording shortcut",
+            "Try dictation",
           ][step]
         }
         detail="Connect your provider, check your microphone, and try dictation."

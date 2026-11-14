@@ -50,7 +50,12 @@
       "decorative motion"
     ]
   },
-  "decisions": [],
+  "decisions": [
+    {
+      "date": "2026-11-13",
+      "decision": "User requested T3 Code themes: six pinned upstream palettes plus original Caelum mint; independent appearance selector, compact 8px radii and functional copy."
+    }
+  ],
   "evidence": [
     "21st search transcription dashboard: decorative hero/glass results rejected; official shadcn registry used."
   ],

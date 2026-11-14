@@ -1,3 +1,4 @@
+import { COLOR_THEMES, resolveColorTheme } from "@/lib/themes";
 import { version } from "../../package.json";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useRef, type ReactNode, type KeyboardEvent } from "react";
@@ -16,7 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -169,9 +176,8 @@ export function Settings({
     <div className="space-y-8">
       <div className="flex items-end justify-between gap-3">
         <Heading
-          eyebrow="Make it yours"
           title="Settings"
-          detail="Your microphone, your provider, your way of working."
+          detail="Configure recording, transcription, and appearance."
         />
         <span
           className="max-w-56 text-right text-xs text-muted-foreground"
@@ -189,6 +195,46 @@ export function Settings({
           </TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="mt-6 space-y-6">
+          <Card
+            className="shadow-none"
+            role="region"
+            aria-labelledby="theme-settings-title"
+          >
+            <CardHeader>
+              <CardTitle>
+                <h2 id="theme-settings-title">Theme</h2>
+              </CardTitle>
+              <CardDescription>
+                Choose a color palette and appearance. Changes apply immediately
+                and save automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Row title="Appearance">
+                <Choice
+                  label="Appearance"
+                  value={config.desktop.theme}
+                  items={[
+                    ["dark", "Dark"],
+                    ["light", "Light"],
+                    ["system", "Follow system"],
+                  ]}
+                  change={(v) => set("desktop", "theme", v)}
+                />
+              </Row>
+              <Row
+                title="Color theme"
+                detail="T3 Code palettes and Caelum’s original mint palette."
+              >
+                <Choice
+                  label="Color theme"
+                  value={resolveColorTheme(config.desktop.color_theme)}
+                  items={COLOR_THEMES.map(({ id, label }) => [id, label])}
+                  change={(v) => set("desktop", "color_theme", v)}
+                />
+              </Row>
+            </CardContent>
+          </Card>
           <Card className="shadow-none">
             <CardContent>
               <Row
@@ -399,18 +445,6 @@ export function Settings({
                       if (result) setAutostart(v);
                     });
                   }}
-                />
-              </Row>
-              <Row title="Appearance">
-                <Choice
-                  label="Theme"
-                  value={config.desktop.theme}
-                  items={[
-                    ["dark", "Dark"],
-                    ["light", "Light"],
-                    ["system", "Follow system"],
-                  ]}
-                  change={(v) => set("desktop", "theme", v)}
                 />
               </Row>
             </CardContent>

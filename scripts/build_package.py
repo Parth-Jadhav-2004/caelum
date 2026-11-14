@@ -144,7 +144,12 @@ exec /usr/bin/python3 -m caelum.cli "$@"
             shutil.copy2(source, icons / source.name)
         docs = stage / "usr/share/doc/caelum"
         docs.mkdir(parents=True)
-        for source in (ROOT / "README.md", ROOT / "docs/linux.md", ROOT / "docs/privacy.md"):
+        for source in (
+            ROOT / "README.md",
+            ROOT / "docs/linux.md",
+            ROOT / "docs/privacy.md",
+            ROOT / "THIRD_PARTY_NOTICES.md",
+        ):
             shutil.copy2(source, docs / source.name)
         write(
             docs / "build-info.txt",

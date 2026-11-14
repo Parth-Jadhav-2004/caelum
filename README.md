@@ -106,3 +106,18 @@ Read [migration mapping](docs/migration.md), [architecture](docs/architecture.md
 Hardware recording, real provider uploads, desktop permissions, tray behavior,
 suspend/lock, and installation on each distribution require host acceptance testing.
 Do not interpret passing mocked tests as production certification.
+
+## Appearance
+
+Settings → General → Theme → **Color theme** selects T3 Code (the default), T3 Chat,
+Grove, Ocean, Ember, Iris, or the original Caelum mint. **Appearance** separately
+selects dark, light, or system mode. Preferences are saved in the existing TOML
+file as `desktop.color_theme` and `desktop.theme`; old configuration files remain
+valid. These palettes style the main window; the native layer-shell recording
+HUD and system window decorations retain their separate styling.
+
+T3 palettes are imported from a pinned, MIT-licensed upstream version; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The
+[T3 Code comparison and public-release report](docs/t3code-comparison.md) records
+source references, actual release assets, implementation changes, and remaining
+qualification work. A [release note template](docs/release-template.md) is included.

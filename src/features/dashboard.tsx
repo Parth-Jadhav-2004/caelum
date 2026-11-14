@@ -125,9 +125,8 @@ export function Dashboard({
   return (
     <div className="space-y-8">
       <Heading
-        eyebrow="A little less typing"
-        title="Room for your thoughts."
-        detail="Speak naturally. Caelum takes care of the words."
+        title="Dictation"
+        detail="Record with the microphone button or your recording shortcut."
       />
       <Card className="overflow-hidden shadow-none">
         <CardContent className="space-y-7 p-6 sm:p-8">
@@ -275,7 +274,7 @@ export function Dashboard({
             .map((entry) => <Transcript key={entry.id} entry={entry} />)
         ) : (
           <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            Your next thought belongs here. Record your first dictation.
+            No transcriptions yet. Start a recording to see the result here.
           </p>
         )}
       </section>
@@ -305,7 +304,6 @@ export function Statistics() {
   return (
     <div className="space-y-8">
       <Heading
-        eyebrow="Small thoughts add up"
         title="Statistics"
         detail="Your dictation activity. Daily counts reflect retained history; lifetime words survive deletion."
       />

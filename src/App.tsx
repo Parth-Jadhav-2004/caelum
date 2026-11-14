@@ -174,7 +174,10 @@ export default function App() {
       </main>
     );
   return (
-    <ThemeProvider theme={config.desktop.theme}>
+    <ThemeProvider
+      theme={config.desktop.theme}
+      colorTheme={config.desktop.color_theme}
+    >
       <MotionConfig
         reducedMotion={config.app.reduced_motion ? "always" : "user"}
       >
@@ -202,7 +205,7 @@ export default function App() {
                           Caelum
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Space to think.
+                          Voice dictation
                         </p>
                       </div>
                     </SidebarMenuButton>

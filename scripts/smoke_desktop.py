@@ -14,14 +14,16 @@ import time
 from pathlib import Path
 
 
-def check(package, xvfb, screenshot, completed_setup=False):
+def check(package, xvfb, screenshot, completed_setup=False, theme="t3-code", appearance="dark"):
     package = package.resolve()
     screenshot = screenshot.resolve()
     with tempfile.TemporaryDirectory(prefix="caelum-native-smoke-") as directory:
         work = Path(directory)
         for folder in ("config", "data", "runtime"):
             (work / folder).mkdir(mode=0o700)
-        (work / "config/config.toml").write_text('[desktop]\ntheme="dark"\n')
+        (work / "config/config.toml").write_text(
+            f'[desktop]\ntheme="{appearance}"\ncolor_theme="{theme}"\n'
+        )
         if completed_setup:
             (work / "config/onboarding.json").write_text('{"stage":4,"complete":true}')
         env = {
@@ -108,7 +110,15 @@ if __name__ == "__main__":
         action="store_true",
         help="Render dashboard; absent temporary credentials prevent service capture",
     )
+    parser.add_argument(
+        "--theme",
+        choices=("t3-code", "t3-chat", "grove", "ocean", "ember", "iris", "caelum"),
+        default="t3-code",
+    )
+    parser.add_argument("--appearance", choices=("dark", "light"), default="dark")
     args = parser.parse_args()
     if not args.xvfb:
         parser.error("Install Xvfb or provide --xvfb /path/to/Xvfb")
-    check(args.package, args.xvfb, args.screenshot, args.completed_setup)
+    check(
+        args.package, args.xvfb, args.screenshot, args.completed_setup, args.theme, args.appearance
+    )

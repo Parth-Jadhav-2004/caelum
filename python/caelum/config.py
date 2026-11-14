@@ -51,6 +51,7 @@ class Desktop:
     history_enabled: bool = True
     check_updates: bool = True
     theme: str = "dark"
+    color_theme: str = "t3-code"
     sidebar_visible: bool = True
     retention_days: int = 30
     stt_usd_per_hour: float = 0.0
@@ -99,6 +100,8 @@ def validate(config):
         raise ValueError("backend must be auto, hyprland, or portable")
     if config.desktop.theme not in ("system", "light", "dark"):
         raise ValueError("Theme must be system, light, or dark")
+    if config.desktop.color_theme not in ("t3-code", "t3-chat", "grove", "ocean", "ember", "iris", "caelum"):
+        raise ValueError("Unknown color theme")
     if not 1 <= config.desktop.retention_days <= 3650:
         raise ValueError("Retention must be between 1 and 3650 days")
     if not 0 <= config.desktop.stt_usd_per_hour <= 1000:

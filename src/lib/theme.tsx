@@ -5,13 +5,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { resolveColorTheme } from "./themes";
 type Theme = "dark" | "light";
 const ThemeContext = createContext<{ theme: Theme }>({ theme: "dark" });
 export function ThemeProvider({
   theme,
+  colorTheme,
   children,
 }: {
   theme: string;
+  colorTheme?: string;
   children: ReactNode;
 }) {
   const [system, setSystem] = useState<Theme>(() =>
@@ -28,9 +31,10 @@ export function ThemeProvider({
     return () => query.removeEventListener("change", update);
   }, []);
   useEffect(() => {
+    document.documentElement.dataset.colorTheme = resolveColorTheme(colorTheme);
     document.documentElement.classList.toggle("dark", resolved === "dark");
     document.documentElement.style.colorScheme = resolved;
-  }, [resolved]);
+  }, [resolved, colorTheme]);
   return (
     <ThemeContext.Provider value={{ theme: resolved }}>
       {children}
