@@ -187,6 +187,30 @@ export function Settings({
           {saveState}
         </span>
       </div>
+      {Object.values(bootstrap.data?.credentials ?? {}).some((description) =>
+        description.includes("not encrypted"),
+      ) && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive p-4 text-sm"
+        >
+          <p className="font-medium">
+            API keys are stored unencrypted on this device.
+          </p>
+          <p className="mt-1">
+            The desktop keyring was unavailable when saving. File permissions
+            restrict access, but do not encrypt your keys. Enable or unlock your
+            desktop keyring, then save your keys again in Manage keys.
+          </p>
+          <Button
+            className="mt-3"
+            variant="outline"
+            onClick={() => navigate("setup")}
+          >
+            Manage keys
+          </Button>
+        </div>
+      )}
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
