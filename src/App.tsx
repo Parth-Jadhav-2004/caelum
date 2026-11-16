@@ -153,7 +153,7 @@ export default function App() {
     timer.current = setTimeout(() => {
       timer.current = null;
       void action(() => commit(next));
-    }, 450);
+    }, 200);
   }
   if (bootstrap.isError)
     return (
