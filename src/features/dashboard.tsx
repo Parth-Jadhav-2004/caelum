@@ -1,3 +1,4 @@
+import { useHistoryPolling } from "@/hooks/use-history-polling";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -107,10 +108,11 @@ export function Dashboard({
     status?.state ?? "",
   );
   const processing = ["processing", "refining"].includes(status?.state ?? "");
+  const historyPolling = useHistoryPolling();
   const history = useQuery({
     queryKey: ["history", "recent"],
     queryFn: () => ipc("history", {}),
-    refetchInterval: 3000,
+    ...historyPolling,
   });
   const summary = useQuery({
     queryKey: ["summary"],

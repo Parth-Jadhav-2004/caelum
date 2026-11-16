@@ -1,3 +1,4 @@
+import { useHistoryPolling } from "@/hooks/use-history-polling";
 import { useDeferredValue, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Search, Trash2, FileText } from "lucide-react";
@@ -10,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Transcript } from "@/components/transcript";
 import { Skeleton } from "@/components/ui/skeleton";
 export function History() {
+  const historyPolling = useHistoryPolling();
   const [search, setSearch] = useState("");
   const query = useDeferredValue(search);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export function History() {
   const history = useQuery({
     queryKey: ["history", query],
     queryFn: () => ipc("history", { query }),
-    refetchInterval: 3000,
+    ...historyPolling,
   });
   return (
     <div className="space-y-8">
