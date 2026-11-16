@@ -401,7 +401,7 @@ were made by this audit.
 ### Confirmed P0 findings
 
 - [ ] **A01 — Handle lock-state lookup failure without crashing the monitor.**
-  In [`service.lock_monitor`](../src/caelum/service.py), the exception branch
+  In [`service.lock_monitor`](../../src/caelum/service.py), the exception branch
   assigns `locked = True` instead of `is_locked = True`. If the first lookup
   fails, the next statement raises `UnboundLocalError` before calling cancel.
   After a previous successful lookup, it reuses the previous result and replaces
@@ -414,7 +414,7 @@ were made by this audit.
   failures plus actual lock/suspend have regression/acceptance coverage.
 
 - [ ] **A02 — Recover native shortcuts after an unclean daemon exit.**
-  [`linux.Bindings.install`](../src/caelum/linux.py) checks collisions before
+  [`linux.Bindings.install`](../../src/caelum/linux.py) checks collisions before
   removing the compositor's previous `_caelum` handles. A hard-killed daemon
   cannot remove its Lua bindings, so restart rejects its own old shortcut as a
   collision. Injecting an existing `Caelum hold to dictate` binding reproduced
@@ -425,8 +425,8 @@ were made by this audit.
   kill/relaunch and compositor reload, not just orderly removal.
 
 - [ ] **A03 — Treat ambiguous native paste as uncertain delivery, not safe retry.**
-  [`linux.insert`](../src/caelum/linux.py) can dispatch paste key-down and then
-  fail sending key-up. [`Orchestrator.finalize`](../src/caelum/orchestrator.py)
+  [`linux.insert`](../../src/caelum/linux.py) can dispatch paste key-down and then
+  fail sending key-up. [`Orchestrator.finalize`](../../src/caelum/orchestrator.py)
   retains PCM on that exception. A fault-injection probe sent a successful first
   key-down, failed key-up, retried, and observed a second key-down. An application
   that pastes on key-down can receive the text twice. A timeout after dispatch
@@ -438,9 +438,9 @@ were made by this audit.
   uncertain delivery. Add partial-side-effect and timeout regressions.
 
 - [ ] **A04 — Preserve cleanup/recovery when stopping the microphone fails.**
-  [`Capture.stop`](../src/caelum/audio.py) calls `stop()` and then `close()` without
+  [`Capture.stop`](../../src/caelum/audio.py) calls `stop()` and then `close()` without
   a `finally`. A stop error skips close. In
-  [`Orchestrator.release`](../src/caelum/orchestrator.py), `self.capture` is cleared
+  [`Orchestrator.release`](../../src/caelum/orchestrator.py), `self.capture` is cleared
   and the UI enters processing before stopping; the same error exits before PCM
   is retained or finalization is scheduled. Fault injection reproduced processing
   with neither a capture nor retry PCM, and an unclosed stream. Abort/shutdown
@@ -451,7 +451,7 @@ were made by this audit.
   Test stop and close failures plus real device unplug.
 
 - [ ] **A05 — Keep service controls usable when history is unreadable.**
-  [`Desktop.refresh`](../src/caelum/desktop.py) fetches status and reads history
+  [`Desktop.refresh`](../../src/caelum/desktop.py) fetches status and reads history
   in one worker result. A corrupt/locked/unwritable history database causes that
   result to fail before `render_data` updates service controls. A native GTK probe
   with an invalid SQLite file and a mocked healthy recording daemon left
@@ -463,7 +463,7 @@ were made by this audit.
   SQLite, denied access, and lock contention while recording.
 
 - [ ] **A06 — Strengthen meaning/number checks on optional refinement.**
-  [`quality.validate_cleanup`](../src/caelum/quality.py) accepts both
+  [`quality.validate_cleanup`](../../src/caelum/quality.py) accepts both
   `I do not approve the transfer today.` → `I do approve the transfer today.`
   and `Transfer 10 dollars today.` → `Transfer 100 dollars today.` as refined
   output. Both were reproduced directly. Similarity permits negation deletion,
@@ -480,7 +480,7 @@ were made by this audit.
   for `472a529` fails on all six distro test jobs. Logs show
   `git ls-files -z` inside `scripts/scan_privacy.py` fails with Git's
   `detected dubious ownership` error; pytest and downstream package jobs do not
-  run. [The workflow](../.github/workflows/release.yml) configures `safe.directory`
+  run. [The workflow](../../.github/workflows/release.yml) configures `safe.directory`
   in the package job, but not before the test job's new scan.
   **Done when:** establish trust for the exact checked-out workspace in each test
   container before the scan (not a global wildcard), retain the privacy gate,
@@ -489,7 +489,7 @@ were made by this audit.
 ### Confirmed P1 follow-ups
 
 - [ ] **A08 — Distinguish identically named microphones.**
-  [`desktop.microphones`](../src/caelum/desktop.py) returns `(name, name)` pairs;
+  [`desktop.microphones`](../../src/caelum/desktop.py) returns `(name, name)` pairs;
   Settings/setup deduplicate them with `dict.fromkeys`. A probe with two inputs
   named `USB Audio` produced only one selectable entry. PortAudio name lookup can
   also be ambiguous across host APIs. Users with duplicate USB devices or host
@@ -505,7 +505,7 @@ were made by this audit.
   addressed in the working tree and should not be reimplemented. The final
   test rerun fails `test_service_status_copy` for `invalid_key`: it still expects
   `Update the key`, while the UI now says `Replace the key`.
-  [`service.serve`](../src/caelum/service.py) still says to export a key.
+  [`service.serve`](../../src/caelum/service.py) still says to export a key.
   Managed setup keys take precedence over environment values and are read on
   subsequent requests. Editing an environment key can therefore have no effect;
   restarting also discards a pending recording unnecessarily.
@@ -515,7 +515,7 @@ were made by this audit.
   message assertion so the current suite passes.
 
 - [ ] **A10 — Validate malformed config structure and offer startup recovery.**
-  [`config.load`](../src/caelum/config.py) assumes every section is a table and
+  [`config.load`](../../src/caelum/config.py) assumes every section is a table and
   immediately calls `.copy()`. A file containing `app = 1` raises `AttributeError`
   instead of a useful validation error; the CLI's error boundary does not catch
   it. The app loads config before building its window, so invalid settings can
