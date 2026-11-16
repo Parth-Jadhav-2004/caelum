@@ -38,7 +38,9 @@ def release_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(signer, "ROOT", root)
     value = candidate.version()
     (root / "docs").mkdir()
-    (root / f"docs/release-{value}.md").write_text("# Release\n\nVerified user-visible changes.\n")
+    (root / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## {value}\n\nVerified user-visible changes.\n"
+    )
     (root / "python/caelum").mkdir(parents=True)
     key = tmp_path / "private.pem"
     subprocess.run(["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(key)], check=True)
@@ -208,3 +210,17 @@ def test_incomplete_remote_asset_keeps_draft_without_replacing_it(release_candid
     with pytest.raises(ValueError, match="incomplete"):
         promote(release_candidate, github)
     assert github.info["draft"] and github.upload_count == 2 and github.publish_count == 0
+
+
+def test_release_notes_selects_only_requested_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher, "ROOT", tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.4.1\n\nNew changes.\n\n### Upgrade\n\nInstructions.\n"
+        "\n## 0.4.0\n\nOlder changes.\n"
+    )
+    notes = publisher.release_notes("0.4.1")
+    assert "New changes." in notes
+    assert "### Upgrade" in notes
+    assert "Older changes." not in notes
+    with pytest.raises(ValueError, match="Reviewed release notes"):
+        publisher.release_notes("0.5.0")

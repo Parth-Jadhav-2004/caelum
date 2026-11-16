@@ -1,0 +1,290 @@
+# Changelog
+
+Release notes, newest first.
+
+## 0.4.1
+
+- **Theme selection.** Choose T3 Code, T3 Chat, Grove, Ocean, Ember, Iris, or Caelum mint in Settings.
+- **Engine recovery.** Requests have bounded deadlines, validated responses, and explicit recovery without replaying recordings.
+- **Release verification.** Native packages pass installation, IPC, simulated-audio and GUI startup checks before promotion.
+- **Accessibility.** Improve landmarks, confirmation focus, keyboard navigation, and theme contrast checks.
+- **Update trust.** Support overlapping keys and dual signatures while retaining older updater compatibility.
+- **MIT license.** Project licensing and third-party notices are included in distribution packages.
+
+### Packages and upgrades
+
+Candidate targets are Arch x86_64, Debian 12, Ubuntu 24.04/26.04, and Fedora 43.
+Packages vendor Python dependencies and retain their system Python/native library
+requirements. Configuration and SQLite data paths remain unchanged.
+
+### Known limitations and qualification
+
+This is a prerelease for testing, published as `v0.4.1-rc.1`; package versions
+are `0.4.1`. It is excluded from the stable update feed. The candidate workflow
+and desktop acceptance results must be reviewed before stable publication; see
+[qualification](https://github.com/Parth-Jadhav-2004/caelum/blob/v0.4.1-rc.1/docs/qualification-0.4.1.md).
+Physical capture and Groq transport were exercised, but phrase accuracy remains unverified. Native Wayland overlays,
+physical shortcuts, provider workflows, scaling and suspend behavior require the
+qualification record in docs/acceptance.md. GTK4 remains isolated to the native HUD.
+
+### Changelog
+
+https://github.com/Parth-Jadhav-2004/caelum/compare/v0.4.0...v0.4.1-rc.1
+
+## 0.4.0
+
+The main application moves from GTK4/PyGObject to Tauri 2, React, TypeScript,
+shadcn/ui and Tailwind. Home, statistics, history, settings and consented setup
+share a dark-first design system, with optional light/system appearance.
+
+Python capture, transcription, cleanup, retry handling, SQLite history, TOML
+preferences, credentials, MPRIS and native/portal shortcuts retain their existing
+implementations and data paths. A managed JSON-lines sidecar connects the new UI.
+The native GTK4 layer-shell recording overlay remains an isolated helper because
+ordinary Tauri Wayland windows cannot provide its placement/input contract.
+
+Release packaging includes the native executable and locked Python dependencies
+for Ubuntu, Debian, Fedora and Arch. Full physical desktop/provider qualification
+and clean-install checks on every target are documented in docs/acceptance.md.
+On NVIDIA Wayland sessions, Caelum automatically applies the scoped WebKitGTK
+explicit-sync workaround to prevent the startup crash reported as GDK Error 71
+("Missing acquire timeline"). Explicit user overrides are respected, and the
+isolated native recording overlay retains its normal graphics environment.
+Startup was verified on the affected hybrid Intel/NVIDIA Hyprland host. The
+libayatana-appindicator deprecation warning is nonfatal and may still appear.
+
+The headless WebKit smoke test uses a per-process DMA-BUF renderer workaround.
+Prolonged interactive use, GPU resize behavior, real microphone/provider flows,
+and clean installation on all distribution targets remain qualification tasks;
+see docs/verification.md and docs/acceptance.md for the tested scope.
+
+## 0.3.9
+
+Caelum 0.3.9 automatically pauses playing media while you dictate and resumes
+it when microphone capture ends.
+
+- Pause playing music and other media before starting microphone capture using
+  Linux MPRIS media controls. Compatible music apps and browsers work without
+  an additional dependency or configuration.
+- Resume the players Caelum paused immediately after recording stops, without
+  waiting for transcription. Both hold-to-talk and toggle recording are supported.
+- Restore playback after cancellation, the recording time limit, microphone
+  startup failure, capture errors, and service shutdown.
+- Leave already-paused media alone. Skip resuming a player if it has stopped,
+  already resumed, changed tracks, or been replaced by a new player process.
+- Keep media controls best-effort with bounded waits: unavailable players or
+  a missing session bus do not prevent dictation.
+
+Packages are built for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43, with
+signed update metadata. Configuration, credentials, and history are preserved
+when upgrading. Restart Caelum after installation to enable this behavior.
+
+## 0.3.8
+
+Caelum 0.3.8 adds a choice of recording shortcut behavior and increases the
+default recording limit to three minutes.
+
+- Choose **Hold to talk** or **Press to toggle** in Settings. Toggle mode starts
+  recording on the first shortcut press and finishes it on the next; releasing
+  the shortcut keeps recording. Hold-to-talk remains the default.
+- Save the recording mode automatically and apply changes while the service is
+  idle. Hyprland and desktop portal shortcuts support both modes. Manual Record
+  controls continue to toggle recording.
+- Increase the default recording limit from 120 to 180 seconds. Existing
+  configuration values are preserved; set `app.max_recording_seconds = 180` in
+  `~/.config/caelum/config.toml` to raise an existing 120-second cap. The supported
+  upper bound remains 600 seconds.
+- Fall back to the built-in microphone when a selected Bluetooth input
+  disconnects, including the fallback change already on main since 0.3.7.
+
+Packages are built for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43, with
+signed update metadata. Configuration, credentials, and history are preserved
+when upgrading. Restart Caelum after installation to use the new Settings
+selector.
+
+## 0.3.7
+
+Caelum 0.3.7 detects stalled microphone capture and makes the local microphone
+test report a clear result.
+
+- Detect PipeWire/PulseAudio streams that stop delivering audio for two seconds,
+  instead of waiting indefinitely while Bluetooth still reports Connected.
+  Report an actionable reconnect message and preserve capture-error details.
+- Handle partial PCM pipe reads without falsely reporting a disconnected device.
+  Normal microphone silence continues to be captured rather than treated as a
+  stalled transport.
+- Show success or no-speech feedback after Settings → Test mic, and restore the
+  test button after success or failure. The test remains local-only; it never
+  saves or uploads audio.
+- Discard interrupted setup/test samples, including errors detected while the
+  stream is stopping, instead of treating partial capture as a successful test.
+- Document a reversible WirePlumber workaround for affected Linux Bluetooth
+  voice transports: disabling mSBC negotiation can avoid repeated SCO failures,
+  at the cost of lower Bluetooth microphone fidelity. Normal A2DP music codecs
+  remain enabled. This is an optional machine-level workaround, not a setting
+  automatically changed by the app or its packages.
+
+Repeated local capture checks with CMF Buds 2 passed after applying that
+machine-level workaround, including checks using the installed 0.3.6 package.
+This release adds app safeguards and troubleshooting guidance; it does not
+claim to fix the underlying kernel/PipeWire Bluetooth bug for every headset.
+
+Packages are available for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43,
+with signed update metadata. The waveform app logo and desktop association
+fixes from 0.3.6 remain included. Configuration, credentials, and history are
+preserved when upgrading. Restart Caelum after installation.
+
+## 0.3.6
+
+Caelum 0.3.6 fixes the waveform logo in application switchers and desktop launchers.
+
+- Install `io.caelum.Dictation.desktop`, matching the GTK application's existing
+  Wayland app ID, and declare the same `StartupWMClass` for desktop association.
+  The previous `caelum.desktop` filename did not match the running window's ID.
+- Migrate older Caelum-generated user launchers when the app opens. Their generic
+  microphone icon no longer overrides the waveform. Preserve the existing launch
+  command, configuration path, and extra settings; leave custom launchers alone.
+- Keep the legacy generated launcher usable, but hide its menu entry to prevent
+  duplicates. Preserve any existing canonical user entry and custom icon choice.
+- Use one desktop-entry template across native packages and add package smoke
+  checks for app-ID, window-class, and icon association on every supported distro.
+
+The Bluetooth microphone fixes from 0.3.5 remain included. Packages are available
+for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43, with signed update metadata.
+Configuration, credentials, and history are preserved. After updating, fully quit
+and reopen Caelum so the running app and desktop switcher use the updated identity.
+
+## 0.3.5
+
+Caelum 0.3.5 fixes Bluetooth microphone selection and adds the product-page
+waveform as the application logo.
+
+- Use actual PipeWire/PulseAudio input sources instead of JACK playback monitors
+  and application ports in the microphone selector. Save stable source names and
+  continue supporting existing uniquely named microphone settings.
+- Fix CMF Buds 2 and other microphones whose native sample rate differs from
+  dictation's 16 kHz format. The audio server converts capture to 16 kHz mono;
+  ALSA-only desktops retain PortAudio support.
+- Use the same capture path for dictation, onboarding, and the local microphone
+  test. Disconnected selected sources fail instead of silently recording a
+  different input; identically named sources have distinct selector labels.
+- Mark recording streams for communication so WirePlumber can switch Bluetooth
+  earbuds into headset mode while recording and restore playback afterward.
+  Desktops with automatic switching disabled still need manual selection of a
+  hands-free/headset profile. Bluetooth headset mode may lower playback quality.
+- Add the waveform logo to desktop launchers, app windows, and the system tray,
+  including regular and symbolic icons in native packages.
+
+Packages are available for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43.
+They include the PulseAudio-compatible client tools needed for microphone
+routing; these also work with PipeWire. Downloads contain four packages,
+`update.json`, and `update.json.sig`. Signing and package verification are
+unchanged. Configuration, keys, and history are preserved when upgrading.
+
+The microphone fix was checked locally with CMF Buds 2, including headset-profile
+switching and restoration. Test audio stayed in memory and was discarded, never
+saved or uploaded. Broader Bluetooth hardware compatibility is not guaranteed.
+
+## 0.3.4
+
+Caelum 0.3.4 updates Home, Settings, navigation, and background operation.
+
+- Restore the sentence-style Settings page, with System, Light, and Dark theme selection inside Settings and automatic saving.
+- Add a collapsible sidebar with the supplied collapse icon and a Statistics page between Home and History. Remove green button outlines while retaining keyboard focus indicators.
+- Show five recent dictations beside a monthly daily-usage calendar. Calendar tooltips show the number of words dictated.
+- Replace today's word count on Home with cumulative words dictated. Remove the session count and Ready pill, and simplify Statistics by removing weekly word and output-dispatch metrics.
+- Start the dictation service when the app opens, reusing an existing service. Add a system tray menu for Open Caelum, Settings, Start/Pause/Resume dictation, and Quit Caelum. Closing the window keeps Caelum in a supported system tray; Quit stops the app and service.
+- Preserve completed onboarding when managing keys or changing providers, so setup stays complete after restarting.
+
+The cumulative word total starts from existing saved history and adds future saved dictations. Retention and deletion do not reduce it; dictations deleted before this feature cannot be recovered. With history saving off, new dictations do not add to the counter. No audio is saved by this feature.
+
+Packages are available for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43. Downloads contain four packages, update.json, and update.json.sig. Signing, package hash verification, and exact distribution/version matching remain unchanged. Settings, keys, and history are preserved when upgrading.
+
+Tray placement is controlled by your desktop. The Caelum-only placement on the left of the local Omarchy bar is a user configuration, not a system layout change made by the package.
+
+## 0.3.3
+
+Fixes global dictation shortcuts in native packages, including Ctrl + Super on Hyprland. Shortcut commands now carry Caelum’s library path explicitly instead of relying on the compositor to inherit the daemon’s environment.
+
+Releases now provide packages for Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43. Release downloads contain the four packages plus signed update metadata; Debian packages, per-package checksum files, and the Arch source recipe are no longer uploaded.
+
+Package verification continues to use the signed SHA-256 digests in update.json. The signing key, exact distribution/version checks, and update signature verification are unchanged.
+
+Settings, keys, and history are retained when upgrading.
+
+## 0.3.2
+
+- Setup now opens inside the main window with four sentence-style steps, a progress indicator, and one primary action per step.
+- Continue saves provider keys automatically. Keyring storage, explicit provider and practice consent, Contributor consent, and local microphone testing are retained.
+- Choose System, Light, or Dark appearance from the bottom of the navigation rail. The preference saves automatically.
+- The navigation rail now displays the Caelum name.
+- Approved updates install and restart Caelum automatically after administrator authorization. Pending settings are preserved; cancelled or deferred installation can be retried.
+
+Ubuntu and Debian packages now declare the GTK Cairo bridge needed to render icons. Responsive layout sizing is corrected across distribution themes.
+
+Existing settings, keys, and history are retained.
+
+## 0.3.1
+
+This release refreshes the desktop interface with a redesigned Overview and sentence-style Settings. Settings changes save automatically, with provider and advanced options available inline.
+
+It also improves setup layout and privacy guidance. Existing settings and history are retained when upgrading.
+
+## 0.3.0
+
+This Linux preview adds guided setup and signed native updates.
+
+- Resumable first-launch setup with provider validation, a local microphone test,
+  shortcut selection, and an explicitly consented practice dictation.
+- In-app credential management with desktop-keyring storage and a disclosed,
+  owner-only file fallback when the keyring is unavailable.
+- Update checks, download consent, and signed release metadata pinned to the
+  verification key included in official native packages.
+- Verified package installation on the next desktop launch through polkit.
+  Recording, processing, and retryable audio defer installation rather than
+  discarding a dictation.
+- Arch package update compatibility for Omarchy with matching system Python.
+
+### Installing
+
+Existing 0.2.0 users must install this first updater-enabled release manually.
+Choose the package matching your distribution, architecture, and Python version.
+Later stable releases can be downloaded through Settings → Updates.
+
+The public update verification key ships in this release. Keep the initial
+installation source trusted; a checksum alone does not authenticate its publisher.
+Configuration, keys, and history remain outside the package and are preserved.
+
+### Preview limitations
+
+Native desktop/polkit behavior still requires hardware acceptance on each target
+distribution. Source, pip, and AUR source installations continue using their
+original installation method rather than the in-app native updater. Flatpak,
+Windows, macOS, and ARM packages are not included.
+
+## 0.2.0
+
+- A portable backend adds Record / Finish recording controls on GNOME, KDE, XFCE,
+  and other GTK4 desktops, on Wayland or X11. Completed text is saved locally;
+  use Copy text and paste into your chosen application.
+- Standard GlobalShortcuts portal integration provides hold-to-record where the
+  desktop implements it. If unavailable or declined, use app controls or a custom
+  desktop shortcut running `caelum control toggle`.
+- Native Hyprland recording, addressed paste, and the click-through recording pill
+  remain available. Omarchy is no longer required for lock-state feedback.
+- The black interface includes a collapsible sidebar and recent-dictation Copy actions.
+- Native x86-64 packages are built for Ubuntu 24.04/26.04, Debian 12/13, Arch with
+  Python 3.14, and Fedora 43. Choose the exact OS/version file. Python dependencies
+  are locked and bundled; system GTK/audio libraries are installed by the package manager.
+
+**Scope:** this is a prerelease. Automated distro tests and package installation
+checks accompany the build, but GNOME/KDE hardware acceptance testing is still
+pending. Generic desktops use manual copy, not automatic paste. Portal support
+varies by desktop/version. Flatpak/Flathub, AUR publication, ARM packages, Windows,
+and macOS are not part of this release. No provider credentials are included.
+
+Install `.deb` with `sudo apt install ./FILE.deb`, Arch packages with
+`sudo pacman -U ./FILE.pkg.tar.zst`, and RPM with `sudo dnf install ./FILE.rpm`.
+Run `caelum app`, configure provider credentials, and start the service.
+Checksums are provided alongside packages; these are not release signatures.
+See [Linux installation and compatibility](https://github.com/Parth-Jadhav-2004/caelum/blob/v0.2.0/docs/linux.md).
