@@ -43,7 +43,10 @@ export interface Bootstrap {
   privacy: string;
   setup: { stage: number; complete: boolean };
   autostart: boolean;
-  credentials: Record<string, string>;
+  credentials: Record<
+    string,
+    string | { description: string; storage: string }
+  >;
 }
 export interface Device {
   label: string;

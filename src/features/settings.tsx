@@ -188,7 +188,9 @@ export function Settings({
         </span>
       </div>
       {Object.values(bootstrap.data?.credentials ?? {}).some((description) =>
-        description.includes("not encrypted"),
+        typeof description === "string"
+          ? description.includes("not encrypted")
+          : description.storage === "file",
       ) && (
         <div
           role="alert"
@@ -202,13 +204,6 @@ export function Settings({
             restrict access, but do not encrypt your keys. Enable or unlock your
             desktop keyring, then save your keys again in Manage keys.
           </p>
-          <Button
-            className="mt-3"
-            variant="outline"
-            onClick={() => navigate("setup")}
-          >
-            Manage keys
-          </Button>
         </div>
       )}
       <Tabs defaultValue="general">

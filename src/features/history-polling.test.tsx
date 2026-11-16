@@ -13,7 +13,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 it.each(["history", "dashboard"])(
-  "slows %s history polling when hidden and resumes when visible",
+  "pauses %s history polling when hidden and immediately refetches when visible",
   async (page) => {
     vi.useFakeTimers();
     const visibility = vi
@@ -60,11 +60,15 @@ it.each(["history", "dashboard"])(
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(count()).toBe(3);
+    expect(count()).toBe(2);
     act(() => {
       visibility.mockReturnValue("visible");
       document.dispatchEvent(new Event("visibilitychange"));
     });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(count()).toBe(3);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });

@@ -2,7 +2,7 @@
 
 Release notes, newest first.
 
-## 0.4.1
+## 0.4.1 release candidate 1
 
 - **Theme selection.** Choose T3 Code, T3 Chat, Grove, Ocean, Ember, Iris, or Caelum mint in Settings.
 - **Engine recovery.** Requests have bounded deadlines, validated responses, and explicit recovery without replaying recordings.
@@ -263,6 +263,8 @@ original installation method rather than the in-app native updater. Flatpak,
 Windows, macOS, and ARM packages are not included.
 
 ## 0.2.0
+
+Caelum 0.2.0 is the first **Linux portability preview**.
 
 - A portable backend adds Record / Finish recording controls on GNOME, KDE, XFCE,
   and other GTK4 desktops, on Wayland or X11. Completed text is saved locally;

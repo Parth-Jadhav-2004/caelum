@@ -122,6 +122,7 @@ export function Setup({
       setBusy(false);
     }
   }
+  const credential = bootstrap.data?.credentials[name];
   return (
     <div className="mx-auto max-w-2xl space-y-7">
       <Heading
@@ -165,8 +166,10 @@ export function Setup({
                   ].map((v) => [v, v])}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {bootstrap.data?.credentials[name]}. Saved keys are never
-                  shown.
+                  {typeof credential === "string"
+                    ? credential
+                    : credential?.description}
+                  . Saved keys are never shown.
                 </p>
               </div>
               <div className="space-y-2">

@@ -29,6 +29,11 @@ it("contains a component crash and offers a reload", async () => {
     expect(
       screen.queryByText("sensitive internal detail"),
     ).not.toBeInTheDocument();
+    expect(log).toHaveBeenCalledWith(
+      "Caelum screen crashed",
+      expect.objectContaining({ message: "sensitive internal detail" }),
+      expect.objectContaining({ componentStack: expect.any(String) }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Reload window" }),
     );

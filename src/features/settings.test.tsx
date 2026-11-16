@@ -8,7 +8,7 @@ import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
 vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
 
-function mount(storage: string) {
+function mount(storage: string | { description: string; storage: string }) {
   vi.mocked(ipc).mockImplementation((async (method: string) => {
     if (method === "bootstrap")
       return { credentials: { GROQ_API_KEY: storage } };
@@ -23,16 +23,21 @@ function mount(storage: string) {
 }
 describe("credential storage warning", () => {
   it("warns for unencrypted files and links to key management", async () => {
+    mount({ description: "Saved locally", storage: "file" });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "API keys are stored unencrypted",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Manage keys" }));
+    expect(useApp.getState().page).toBe("setup");
+  });
+  it("supports legacy unencrypted descriptions", async () => {
     mount("key saved in private file (not encrypted)");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "API keys are stored unencrypted",
     );
-    await userEvent.click(
-      screen.getAllByRole("button", { name: "Manage keys" })[0],
-    );
-    expect(useApp.getState().page).toBe("setup");
   });
   it.each([
+    { description: "not encrypted is only display text", storage: "keyring" },
     "key saved in desktop keyring",
     "key present in environment",
     "key missing; open setup to add a key",
