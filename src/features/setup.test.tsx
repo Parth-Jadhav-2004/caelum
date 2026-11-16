@@ -24,7 +24,9 @@ beforeEach(() => {
       return {
         config,
         privacy: "Audio goes to your provider.",
-        credentials: { GROQ_API_KEY: "key missing" },
+        credentials: {
+          GROQ_API_KEY: { description: "key missing", storage: "missing" },
+        },
       };
     if (method === "devices") return [];
     if (method === "shortcut.check") return "Shortcut is available.";
@@ -44,6 +46,7 @@ function mount() {
 }
 it("requires consent and validates a staged secret before advancing", async () => {
   mount();
+  expect(await screen.findByText(/key missing/)).toBeInTheDocument();
   const user = userEvent.setup();
   expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   await user.type(screen.getByLabelText("Provider API key"), "test-only");

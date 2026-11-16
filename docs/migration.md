@@ -1,6 +1,6 @@
 # Tauri migration
 
-The baseline is 0.3.9 and docs/ui-functionality-reference.md. The marketing site
+The baseline is 0.3.9 and docs/archive/ui-functionality-reference.md. The marketing site
 is independent and is not migrated. No database or credential migration is needed:
 XDG paths, SQLite schema, owner-only credentials, and TOML fields are preserved.
 

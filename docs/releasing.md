@@ -35,7 +35,7 @@ Arch is rolling; its container/native libraries need current rebuild qualificati
 1. Choose a new stable `major.minor.patch` version. Update `pyproject.toml`,
    `package.json`/lockfile, `src-tauri/Cargo.toml`/lockfile, and
    `src-tauri/tauri.conf.json` together. Existing published versions cannot be reused.
-2. Write `docs/release-<version>.md` using [release-template.md](release-template.md).
+2. Add a newest-first `## <version>` entry to [CHANGELOG.md](../CHANGELOG.md) using [release-template.md](release-template.md).
    Lead with actual user-visible changes. Include download/support, upgrade,
    known-limitations, test evidence, and full-changelog links. Remove placeholders.
 3. Merge the release commit to the default branch, then start a candidate:

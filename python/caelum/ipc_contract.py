@@ -88,7 +88,12 @@ method(
             "privacy": STRING,
             "setup": obj({"stage": NUMBER, "complete": BOOL}),
             "autostart": BOOL,
-            "credentials": STRINGS,
+            "credentials": {
+                "type": "object",
+                "additionalProperties": union(
+                    STRING, obj({"description": STRING, "storage": STRING})
+                ),
+            },
         }
     ),
 )

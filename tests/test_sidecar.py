@@ -347,3 +347,17 @@ async def test_live_partial_settings_patch_preserves_existing_hidden_values(tmp_
     assert reply["result"] == {"saved": True}
     assert load(path).desktop.color_theme == "ocean"
     assert load(path).stt.vocabulary == config.stt.vocabulary
+
+
+async def test_bootstrap_exposes_credential_storage(backend, monkeypatch, tmp_path):
+    from caelum import credentials
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(credentials, "_secret", lambda *args: None)
+    credentials.store("GROQ_API_KEY", "private-test-key")
+    result = await backend.dispatch("bootstrap", {})
+    assert result["credentials"]["GROQ_API_KEY"] == {
+        "description": "key saved in private file (not encrypted)",
+        "storage": "file",
+    }
+    assert "private-test-key" not in json.dumps(result)

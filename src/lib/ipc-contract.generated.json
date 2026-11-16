@@ -226,7 +226,27 @@
           "credentials": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "description": {
+                      "type": "string"
+                    },
+                    "storage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "storage"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           }
         },
