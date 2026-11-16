@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
@@ -362,12 +362,35 @@ export function Statistics() {
     </div>
   );
 }
-function UsageCalendar({ activity }: { activity: Record<string, number> }) {
+function dateKey(day: Date) {
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+}
+export function UsageCalendar({
+  activity,
+}: {
+  activity: Record<string, number>;
+}) {
   const today = new Date(),
     [month, setMonth] = useState(
       () => new Date(today.getFullYear(), today.getMonth(), 1),
     ),
     [selected, select] = useState("");
+  const [focused, setFocused] = useState(() => dateKey(today));
+  const calendar = useRef<HTMLDivElement>(null);
+  const focusPending = useRef(false);
+  useLayoutEffect(() => {
+    if (focusPending.current) {
+      calendar.current
+        ?.querySelector<HTMLButtonElement>(`[data-date="${focused}"]`)
+        ?.focus();
+      focusPending.current = false;
+    }
+  }, [focused, month]);
+  function changeMonth(offset: number) {
+    const next = new Date(month.getFullYear(), month.getMonth() + offset, 1);
+    setMonth(next);
+    setFocused(dateKey(next));
+  }
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   return (
     <section className="space-y-4">
@@ -378,9 +401,7 @@ function UsageCalendar({ activity }: { activity: Record<string, number> }) {
             variant="ghost"
             size="icon"
             aria-label="Previous month"
-            onClick={() =>
-              setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
-            }
+            onClick={() => changeMonth(-1)}
           >
             <ChevronLeft />
           </Button>
@@ -398,15 +419,22 @@ function UsageCalendar({ activity }: { activity: Record<string, number> }) {
               month.getFullYear() === today.getFullYear() &&
               month.getMonth() === today.getMonth()
             }
-            onClick={() =>
-              setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
-            }
+            onClick={() => changeMonth(1)}
           >
             <ChevronRight />
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-2">
+      <p className="text-xs text-muted-foreground">
+        Use arrow keys to move by day or week, Home/End for the start/end of the
+        week, Enter to select, and Escape to clear the selection.
+      </p>
+      <div
+        ref={calendar}
+        role="group"
+        aria-label="Daily usage calendar"
+        className="grid grid-cols-7 gap-2"
+      >
         {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
           <span key={d} className="text-center text-xs text-muted-foreground">
             {d}
@@ -417,7 +445,7 @@ function UsageCalendar({ activity }: { activity: Record<string, number> }) {
         ))}
         {Array.from({ length: days }, (_, i) => {
           const day = new Date(month.getFullYear(), month.getMonth(), i + 1),
-            key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`,
+            key = dateKey(day),
             words = activity[key] ?? 0;
           return (
             <Button
@@ -426,6 +454,37 @@ function UsageCalendar({ activity }: { activity: Record<string, number> }) {
               className={`h-9 text-xs ${words >= 1000 ? "bg-primary/70 text-primary-foreground" : words >= 500 ? "bg-primary/40" : words >= 100 ? "bg-primary/20" : words ? "bg-primary/10" : "bg-muted/40"}`}
               disabled={day > today}
               aria-label={`${key}: ${words} words`}
+              aria-pressed={selected === key}
+              data-date={key}
+              tabIndex={focused === key ? 0 : -1}
+              onFocus={() => setFocused(key)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  select("");
+                  return;
+                }
+                const offsets: Record<string, number> = {
+                  ArrowLeft: -1,
+                  ArrowRight: 1,
+                  ArrowUp: -7,
+                  ArrowDown: 7,
+                  Home: -day.getDay(),
+                  End: 6 - day.getDay(),
+                };
+                const offset = offsets[event.key];
+                if (offset === undefined) return;
+                event.preventDefault();
+                const next = new Date(
+                  day.getFullYear(),
+                  day.getMonth(),
+                  day.getDate() + offset,
+                );
+                if (next > today) next.setTime(today.getTime());
+                focusPending.current = true;
+                setFocused(dateKey(next));
+                setMonth(new Date(next.getFullYear(), next.getMonth(), 1));
+              }}
               onClick={() => select(key)}
             >
               {i + 1}
@@ -433,7 +492,7 @@ function UsageCalendar({ activity }: { activity: Record<string, number> }) {
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p role="status" className="text-xs text-muted-foreground">
         {selected ? `${selected}: ${activity[selected] ?? 0} words. ` : ""}Words
         from saved dictations. Intensity: 0, 1–99, 100–499, 500–999, 1,000+.
       </p>
