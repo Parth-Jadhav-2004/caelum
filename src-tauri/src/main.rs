@@ -172,12 +172,28 @@ fn open_key_console() -> Result<(), String> {
         .map_err(|_| "Could not open your browser".into())
 }
 #[tauri::command]
-fn open_releases() -> Result<(), String> {
+fn open_releases(version: Option<String>) -> Result<(), String> {
     std::process::Command::new("xdg-open")
-        .arg("https://github.com/Parth-Jadhav-2004/caelum/releases")
+        .arg(release_url(version.as_deref())?)
         .spawn()
         .map(|_| ())
         .map_err(|_| "Could not open your browser".into())
+}
+fn release_url(version: Option<&str>) -> Result<String, String> {
+    let root = "https://github.com/Parth-Jadhav-2004/caelum/releases";
+    match version {
+        None => Ok(root.into()),
+        Some(value)
+            if value.len() <= 64
+                && value.starts_with(|c: char| c.is_ascii_digit())
+                && value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-') =>
+        {
+            Ok(format!("{root}/tag/v{value}"))
+        }
+        _ => Err("Invalid release version".into()),
+    }
 }
 #[tauri::command]
 async fn quit_app(
@@ -454,4 +470,30 @@ fn main() {
                 tauri::async_runtime::block_on(app.state::<Desktop>().engine.close());
             }
         });
+}
+
+#[cfg(test)]
+mod release_link_tests {
+    use super::release_url;
+
+    #[test]
+    fn release_links_stay_on_the_fixed_repository() {
+        assert_eq!(
+            release_url(Some("0.4.1-rc.2")).unwrap(),
+            "https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.4.1-rc.2"
+        );
+        assert_eq!(
+            release_url(None).unwrap(),
+            "https://github.com/Parth-Jadhav-2004/caelum/releases"
+        );
+        for value in [
+            "",
+            "../other",
+            "https://example.com",
+            "0.4.1?redirect=evil",
+            "0.4.1/../../",
+        ] {
+            assert!(release_url(Some(value)).is_err());
+        }
+    }
 }

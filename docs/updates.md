@@ -4,7 +4,14 @@
 
 Official x86-64 native packages built with a pinned update key check the latest
 **stable** GitHub release when the desktop app opens. The Settings footer can also
-check manually. Disable **Check for updates when Caelum opens** in Advanced settings
+check manually. Manual checks also look for testing releases, including newer
+candidates with the same package version. A testing build gets a separate
+**Download testing build** action opening its GitHub release page for explicit
+package-manager installation. It is never staged as an unsigned automatic update.
+Official packages record the source commit and source date so the check can
+recognize the installed build and avoid offering older testing builds.
+
+Disable **Check for updates when Caelum opens** in Advanced settings
 to stop automatic network checks; changes save automatically. The background dictation service never checks,
 downloads, or opens authorization dialogs by itself.
 

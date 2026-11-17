@@ -90,6 +90,10 @@ interface Methods {
   "setup.finish": [Record<string, never>, Ack];
   launcher: [{ autostart?: boolean; enabled?: boolean }, string];
   "updates.check": [Record<string, never>, { version: string } | null];
+  "updates.testing": [
+    Record<string, never>,
+    { version: string; installed: boolean } | null,
+  ];
   "updates.stage": [Record<string, never>, string];
   "updates.apply": [Record<string, never>, boolean];
   "updates.discard": [Record<string, never>, Ack];

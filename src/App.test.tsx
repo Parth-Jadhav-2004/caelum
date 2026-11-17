@@ -59,6 +59,7 @@ beforeEach(() => {
         autostart: false,
       };
     if (method === "status") return useApp.getState().status;
+    if (method === "updates.testing") return null;
     if (method === "history" || method === "devices") return [];
     if (method === "summary") return { daily: {}, activity: {} };
     return { saved: true };
@@ -198,8 +199,10 @@ it("shows stable update results beside the update controls and links to releases
   await screen.findByRole("heading", { name: /dictate anywhere/ });
   await userEvent.click(screen.getByRole("button", { name: "Settings" }));
   await userEvent.click(await screen.findByRole("button", { name: "System" }));
-  await userEvent.click(screen.getByRole("button", { name: "Check updates" }));
-  const result = await screen.findByText("Up to date", {
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Check updates" }),
+  );
+  const result = await screen.findByText("No newer stable release.", {
     selector: "p[role=status]",
   });
   expect(result).toHaveAttribute("role", "status");

@@ -1046,6 +1046,37 @@
         ]
       }
     },
+    "updates.testing": {
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "installed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "version",
+              "installed"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
     "updates.stage": {
       "params": {
         "type": "object",

@@ -11,6 +11,7 @@ import stat
 import subprocess
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 REPOSITORY = "Parth-Jadhav-2004/caelum"
@@ -295,6 +296,90 @@ def check():
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
         return None
     return {"version": manifest["version"], "raw": raw, "signature": signature}
+
+
+def testing_source(release, version):
+    """Read the source commit date; publication time cannot order installed builds."""
+    source = release.get("target_commitish")
+    with network_client(30) as client:
+        if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
+            provenance = json.loads(fetch(
+                client, f"{RELEASES}/download/{release['tag_name']}/candidate.json", 65536,
+            ))
+            source = provenance["sha"]
+            if (
+                provenance.get("schema") != 1 or provenance.get("version") != version
+                or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)
+            ):
+                raise ValueError("Invalid testing source provenance")
+        commit = json.loads(fetch(
+            client, f"https://api.github.com/repos/{REPOSITORY}/git/commits/{source}", 65536,
+        ))
+    date = datetime.fromisoformat(commit["committer"]["date"].replace("Z", "+00:00"))
+    if commit.get("sha") != source or date.tzinfo is None:
+        raise ValueError("Invalid testing source commit")
+    return source, date.timestamp()
+
+
+def check_testing():
+    """Discover testing releases for manual installation; never stage unsigned bytes."""
+    info = installed()
+    if not info or not compatible(info):
+        raise RuntimeError("Use your package manager for updates to this installation")
+    import httpx
+
+    try:
+        with network_client(30) as client:
+            releases = json.loads(fetch(
+                client, f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=20",
+                512 * 1024,
+            ))
+        if not isinstance(releases, list):
+            raise ValueError("Invalid release list")
+        stable = (0, 0, 0)
+        candidates = []
+        for release in releases:
+            if not isinstance(release, dict) or release.get("draft") is not False:
+                continue
+            tag = release.get("tag_name", "")
+            if not isinstance(tag, str):
+                continue
+            if release.get("prerelease") is False and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+                stable = max(stable, version_tuple(tag[1:]))
+            elif release.get("prerelease") is True:
+                match = re.fullmatch(r"v(\d+\.\d+\.\d+)-rc\.([1-9]\d*)", tag)
+                if match:
+                    candidates.append((version_tuple(match[1]), int(match[2]), release))
+        for version, _, release in sorted(candidates, key=lambda item: item[:2], reverse=True):
+            if version < version_tuple(info["version"]) or version <= stable:
+                continue
+            source = release.get("target_commitish")
+            same_build = bool(info.get("source") and info["source"] == source)
+            base_version = ".".join(map(str, version))
+            installed_date = info.get("source_date")
+            if (
+                not same_build and base_version == info["version"]
+                and type(installed_date) is int and installed_date > 0
+            ):
+                source, source_date = testing_source(release, base_version)
+                same_build = bool(info.get("source") and info["source"] == source)
+                if not same_build and source_date <= installed_date:
+                    continue
+            target = info["target"]
+            name = (
+                f"caelum-{base_version}-1-x86_64.pkg.tar.zst" if target == "arch"
+                else f"caelum-{base_version}-1.fedora43.x86_64.rpm" if target == "fedora-43"
+                else f"caelum_{base_version}-1_{target}_amd64.deb"
+            )
+            if not any(
+                isinstance(asset, dict) and asset.get("name") == name
+                for asset in release.get("assets", [])
+            ):
+                continue
+            return {"version": release["tag_name"][1:], "installed": same_build}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
+        raise RuntimeError("Could not check testing releases. Try again.") from error
+    return None
 
 
 def stage(update):

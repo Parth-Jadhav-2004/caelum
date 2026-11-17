@@ -321,6 +321,10 @@ class Backend:
 
             self.update = await asyncio.to_thread(check)
             return {"version": self.update["version"]} if self.update else None
+        elif method == "updates.testing":
+            from .updates import check_testing
+
+            return await asyncio.to_thread(check_testing)
         elif method == "updates.stage":
             from .updates import stage
 
@@ -383,6 +387,7 @@ async def run():
                 "microphone.test",
                 "practice",
                 "sample.cancel",
+                "updates.testing",
             }:
                 result = await backend.dispatch(method, params)
             else:

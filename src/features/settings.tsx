@@ -1,7 +1,7 @@
-import { version } from "../../package.json";
-import { invoke } from "@tauri-apps/api/core";
 import {
   useState,
+  lazy,
+  Suspense,
   useRef,
   useEffect,
   useLayoutEffect,
@@ -9,7 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, FlaskConical, Check, RefreshCw } from "lucide-react";
+import { KeyRound, FlaskConical, Check } from "lucide-react";
 import { ipc, type Config } from "@/lib/ipc";
 import { action, Heading, Confirm } from "@/components/common";
 import { useApp } from "@/stores/app";
@@ -28,6 +28,10 @@ import { HistoryTools } from "./history";
 import { MicrophoneTestDialog } from "./microphone";
 import { ACCENTS, resolveColorTheme } from "@/lib/themes";
 import { DeviceSelect } from "./dashboard";
+import { Skeleton } from "@/components/ui/skeleton";
+const UpdateSettings = lazy(() =>
+  import("./update-settings").then((m) => ({ default: m.UpdateSettings })),
+);
 export function Choice({
   label,
   value,
@@ -170,17 +174,9 @@ export function Settings({
     queryKey: ["bootstrap"],
     queryFn: () => ipc("bootstrap", {}),
   });
-  const pending = useQuery({
-    queryKey: ["updates.pending"],
-    queryFn: () => ipc("updates.pending", {}),
-  });
   const [testing, setTesting] = useState(false),
     [preparingMic, setPreparingMic] = useState(false),
-    [connectionChecking, setConnectionChecking] = useState(false),
-    [updateChecking, setUpdateChecking] = useState(false),
-    [updateStatus, setUpdateStatus] = useState(""),
-    [update, setUpdate] = useState<string | null>(null),
-    [confirmUpdate, setConfirmUpdate] = useState(false);
+    [connectionChecking, setConnectionChecking] = useState(false);
   const [connection, setConnection] = useState(""),
     [autostart, setAutostart] = useState(bootstrap.data?.autostart ?? false);
   useEffect(() => {
@@ -590,84 +586,17 @@ export function Settings({
             </>
           )}
           {group === "System" && (
-            <>
-              <Row
-                title={`Caelum ${version}`}
-                detail={
-                  update
-                    ? `Version ${update} available`
-                    : pending.data
-                      ? "An update is ready to install."
-                      : updateStatus || "Check for updates"
-                }
-              >
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={updateChecking}
-                    onClick={() => {
-                      if (update || pending.data) {
-                        setConfirmUpdate(true);
-                        return;
-                      }
-                      setUpdateChecking(true);
-                      setUpdateStatus("Checking for updates…");
-                      void action(() => ipc("updates.check", {}))
-                        .then((result) => {
-                          if (result) {
-                            setUpdate(result.version);
-                            setUpdateStatus(
-                              `Version ${result.version} is available.`,
-                            );
-                          } else if (result === null) {
-                            setUpdate(null);
-                            setUpdateStatus("Up to date");
-                          } else {
-                            setUpdateStatus(
-                              "Could not check updates. Try again.",
-                            );
-                          }
-                        })
-                        .finally(() => setUpdateChecking(false));
-                    }}
-                  >
-                    <RefreshCw />
-                    {update || pending.data
-                      ? "Update & restart"
-                      : "Check updates"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => void action(() => invoke("open_releases"))}
-                  >
-                    View releases
-                  </Button>
-                  {pending.data && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        void action(
-                          () => ipc("updates.discard", {}),
-                          "Update removed.",
-                        ).then(() => pending.refetch());
-                      }}
-                    >
-                      Discard
-                    </Button>
-                  )}
-                </div>
-              </Row>
-              <Row title="Check updates when Caelum opens">
-                <Switch
-                  aria-label="Check updates on launch"
-                  checked={config.desktop.check_updates}
-                  onCheckedChange={(v) => set("desktop", "check_updates", v)}
+            <Suspense
+              fallback={
+                <Skeleton
+                  aria-label="Loading update controls"
+                  aria-busy="true"
+                  className="h-40"
                 />
-              </Row>
-              <p role="status" className="text-meta">
-                {updateStatus}
-              </p>
-            </>
+              }
+            >
+              <UpdateSettings config={config} change={change} />
+            </Suspense>
           )}
           {group === "Advanced" && (
             <>
@@ -741,19 +670,6 @@ export function Settings({
         onConfirm={async () => {
           await ipc("service.stop", { discard: true });
           setStopService(false);
-        }}
-      />
-      <Confirm
-        open={confirmUpdate}
-        title={`Install ${update ? `Caelum ${update}` : "queued update"}?`}
-        detail="Downloads and verifies a signed package. Administrator authorization is required. Finish dictation first. Settings and history are preserved."
-        confirm="Update & restart"
-        onCancel={() => setConfirmUpdate(false)}
-        onConfirm={async () => {
-          if (!pending.data) await ipc("updates.stage", {});
-          await ipc("updates.apply", {});
-          await invoke("restart_app");
-          setConfirmUpdate(false);
         }}
       />
     </div>

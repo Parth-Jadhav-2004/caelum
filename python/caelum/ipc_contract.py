@@ -171,6 +171,7 @@ method(
     "launcher", obj({"autostart": BOOL, "enabled": BOOL}, optional=("autostart", "enabled")), STRING
 )
 method("updates.check", result=union(obj({"version": STRING}), NULL))
+method("updates.testing", result=union(obj({"version": STRING, "installed": BOOL}), NULL))
 method("updates.stage", result=STRING)
 method("updates.apply", result=BOOL)
 method("updates.discard")

@@ -105,7 +105,15 @@ def build(target, output, epoch):
         shutil.copy2(ROOT / "config.example.toml", library / "caelum/config.example.toml")
         write(
             library / "caelum/release.json",
-            json.dumps({"version": version, "target": target, "python": python}),
+            json.dumps({
+                "version": version, "target": target, "python": python,
+                "source": subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+                ).strip(),
+                "source_date": int(subprocess.check_output(
+                    ["git", "log", "-1", "--format=%ct"], cwd=ROOT, text=True,
+                ).strip()),
+            }),
         )
         # Avoid metadata paths referring to the build machine.
         for bytecode in library.rglob("__pycache__"):
