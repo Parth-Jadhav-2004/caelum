@@ -86,6 +86,10 @@ impl Engine {
                 }
             };
             reader_requests.fail(failure.clone());
+            update_tray(
+                &app,
+                &json!({"state":"error", "title":"Caelum stopped", "running":false}),
+            );
             let _ = app.emit("engine:disconnected", failure);
         });
         Ok(Self {
@@ -197,12 +201,31 @@ struct TrayMenu {
     pause: tauri::menu::MenuItem<tauri::Wry>,
     start: tauri::menu::MenuItem<tauri::Wry>,
     paused: AtomicBool,
+    last_status: std::sync::Mutex<String>,
 }
 fn update_tray(app: &tauri::AppHandle, data: &Value) {
     let paused = data["paused"].as_bool().unwrap_or(false);
+    let running = data["running"].as_bool().unwrap_or(false);
     let state = data["state"].as_str().unwrap_or("hidden");
     let title = data["title"].as_str().unwrap_or("Ready");
     if let Some(menu) = app.try_state::<TrayMenu>() {
+        // Audio level events do not change the tray. Avoid repeatedly rebuilding
+        // its icon and menu over D-Bus while recording.
+        let signature = json!([
+            running,
+            paused,
+            state,
+            title,
+            data["hotkey"],
+            data["pending_audio"]
+        ])
+        .to_string();
+        if let Ok(mut last) = menu.last_status.lock() {
+            if *last == signature {
+                return;
+            }
+            *last = signature;
+        }
         menu.paused.store(paused, Ordering::SeqCst);
         let status_line = data["hotkey"]
             .as_str()
@@ -214,8 +237,9 @@ fn update_tray(app: &tauri::AppHandle, data: &Value) {
         } else {
             "Pause dictation"
         });
+        let _ = menu.pause.set_enabled(running);
         let _ = menu.start.set_enabled(
-            data["running"].as_bool().unwrap_or(false)
+            running
                 && !paused
                 && !data["pending_audio"].as_bool().unwrap_or(false)
                 && matches!(
@@ -227,27 +251,29 @@ fn update_tray(app: &tauri::AppHandle, data: &Value) {
     if let Some(tray) = app.tray_by_id("caelum") {
         let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
         // A monochrome line mark changes shape; colour only signals an error.
-        let mut pixels = vec![0u8; 32 * 32 * 4];
-        for y in 4usize..28 {
-            for x in 4usize..28 {
-                let ink = if state == "error" {
-                    (14..18).contains(&x) && ((6..19).contains(&y) || (23..26).contains(&y))
-                } else if paused {
-                    ((9..13).contains(&x) || (19..23).contains(&x)) && (7..25).contains(&y)
-                } else if matches!(state, "starting" | "listening" | "recording") {
-                    let height = [6, 12, 20, 12, 6][((x - 4) / 5).min(4)];
-                    x % 5 < 2 && y.abs_diff(16) < height / 2
-                } else {
-                    let d = (x as i32 - 16).pow(2) + (y as i32 - 16).pow(2);
-                    (64..=100).contains(&d)
-                };
-                if ink {
-                    let i = (y * 32 + x) * 4;
-                    pixels[i..i + 4].copy_from_slice(if state == "error" {
-                        &[242, 85, 90, 255]
+        let mut pixels = include_bytes!("../icons/tray.rgba").to_vec();
+        if state == "error" || paused || matches!(state, "starting" | "listening" | "recording") {
+            pixels.fill(0);
+            for y in 4usize..28 {
+                for x in 4usize..28 {
+                    let ink = if state == "error" {
+                        (14..18).contains(&x) && ((6..19).contains(&y) || (23..26).contains(&y))
+                    } else if paused {
+                        ((9..13).contains(&x) || (19..23).contains(&x)) && (7..25).contains(&y)
+                    } else if matches!(state, "starting" | "listening" | "recording") {
+                        let height = [6, 12, 20, 12, 6][((x - 4) / 5).min(4)];
+                        x % 5 < 2 && y.abs_diff(16) < height / 2
                     } else {
-                        &[237, 237, 239, 255]
-                    });
+                        false
+                    };
+                    if ink {
+                        let i = (y * 32 + x) * 4;
+                        pixels[i..i + 4].copy_from_slice(if state == "error" {
+                            &[242, 85, 90, 255]
+                        } else {
+                            &[237, 237, 239, 255]
+                        });
+                    }
                 }
             }
         }
@@ -314,9 +340,9 @@ fn main() {
             });
             use tauri::menu::{Menu, MenuItem};
             let open = MenuItem::with_id(app, "open", "Open Caelum", true, None::<&str>)?;
-            let pause = MenuItem::with_id(app, "pause", "Pause dictation", true, None::<&str>)?;
+            let pause = MenuItem::with_id(app, "pause", "Pause dictation", false, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "Connecting…", false, None::<&str>)?;
-            let start = MenuItem::with_id(app, "start", "Start dictation", true, None::<&str>)?;
+            let start = MenuItem::with_id(app, "start", "Start dictation", false, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Caelum", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&status, &start, &pause, &open, &settings, &quit])?;
@@ -325,6 +351,7 @@ fn main() {
                 start,
                 pause,
                 paused: AtomicBool::new(false),
+                last_status: std::sync::Mutex::new(String::new()),
             });
             let icon = tauri::image::Image::new_owned(
                 include_bytes!("../icons/tray.rgba").to_vec(),

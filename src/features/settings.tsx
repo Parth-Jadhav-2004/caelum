@@ -4,6 +4,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   type ReactNode,
   type KeyboardEvent,
 } from "react";
@@ -23,12 +24,6 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
-import { Info } from "lucide-react";
 import { HistoryTools } from "./history";
 import { MicrophoneTestDialog } from "./microphone";
 import { ACCENTS, resolveColorTheme } from "@/lib/themes";
@@ -70,20 +65,12 @@ export function Row({
 }) {
   return (
     <div className="flex min-h-12 flex-col justify-between gap-4 border-b py-1 last:border-0 sm:flex-row sm:items-center">
-      <div className="flex items-center">
+      <div className="min-w-0 space-y-1 py-2">
         <p className="text-sm font-medium">{title}</p>
         {detail && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label={`About ${title}`}
-                className="ml-2 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground"
-              >
-                <Info className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">{detail}</TooltipContent>
-          </Tooltip>
+          <p className="max-w-md whitespace-pre-line text-meta text-muted-foreground">
+            {detail}
+          </p>
         )}
       </div>
       <div className="shrink-0">{children}</div>
@@ -108,6 +95,7 @@ export function Shortcut({
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     const mods = [
       event.metaKey && "SUPER",
       event.ctrlKey && "CTRL",
@@ -153,20 +141,30 @@ export function Settings({
   config,
   change,
   saveState,
+  commit,
   initialGroup = "General",
 }: {
   config: Config;
   change: (next: Config) => void;
   saveState: string;
+  commit?: (next: Config) => Promise<void>;
   initialGroup?: string;
 }) {
   const [group, setLocalGroup] = useState(initialGroup);
+  const settingsContent = useRef<HTMLElement>(null);
+  const previousGroup = useRef(group);
+  useLayoutEffect(() => {
+    if (previousGroup.current === group) return;
+    previousGroup.current = group;
+    settingsContent.current?.focus({ preventScroll: true });
+    settingsContent.current?.scrollIntoView({ block: "nearest" });
+  }, [group]);
   function setGroup(value: string) {
     setLocalGroup(value);
     useApp.setState({ settingsGroup: value });
   }
   const navigate = useApp((s) => s.navigate);
-  const status = useApp((s) => s.status);
+  const running = useApp((s) => s.status?.running);
   const [stopService, setStopService] = useState(false);
   const bootstrap = useQuery({
     queryKey: ["bootstrap"],
@@ -177,6 +175,7 @@ export function Settings({
     queryFn: () => ipc("updates.pending", {}),
   });
   const [testing, setTesting] = useState(false),
+    [preparingMic, setPreparingMic] = useState(false),
     [connectionChecking, setConnectionChecking] = useState(false),
     [updateChecking, setUpdateChecking] = useState(false),
     [updateStatus, setUpdateStatus] = useState(""),
@@ -262,8 +261,13 @@ export function Settings({
             </Button>
           ))}
         </nav>
-        <section aria-label={group} className="min-w-0 flex-1">
-          <h2 className="sr-only">{group}</h2>
+        <section
+          ref={settingsContent}
+          key={group}
+          tabIndex={-1}
+          aria-label={group}
+          className="screen-enter min-w-0 flex-1"
+        >
           {group === "General" && (
             <>
               <Row title="Recording shortcut">
@@ -290,7 +294,18 @@ export function Settings({
                 />
               </Row>
               <Row title="Test your microphone">
-                <Button variant="outline" onClick={() => setTesting(true)}>
+                <Button
+                  variant="outline"
+                  disabled={preparingMic}
+                  onClick={() => {
+                    setPreparingMic(true);
+                    void action(async () => {
+                      // Flush a newly selected device before the backend opens it.
+                      await commit?.(config);
+                      setTesting(true);
+                    }).finally(() => setPreparingMic(false));
+                  }}
+                >
                   <FlaskConical />
                   Test mic
                 </Button>
@@ -382,8 +397,8 @@ export function Settings({
                   }
                 />
               </Row>
-              <Row title={connection || "Connection"}>
-                <div className="flex gap-2">
+              <Row title="Connection" detail={connection || undefined}>
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     disabled={connectionChecking}
@@ -503,37 +518,18 @@ export function Settings({
           {group === "Appearance" && (
             <>
               <Row title="Caelum accent">
-                <fieldset
-                  role="radiogroup"
-                  aria-label="Caelum accent"
-                  className="flex flex-wrap gap-2"
-                >
-                  <legend className="sr-only">Caelum accent</legend>
-                  {ACCENTS.map((accent) => (
-                    <label key={accent.id} className="relative cursor-pointer">
-                      <input
-                        className="peer sr-only"
-                        type="radio"
-                        name="caelum-accent"
-                        value={accent.id}
-                        checked={
-                          resolveColorTheme(config.desktop.color_theme) ===
-                          accent.id
-                        }
-                        onChange={() =>
-                          set("desktop", "color_theme", accent.id)
-                        }
-                      />
-                      <span className="flex min-h-9 items-center gap-2 rounded-md border border-transparent px-3 text-meta peer-checked:border-input peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring">
-                        <span
-                          aria-hidden="true"
-                          className={`size-3 rounded-full ${resolveColorTheme(config.desktop.color_theme) === accent.id ? "bg-accent-brand" : "border border-input bg-muted"}`}
-                        />
-                        {accent.label}
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="size-3 rounded-sm bg-accent-brand"
+                  />
+                  <Choice
+                    label="Caelum accent"
+                    value={resolveColorTheme(config.desktop.color_theme)}
+                    items={ACCENTS.map((accent) => [accent.id, accent.label])}
+                    change={(v) => set("desktop", "color_theme", v)}
+                  />
+                </div>
               </Row>
               <Row title="Reduce motion">
                 <Switch
@@ -576,19 +572,19 @@ export function Settings({
                     );
                   }}
                 >
-                  Install entry
+                  Add to launcher
                 </Button>
               </Row>
               <Row title="Dictation service">
                 <Button
                   variant="outline"
-                  disabled={!status}
+                  disabled={running === undefined}
                   onClick={() => {
-                    if (status?.running) setStopService(true);
+                    if (running) setStopService(true);
                     else void action(() => ipc("service.start", {}));
                   }}
                 >
-                  {status?.running ? "Stop service" : "Start service"}
+                  {running ? "Stop service" : "Start service"}
                 </Button>
               </Row>
             </>
@@ -601,11 +597,11 @@ export function Settings({
                   update
                     ? `Version ${update} available`
                     : pending.data
-                      ? "A verified update is queued."
-                      : "Up to date"
+                      ? "An update is ready to install."
+                      : updateStatus || "Check for updates"
                 }
               >
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     disabled={updateChecking}
@@ -615,7 +611,7 @@ export function Settings({
                         return;
                       }
                       setUpdateChecking(true);
-                      setUpdateStatus("Checking stable releases…");
+                      setUpdateStatus("Checking for updates…");
                       void action(() => ipc("updates.check", {}))
                         .then((result) => {
                           if (result) {
@@ -652,7 +648,7 @@ export function Settings({
                       onClick={() => {
                         void action(
                           () => ipc("updates.discard", {}),
-                          "Queued update discarded.",
+                          "Update removed.",
                         ).then(() => pending.refetch());
                       }}
                     >
@@ -689,7 +685,7 @@ export function Settings({
                             {field === "base_url"
                               ? "Provider URL"
                               : field === "key_env"
-                                ? "Credential variable"
+                                ? "API key name"
                                 : "Model"}
                           </Label>
                           <Input

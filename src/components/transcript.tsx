@@ -1,13 +1,8 @@
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { ChevronRight, Trash2 } from "lucide-react";
 import type { Dictation } from "@/lib/ipc";
 import { CopyButton } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
 
 export function dayLabel(value: string, now = new Date()) {
   const day = new Date(value);
@@ -41,19 +36,9 @@ export function TranscriptDetails({ entry }: { entry: Dictation }) {
           {entry.copied ? (
             "Not inserted"
           ) : !entry.refined ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="min-h-8 rounded px-2 text-meta underline decoration-dotted underline-offset-4"
-                  aria-label="About raw text"
-                >
-                  Raw
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Text cleanup was skipped or unavailable.
-              </TooltipContent>
-            </Tooltip>
+            <span>
+              <span>Raw</span> · Text cleanup was skipped or unavailable.
+            </span>
           ) : (
             "Cleaned up"
           )}
@@ -62,7 +47,7 @@ export function TranscriptDetails({ entry }: { entry: Dictation }) {
     </dl>
   );
 }
-export function TranscriptList({
+export const TranscriptList = memo(function TranscriptList({
   entries,
   onDelete,
   onDetails,
@@ -100,7 +85,7 @@ export function TranscriptList({
       ))}
     </div>
   );
-}
+});
 export function Transcript({
   entry,
   onDelete,
@@ -117,7 +102,7 @@ export function Transcript({
   const open = onDetails ? selected : expanded;
   return (
     <article
-      className={`group rounded-lg px-4 py-3 ${open ? "bg-muted" : "bg-card"}`}
+      className={`transcript-row group min-w-0 rounded-lg px-4 py-3 ${open ? "bg-muted" : "bg-card"}`}
     >
       <div className="flex items-start gap-4">
         <time
@@ -130,11 +115,11 @@ export function Transcript({
           })}
         </time>
         <p
-          className={`min-h-8 flex-1 select-text pt-1.5 text-body ${open && !onDetails ? "whitespace-pre-wrap" : "line-clamp-2"}`}
+          className={`min-h-8 min-w-0 flex-1 select-text break-words pt-1.5 text-body ${open && !onDetails ? "whitespace-pre-wrap" : "line-clamp-2"}`}
         >
           {entry.final_transcript}
         </p>
-        <div className="flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="flex shrink-0 opacity-100 transition-opacity duration-160 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
           <Button
             id={`dictation-details-${entry.id}`}
             variant="ghost"

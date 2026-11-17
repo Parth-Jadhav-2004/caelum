@@ -290,3 +290,46 @@ it("keeps the structured file-storage warning visible after microphone success",
     "Key stored without encryption",
   );
 });
+
+it("waits for a changed microphone to finish saving before checking it", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "devices"
+      ? Promise.resolve([{ value: "usb", label: "USB microphone" }])
+      : original(method, params)) as typeof ipc);
+  let finishSave: () => void = () => {};
+  function PendingSaveSetup() {
+    const [config, setConfig] = useState(testConfig);
+    return (
+      <Setup
+        config={config}
+        commit={async (next) => {
+          setConfig(next);
+          if (next.app.microphone === "usb")
+            await new Promise<void>((resolve) => {
+              finishSave = resolve;
+            });
+        }}
+      />
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <PendingSaveSetup />
+    </QueryClientProvider>,
+  );
+  await connect();
+  await screen.findByText("We hear you ✓");
+  await userEvent.click(screen.getByText("Change mic"));
+  await userEvent.click(screen.getByRole("combobox", { name: "Microphone" }));
+  await userEvent.click(screen.getByRole("option", { name: "USB microphone" }));
+  expect(screen.getByRole("button", { name: "Listening…" })).toBeDisabled();
+  expect(screen.queryByText("We hear you ✓")).not.toBeInTheDocument();
+  const tests = () =>
+    vi.mocked(ipc).mock.calls.filter(([method]) => method === "microphone.test")
+      .length;
+  expect(tests()).toBe(1);
+  await act(async () => finishSave());
+  await screen.findByText("We hear you ✓");
+  expect(tests()).toBe(2);
+});

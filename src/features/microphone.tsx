@@ -15,15 +15,18 @@ import {
 export function useMicrophoneLevel(active: boolean) {
   const [level, setLevel] = useState(0);
   useEffect(() => {
+    setLevel(0);
     if (!active) return;
     let disposed = false;
     let stop: (() => void) | undefined;
     void listen<{ level: number }>("engine:microphone", (event) => {
       if (!disposed) setLevel(event.payload.level);
-    }).then((fn) => {
-      if (disposed) fn();
-      else stop = fn;
-    });
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else stop = fn;
+      })
+      .catch(() => {});
     return () => {
       disposed = true;
       stop?.();
@@ -59,6 +62,8 @@ function MicrophoneCheck({
 }) {
   const [listening, setListening] = useState(true);
   const [message, setMessage] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [stopping, setStopping] = useState(false);
   const stopped = useRef(false);
   const level = useMicrophoneLevel(listening);
   const devices = useQuery({
@@ -72,6 +77,9 @@ function MicrophoneCheck({
         String(device));
   useEffect(() => {
     let disposed = false;
+    stopped.current = false;
+    setListening(true);
+    setMessage("");
     void ipc("microphone.test", {})
       .then(() => {
         if (!disposed && !stopped.current) setMessage("We hear you ✓");
@@ -84,9 +92,9 @@ function MicrophoneCheck({
       });
     return () => {
       disposed = true;
-      void ipc("sample.cancel", {});
+      void ipc("sample.cancel", {}).catch(() => {});
     };
-  }, []);
+  }, [attempt]);
   return (
     <>
       <p className="text-body font-medium">{name}</p>
@@ -101,10 +109,22 @@ function MicrophoneCheck({
             onClick={() => {
               stopped.current = true;
               setListening(false);
-              void action(() => ipc("sample.cancel", {}));
+              setStopping(true);
+              void action(() => ipc("sample.cancel", {})).finally(() =>
+                setStopping(false),
+              );
             }}
           >
             Stop
+          </Button>
+        )}
+        {!listening && (
+          <Button
+            variant="ghost"
+            disabled={stopping}
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            Test again
           </Button>
         )}
         <Button variant="secondary" onClick={onClose}>
