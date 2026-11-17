@@ -94,7 +94,7 @@ export function Dashboard({ config }: { config: Config }) {
   const recording = ["starting", "listening", "recording"].includes(
     status?.state ?? "",
   );
-  const processing = ["processing", "refining"].includes(status?.state ?? "");
+  const processing = ["processing", "refining", "loading"].includes(status?.state ?? "");
   const summary = useQuery({
     queryKey: ["summary"],
     queryFn: () => ipc("summary", {}),

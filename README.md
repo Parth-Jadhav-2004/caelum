@@ -144,14 +144,14 @@ uses `.python-version` (3.14); native packages use their target system Python.
 
 ## Vocabulary, offline transcription, and cleanup styles
 
-Settings → General includes custom vocabulary (up to 4000 characters), shared by
-cloud and local recognition. Names and technical terms act as recognition hints.
+Dictionary includes custom vocabulary (up to 4000 characters), shared by
+Online and local recognition. Names and technical terms act as recognition hints.
 Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
 existing conservative validation and fall back to raw text on failure.
 
 ### On this computer
 
-Settings → General → Transcribe offers **On this computer | Online**. The local
+Settings → Transcription offers **On this computer | Online**. The local
 picker shows Parakeet, Small and quick, Most accurate (on ≥8 GB machines), and
 Any language, with five alternatives under **Show all models**. Hardware and
 language guide the recommendation; Hindi and other Indian languages are pointed
@@ -160,14 +160,13 @@ values, and never start without your action.
 
 Local dictations do not upload audio or refinement text. Fallback is **off by
 default**. “Use Online instead” explicitly authorizes uploading a dictation only
-if the local engine fails. “When you’re offline” can opt into a downloaded model
+if a local model is missing or cannot load. Unclear speech is never uploaded. “When you’re offline” can opt into a downloaded model
 when Online fails with a connection, timeout, or quota error. The HUD and history
 record the engine actually used. Update checks remain controlled separately.
 
 Existing configs without an engine remain Online. The old `cloud` spelling
-migrates to `online`; existing whisper.cpp executable/GGML-path configs still
-work as a compatibility path. Choosing a catalog model replaces that path without
-deleting the old executable/path preferences.
+migrates to `online`. Retired executable/GGML-path options are ignored on upgrade;
+choose a catalog model in Settings.
 
 Python/source installations need the `local` extra. Native packages vendor it
 by default; weights are **never bundled**.
@@ -185,7 +184,8 @@ uv sync --locked --extra dev --extra local --extra whisper
 `local` installs sherpa-onnx for Parakeet, Cohere, Canary and Moonshine. `whisper` is optional and
 installs faster-whisper for `whisper-turbo`. With pip, use
 `pip install 'caelum-dictation[local,whisper]'` from a version containing this preview.
-Models are never included in the wheel or downloaded by runtime initialization.
+Speech models are never included in the wheel or downloaded by runtime initialization.
+The small MIT-licensed Silero voice detector is bundled for offline silence detection.
 They live under `$XDG_DATA_HOME/caelum/models` (normally
 `~/.local/share/caelum/models`), with pinned revisions, size/hash checks and receipts.
 Interrupt a CLI download and repeat the command to resume. The desktop also has
@@ -197,8 +197,30 @@ review; it never installs files or edits the catalog automatically.
 
 Parakeet vocabulary hints use local hotword biasing. Whisper receives the
 vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
-hints. Local inference is serialized; cancellation discards its result, though
-an in-progress native decode must finish before the worker can unload.
+hints. Silero skips silence and finds pauses before local decoding. Long recordings
+are split at pauses, with maximum windows of 35 seconds for Cohere, 30 seconds
+for Whisper and 60 seconds for Parakeet. Vocabulary echoes and subtitle boilerplate
+are filtered. Offline cleanup removes “um” and “uh”, handles “new line”, and applies
+Dictionary replacements without uploading text.
+
+Settings → Transcription offers Auto, GPU and CPU execution and an idle unload
+period (five minutes by default; Never keeps the model resident). Auto uses CUDA
+for Whisper when available and otherwise uses CPU. The packaged sherpa runtime
+is CPU-only, so an explicit GPU choice for those models explains that it is
+unavailable. x86-64 processors without AVX2 are directed to Online before native
+runtimes are imported.
+
+Model switches load the candidate before saving the new selection. A failure keeps
+the previous selection and engine working. Explicit Online fallback runs only if
+a local model is missing or cannot load; unclear speech and decode failures do
+not upload audio. History records the engine, model, and selected or detected
+language (Auto when an engine cannot report detection).
+
+New downloads record verified file sizes and modified times. Startup and loading
+use these quick checks; Check files still performs full SHA-256 verification.
+Old receipts receive a one-time verification to populate the cache.
+Local inference is serialized; cancellation discards its result, though an
+in-progress native decode must finish before the worker can unload.
 
 ### Optional Whisper component
 

@@ -46,6 +46,7 @@ export const testModels: ModelList = {
     reason_text: "Fast and accurate for your computer.",
   },
   pending_use: null,
+  storage_bytes: 0,
   models: [
     base,
     {

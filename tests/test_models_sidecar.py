@@ -24,13 +24,21 @@ def test_model_list_contract_hardware_gate_and_extra(tmp_path, monkeypatch):
     assert manager.list(Config(), replace(hardware, mem_total_mb=16384))["recommended"]["id"] == "parakeet-110m"
 
 
-async def test_models_use_persists_even_before_download_and_refuses_busy(tmp_path, monkeypatch):
+async def test_models_use_requires_successful_load_and_refuses_busy(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     save(Config(), path)
     backend = Backend(path)
     monkeypatch.setattr(backend, "status", AsyncMock(return_value={
         "running": False, "state": "hidden",
     }))
+    before = path.read_bytes()
+    from caelum.providers import ProviderError, Providers
+
+    with pytest.raises(ProviderError, match="not downloaded"):
+        await backend.dispatch("models.use", {"id": "parakeet-110m"})
+    assert path.read_bytes() == before
+    candidate = AsyncMock()
+    monkeypatch.setattr(Providers, "prepare_local", AsyncMock(return_value=candidate))
     result = await backend.dispatch("models.use", {"id": "parakeet-110m"})
     assert result == {"saved": True}
     config = load(path)
@@ -73,3 +81,27 @@ async def test_skip_practice_finishes_with_download_still_queued(tmp_path, monke
     await backend.dispatch("setup.finish", {"skip_practice": True})
     assert Progress.load(path).complete
     assert backend.models.states["parakeet-v3"]["state"] == "downloading"
+
+
+async def test_first_local_setup_preserves_pending_download(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    backend = Backend(path)
+    backend.pending_model = "parakeet-v3"
+    monkeypatch.setattr(backend, "status", AsyncMock(return_value={"running": False, "state": "hidden"}))
+    await backend.dispatch("settings.save", {"config": {"stt": {"engine": "local"}}})
+    assert backend.pending_model == "parakeet-v3"
+    assert load(path).stt.local_model == ""
+
+
+async def test_pending_selection_survives_failure_without_retry_loop(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    backend = Backend(path)
+    backend.pending_model = "cohere-transcribe"
+    backend.model_failures["cohere-transcribe"] = "Not enough memory"
+    monkeypatch.setattr("caelum.sidecar.installed", lambda _: True)
+    monkeypatch.setattr(backend, "use_model", AsyncMock())
+    await backend.apply_pending()
+    backend.use_model.assert_not_called()
+    assert backend.pending_model == "cohere-transcribe"

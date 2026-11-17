@@ -19,6 +19,19 @@ export function dayLabel(value: string, now = new Date()) {
     year: "numeric",
   });
 }
+function languageLabel(value?: string) {
+  if (!value || value === "auto") return "Auto";
+  if (value === "mixed") return "Multiple languages";
+  try {
+    return (
+      new Intl.DisplayNames(["en"], { type: "language" }).of(
+        value.split(/[_-]/)[0],
+      ) ?? value
+    );
+  } catch {
+    return value;
+  }
+}
 export function TranscriptDetails({ entry }: { entry: Dictation }) {
   return (
     <dl className="flex flex-wrap gap-4 text-meta text-muted-foreground">
@@ -31,10 +44,23 @@ export function TranscriptDetails({ entry }: { entry: Dictation }) {
         <dd>{(entry.duration_ms / 1000).toFixed(1)} seconds</dd>
       </div>
       <div>
+        <dt>Engine</dt>
+        <dd>
+          {entry.engine === "local" ? "On this computer" : "Online"}
+          {entry.stt_model ? ` · ${entry.stt_model}` : ""}
+        </dd>
+      </div>
+      <div>
+        <dt>Language</dt>
+        <dd>{languageLabel(entry.language)}</dd>
+      </div>
+      <div>
         <dt className="sr-only">Text status</dt>
         <dd>
           {entry.copied ? (
             "Not inserted"
+          ) : entry.engine === "local" ? (
+            "Offline cleanup"
           ) : !entry.refined ? (
             <span>
               <span>Raw</span> · Text cleanup was skipped or unavailable.

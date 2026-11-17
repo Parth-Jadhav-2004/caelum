@@ -13,6 +13,7 @@ import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { ipc, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+import { testConfig } from "@/test-config";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
 }));
@@ -65,10 +66,9 @@ beforeEach(() => {
     return { saved: true };
   }) as typeof ipc);
 });
-function mount() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function mount(
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <App />
@@ -88,10 +88,7 @@ it("collapses the sidebar and persists the preference", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
   await waitFor(() =>
     expect(ipc).toHaveBeenCalledWith("settings.save", {
-      config: {
-        ...config,
-        desktop: { ...config.desktop, sidebar_visible: false },
-      },
+      config: { desktop: { sidebar_visible: false } },
     }),
   );
   expect(
@@ -121,7 +118,7 @@ it("saves appearance while keeping the Caelum identity", async () => {
   await userEvent.click(screen.getByRole("option", { name: "Light" }));
   await waitFor(() =>
     expect(ipc).toHaveBeenCalledWith("settings.save", {
-      config: { ...config, desktop: { ...config.desktop, theme: "light" } },
+      config: { desktop: { theme: "light" } },
     }),
   );
   expect(document.documentElement).not.toHaveClass("dark");
@@ -419,4 +416,49 @@ it("lets shortcut capture consume Ctrl+B without collapsing the sidebar", async 
   expect(
     screen.getByRole("button", { name: "Toggle Sidebar" }),
   ).toHaveAttribute("aria-expanded", "true");
+});
+
+it("keeps a background model switch when an appearance edit is waiting to save", async () => {
+  const saved = structuredClone(testConfig);
+  saved.stt.engine = "local";
+  saved.stt.local_model = "parakeet-v3";
+  const snapshot = () => ({
+    config: structuredClone(saved),
+    setup: { complete: true },
+    credentials: {},
+    autostart: false,
+  });
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "bootstrap"
+      ? Promise.resolve(snapshot())
+      : original(method, params)) as typeof ipc);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  mount(client);
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Appearance" }),
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Appearance" }));
+  await userEvent.click(screen.getByRole("option", { name: "Light" }));
+  await act(async () => {
+    saved.stt.local_model = "cohere-transcribe";
+    client.setQueryData(["bootstrap"], snapshot());
+  });
+  await waitFor(() =>
+    expect(ipc).toHaveBeenCalledWith("settings.save", {
+      config: { desktop: { theme: "light" } },
+    }),
+  );
+  const saves = vi
+    .mocked(ipc)
+    .mock.calls.filter(([method]) => method === "settings.save");
+  expect(
+    saves.every(
+      ([, params]) => !("stt" in (params as { config: object }).config),
+    ),
+  ).toBe(true);
 });

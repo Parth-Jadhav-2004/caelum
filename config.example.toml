@@ -17,10 +17,10 @@ silence_dbfs = -60.0 # conservative silence rejection, never an audio gate
 [stt]
 engine = "online"                # online | local
 local_model = ""                 # Catalog id, e.g. parakeet-v3
+local_device = "auto" # auto, gpu, or cpu
+local_idle_seconds = 300 # 0 keeps the model in memory
 local_threads = 0                # 0 = automatic (at most 4)
 fallback = "none"                # Opt-in only: none | online | local
-local_binary = "whisper-cli" # executable name or full path
-local_model_path = "" # full path to a downloaded whisper.cpp GGML model
 local_timeout_seconds = 300.0
 base_url = "https://api.groq.com/openai/v1"
 model = "whisper-large-v3-turbo"
@@ -33,6 +33,7 @@ overlap_seconds = 0.8
 concurrency = 2
 
 [cleanup]
+replacements = {} # e.g. { "sea lum" = "Caelum" }
 style = "light" # light, thorough, email, casual, code; model="" disables cleanup
 # Free single-key default: raw transcription until refinement is benchmarked.
 # Opt in to Groq refinement with model = "openai/gpt-oss-20b".

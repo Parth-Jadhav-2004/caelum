@@ -39,6 +39,8 @@ class History:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(dictations)")}
         if "engine" not in columns:
             connection.execute("ALTER TABLE dictations ADD COLUMN engine TEXT NOT NULL DEFAULT 'online'")
+        if "language" not in columns:
+            connection.execute("ALTER TABLE dictations ADD COLUMN language TEXT NOT NULL DEFAULT 'auto'")
         connection.execute("""CREATE TABLE IF NOT EXISTS usage_totals (
             singleton INTEGER PRIMARY KEY CHECK(singleton = 1), words INTEGER NOT NULL
         )""")
@@ -67,8 +69,8 @@ class History:
             inserted = connection.execute(
                 """INSERT OR IGNORE INTO dictations
                 (id,created_at,final_transcript,duration_ms,word_count,latency_ms,stt_model,
-                 cleanup_model,refined,copied,estimated_stt_usd,hourly_rate,engine)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 cleanup_model,refined,copied,estimated_stt_usd,hourly_rate,engine,language)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session,
                     datetime.now(timezone.utc).isoformat(),
@@ -77,12 +79,13 @@ class History:
                     len(text.split()),
                     max(0, metrics.get("release_to_dispatch_ms", 0)),
                     metrics.get("model", config.stt.model),
-                    config.cleanup.model,
+                    config.cleanup.model if engine == "online" else "",
                     int(refined),
                     int(copied),
                     0 if engine == "local" else duration / 3_600_000 * rate if rate else None,
                     rate,
                     engine,
+                    metrics.get("language", config.stt.language or "auto"),
                 ),
             )
             if inserted.rowcount:

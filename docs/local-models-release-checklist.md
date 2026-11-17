@@ -5,8 +5,8 @@ from release evidence; do not mark the release qualified solely from unit tests.
 
 ## Implemented and exercised on the development laptop
 
-- Online remains the migration default, with `cloud` compatibility and retained
-  whisper.cpp/GGML configurations.
+- Online remains the migration default, with `cloud` compatibility. Retired
+  executable/GGML-path options are ignored without executing them.
 - Local routing and cleanup privacy, explicit one-shot fallback, background
   loads, single native worker, HUD loading/missing/fallback states and
   actual-engine history.
@@ -38,7 +38,8 @@ from release evidence; do not mark the release qualified solely from unit tests.
   It is a separate manual target, not in signed promotion yet. Do not market it
   as independent of all host libraries/interpreters.
 - Compare compressed native artifacts with the same baseline build:
-  growth must be ≤50 MB and no weight/audio files may appear in any package.
+  growth must be ≤50 MB and no speech weights or recordings may appear in any
+  package. The small Silero voice detector is bundled with its MIT license.
 - Exercise downloads through real suspend/reboot, disk exhaustion, damaged
   files, proxies/HF mirrors, and a hidden tray window.
 - Check real working CUDA libraries/GPU inference. The laptop only established
@@ -52,3 +53,24 @@ from release evidence; do not mark the release qualified solely from unit tests.
 
 No clean-VM installs, public release publication or signed promotion were
 performed as part of this implementation.
+
+## Local transcription fixes — November 17, 2026
+
+Rebased onto main `8890b43` while preserving the redesigned desktop layout.
+The model picker uses existing Settings rows, shared controls and typography.
+
+Silero is bundled and runs before local decoding. The duration ceilings are
+35 seconds for Cohere, 30 for Whisper and 60 for Parakeet. Chunking prefers an
+earlier complete-utterance pause instead of filling a sequence decoder to its
+ceiling. A 70.86-second public sample assembled from four LibriSpeech utterances
+was checked with all three engines on CPU: all four closing words were retained.
+Cohere and Whisper used four roughly 17-second chunks; Parakeet used two roughly
+35-second chunks. The regression suite also checks uninterrupted speech bounds
+and original recording offsets. This is a targeted regression, not a general
+accuracy claim for long or noisy dictation.
+
+All nine installed models passed the three-public-WAV smoke test with the new
+Silero path. The combined-process run hit the memory guard for Cohere after two
+other models; Cohere then passed in a fresh process. No guard was bypassed.
+Working GPU inference, clean-VM installation and live screen-reader/desktop
+interaction remain release checks.

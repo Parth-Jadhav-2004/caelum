@@ -54,9 +54,9 @@ async def test_download_verifies_receipt_and_skips_installed(tmp_path, tiny_cata
         assert not (tmp_path / ".download" / model["id"]).exists()
         await manager.download(model["id"])
         assert handler.call_count == 1
-        # A same-size corruption is caught by Check files, not the quick scan.
+        # Modified time invalidates the quick scan without rehashing.
         (path / "model.bin").write_bytes(b"x" * len(payload))
-        assert models.installed(model["id"], tmp_path)
+        assert not models.installed(model["id"], tmp_path)
         assert models.verify(model["id"], tmp_path) == {"ok": False, "bad_files": ["model.bin"]}
         assert manager.remove(model["id"]) > len(payload)
         assert not models.installed(model["id"], tmp_path)
@@ -280,3 +280,65 @@ def test_progress_is_throttled_but_state_transitions_are_not(tmp_path, tiny_cata
     assert len(events) == 4
     manager._emit({"id": "test-model", "state": "paused"})
     assert len(events) == 5
+
+
+async def test_startup_uses_size_and_mtime_cache_without_hashing(tmp_path, tiny_catalog, monkeypatch):
+    model, payload = tiny_catalog
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, content=payload)
+    )) as client:
+        path = await models.ModelManager(tmp_path, client).download(model["id"])
+    monkeypatch.setattr(models, "sha256", lambda _: pytest.fail("Rehashed a verified model"))
+    manager = models.ModelManager(tmp_path)
+    await manager.recover()
+    assert models.installed(model["id"], tmp_path)
+    (path / "model.bin").write_bytes(b"x" * len(payload))
+    assert not models.installed(model["id"], tmp_path)
+
+
+async def test_legacy_receipt_is_verified_once_then_cached(tmp_path, tiny_catalog, monkeypatch):
+    model, payload = tiny_catalog
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, content=payload)
+    )) as client:
+        path = await models.ModelManager(tmp_path, client).download(model["id"])
+    receipt_path = path / "receipt.json"
+    receipt = json.loads(receipt_path.read_text())
+    receipt.pop("file_stats")
+    receipt_path.write_text(json.dumps(receipt))
+    digest = Mock(wraps=models.sha256)
+    monkeypatch.setattr(models, "sha256", digest)
+    await models.ModelManager(tmp_path).recover()
+    assert digest.call_count == 1
+    assert "file_stats" in json.loads(receipt_path.read_text())
+    await models.ModelManager(tmp_path).recover()
+    assert digest.call_count == 1
+
+
+async def test_download_stall_is_reported_and_clears_when_bytes_resume(tmp_path, tiny_catalog):
+    model, payload = tiny_catalog
+    release, stalled = asyncio.Event(), asyncio.Event()
+    states = []
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield payload[:4]
+            await release.wait()
+            yield payload[4:]
+    def progress(event):
+        states.append(event["state"])
+        if event["state"] == "stalled":
+            stalled.set()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, stream=SlowStream())
+    )) as client:
+        manager = models.ModelManager(tmp_path, client, progress)
+        manager.stall_seconds = 0.01
+        task = asyncio.create_task(manager.download(model["id"]))
+        try:
+            await asyncio.wait_for(stalled.wait(), 1)
+            release.set()
+            await task
+            assert states.index("stalled") < states.index("downloading") < states.index("ready")
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)

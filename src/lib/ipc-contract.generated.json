@@ -95,11 +95,11 @@
                   "fallback": {
                     "type": "string"
                   },
-                  "local_binary": {
+                  "local_device": {
                     "type": "string"
                   },
-                  "local_model_path": {
-                    "type": "string"
+                  "local_idle_seconds": {
+                    "type": "number"
                   },
                   "local_timeout_seconds": {
                     "type": "number"
@@ -137,8 +137,8 @@
                   "local_model",
                   "local_threads",
                   "fallback",
-                  "local_binary",
-                  "local_model_path",
+                  "local_device",
+                  "local_idle_seconds",
                   "local_timeout_seconds",
                   "base_url",
                   "model",
@@ -157,6 +157,12 @@
                 "properties": {
                   "style": {
                     "type": "string"
+                  },
+                  "replacements": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   },
                   "base_url": {
                     "type": "string"
@@ -179,6 +185,7 @@
                 },
                 "required": [
                   "style",
+                  "replacements",
                   "base_url",
                   "key_env",
                   "model",
@@ -355,7 +362,8 @@
                   "ready",
                   "loading",
                   "error",
-                  "missing"
+                  "missing",
+                  "unloaded"
                 ]
               },
               "message": {
@@ -672,11 +680,11 @@
                   "fallback": {
                     "type": "string"
                   },
-                  "local_binary": {
+                  "local_device": {
                     "type": "string"
                   },
-                  "local_model_path": {
-                    "type": "string"
+                  "local_idle_seconds": {
+                    "type": "number"
                   },
                   "local_timeout_seconds": {
                     "type": "number"
@@ -717,6 +725,12 @@
                 "properties": {
                   "style": {
                     "type": "string"
+                  },
+                  "replacements": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   },
                   "base_url": {
                     "type": "string"
@@ -1315,7 +1329,11 @@
     "models.list": {
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "language": {
+            "type": "string"
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
@@ -1418,6 +1436,7 @@
                     "not_installed",
                     "queued",
                     "downloading",
+                    "stalled",
                     "paused",
                     "verifying",
                     "installing",
@@ -1545,13 +1564,17 @@
                 "type": "null"
               }
             ]
+          },
+          "storage_bytes": {
+            "type": "number"
           }
         },
         "required": [
           "hardware",
           "recommended",
           "models",
-          "pending_use"
+          "pending_use",
+          "storage_bytes"
         ],
         "additionalProperties": false
       }
@@ -1808,7 +1831,8 @@
               "ready",
               "loading",
               "error",
-              "missing"
+              "missing",
+              "unloaded"
             ]
           },
           "message": {
@@ -1870,6 +1894,7 @@
         "enum": [
           "queued",
           "downloading",
+          "stalled",
           "paused",
           "verifying",
           "installing",

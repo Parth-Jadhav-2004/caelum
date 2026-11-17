@@ -63,3 +63,11 @@ def detect(config=None, directory=None):
         avx512=any(flag.startswith("avx512") for flag in flags), disk_free_mb=free,
         nvidia=Path("/dev/nvidiactl").exists(), language=language,
     )
+
+
+def local_support(hardware):
+    if hardware.arch not in ("x86_64", "aarch64", "arm64") or (
+        hardware.arch == "x86_64" and not hardware.avx2
+    ):
+        return "Local models aren’t supported on this computer. Use Online instead."
+    return None

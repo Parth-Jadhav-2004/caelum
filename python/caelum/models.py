@@ -28,6 +28,10 @@ INDIAN_LANGUAGES = {
 
 
 def recommend(hardware):
+    from .hardware import local_support
+
+    if reason := local_support(hardware):
+        return {"id": None, "reason_code": "unsupported", "reason_text": reason}
     language = hardware.language
 
     def choice(model_id, reason, text):
@@ -143,15 +147,31 @@ def installed(model_id, root=None):
             and receipt["revision"] == model["revision"]
             and receipt["files"] == model["files"]
             and all(_matches(path / item["path"], item) for item in model["files"])
+            and ("file_stats" not in receipt or receipt["file_stats"] == file_stats(path, model))
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False
+
+
+def file_stats(path, model):
+    return {item["path"]: {"size": (path / item["path"]).stat().st_size,
+                           "mtime_ns": (path / item["path"]).stat().st_mtime_ns}
+            for item in model["files"]}
 
 
 def verify(model_id, root=None):
     model = get_model(model_id)
     path = (Path(root) if root is not None else models_dir()) / model_id
     bad = [item["path"] for item in model["files"] if not _matches(path / item["path"], item, True)]
+    if not bad and not path.is_symlink():
+        try:
+            receipt = json.loads((path / "receipt.json").read_text())
+            receipt["file_stats"] = file_stats(path, model)
+            temporary = path / ".receipt.json.part"
+            temporary.write_text(json.dumps(receipt, indent=2) + "\n")
+            os.replace(temporary, path / "receipt.json")
+        except (OSError, ValueError):
+            pass
     return {"ok": installed(model_id, root) and not bad, "bad_files": bad}
 
 
@@ -170,6 +190,7 @@ class ModelManager:
         self.client = client
         self.progress = progress
         self._last_progress = {}
+        self.stall_seconds = 10
         self.states = {}
         self.queue = []
         self._runner = None
@@ -204,11 +225,20 @@ class ModelManager:
     async def recover(self):
         if self._recovered:
             return
-        for model_id in list(self.states):
-            if installed(model_id, self.root):
-                result = await asyncio.to_thread(verify, model_id, self.root)
-                if not result["ok"]:
-                    (self.root / model_id / "receipt.json").unlink(missing_ok=True)
+        # New receipts carry stats recorded after SHA-256 validation. Older
+        # installs get a one-time verification, then subsequent starts only stat.
+        for model in catalog()["models"]:
+            receipt_path = self.root / model["id"] / "receipt.json"
+            try:
+                receipt = json.loads(receipt_path.read_text())
+                if "file_stats" in receipt and not installed(model["id"], self.root):
+                    receipt_path.unlink(missing_ok=True)
+                elif "file_stats" not in receipt:
+                    result = await asyncio.to_thread(verify, model["id"], self.root)
+                    if not result["ok"]:
+                        receipt_path.unlink(missing_ok=True)
+            except (OSError, ValueError, TypeError):
+                continue
         self._recovered = True
 
     def list(self, config, hardware):
@@ -220,10 +250,14 @@ class ModelManager:
             current_state = state.get("state", "not_installed")
             if current_state in ("ready", "cancelled"):
                 current_state = "not_installed"
-            disabled = None
+            from .hardware import local_support
+
+            disabled = local_support(hardware)
             visible = model["tier"] != "more" and hardware.mem_total_mb >= model["min_mem_total_mb"]
             extra = model["requires_extra"]
-            if hardware.mem_total_mb < model["min_mem_total_mb"]:
+            if disabled:
+                pass
+            elif hardware.mem_total_mb < model["min_mem_total_mb"]:
                 disabled = "Needs 8 GB memory"
             elif importlib.util.find_spec(EXTRA_MODULES[extra or "local"]) is None:
                 disabled = "Needs an extra component."
@@ -244,7 +278,10 @@ class ModelManager:
                 "stored_in": str(self.root / model["id"]),
                 "decode_ms": stats.get(model["id"], {}).get("decode_ms"),
             })
-        return {"hardware": asdict(hardware), "recommended": recommend(hardware), "models": result}
+        storage = sum(path.stat().st_size for path in self.root.rglob("*")
+                      if path.is_file() and not path.is_symlink()) if self.root.exists() else 0
+        return {"hardware": asdict(hardware), "recommended": recommend(hardware),
+                "models": result, "storage_bytes": storage}
 
     async def submit(self, model_id):
         get_model(model_id)
@@ -355,9 +392,12 @@ class ModelManager:
 
     async def download(self, model_id):
         model = get_model(model_id)
-        from .hardware import detect
+        from .hardware import detect, local_support
 
-        if detect(directory=self.root).mem_total_mb < model.get("min_mem_total_mb", 0):
+        hardware = detect(directory=self.root)
+        if reason := local_support(hardware):
+            raise ModelError(reason, "unsupported")
+        if hardware.mem_total_mb < model.get("min_mem_total_mb", 0):
             raise ModelError("Needs 8 GB memory", "memory")
         extra = model["requires_extra"]
         if extra is None and model.get("runtime", "").startswith("sherpa-"):
@@ -422,6 +462,7 @@ class ModelManager:
                             "catalog_version": catalog()["version"],
                             "revision": model["revision"],
                             "files": model["files"],
+                            "file_stats": file_stats(stage, model),
                             "verified_at": datetime.now(timezone.utc).isoformat(),
                             "source": source,
                         }
@@ -480,6 +521,22 @@ class ModelManager:
             )
 
     async def _fetch(self, client, url, part, item, model_id):
+        self._last_byte = time.monotonic()
+
+        async def watch():
+            while True:
+                await asyncio.sleep(min(2, self.stall_seconds))
+                if time.monotonic() - self._last_byte >= self.stall_seconds:
+                    self._emit(self._snapshot(model_id, "stalled"))
+
+        watcher = asyncio.create_task(watch())
+        try:
+            return await self._fetch_body(client, url, part, item, model_id)
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+    async def _fetch_body(self, client, url, part, item, model_id):
         size = item["bytes"]
         if await asyncio.to_thread(_matches, part, item, True):
             return
@@ -514,6 +571,7 @@ class ModelManager:
                         if offset + len(chunk) > size:
                             part.unlink()
                             raise ModelError("The download was damaged. Try again.", "checksum")
+                        self._last_byte = time.monotonic()
                         stream.write(chunk)
                         digest.update(chunk)
                         offset += len(chunk)

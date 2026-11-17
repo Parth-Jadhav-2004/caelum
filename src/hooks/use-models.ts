@@ -2,10 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { ipc } from "@/lib/ipc";
 import { useDownloads } from "@/stores/models";
 
-export function useModels() {
+export function useModels(language?: string) {
   const query = useQuery({
-    queryKey: ["models"],
-    queryFn: () => ipc("models.list", {}),
+    queryKey: language === undefined ? ["models"] : ["models", language],
+    queryFn: () =>
+      ipc("models.list", language === undefined ? {} : { language }),
     refetchInterval: 5000,
   });
   const progress = useDownloads((s) => s.progress);

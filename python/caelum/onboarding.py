@@ -16,8 +16,8 @@ from .portable import backend_name
 from .providers import ProviderError, Providers
 
 PRIVACY = (
-    "In cloud mode, audio is sent to your transcription provider. Local mode uses whisper.cpp "
-    "on this computer and disables cloud refinement. In cloud mode, when refinement is on, text is sent "
+    "In Online mode, audio is sent to your transcription provider. Local mode transcribes "
+    "on this computer and uses offline cleanup. In Online mode, when refinement is on, text is sent "
     "to your refinement provider. Regular dictations save final text in local history when "
     "Save dictation history is on (disable it in Settings → Privacy & data) "
     "and may use the clipboard. After consent, practice records up to 15 seconds. On Hyprland, "
@@ -33,7 +33,8 @@ def privacy(config):
         return PRIVACY
     prefix = (
         "Audio stays on this computer. If the model can't run, that dictation is sent "
-        "to your online provider."
+        "to your online provider. If Online text cleanup is enabled, the text is sent "
+        "to your cleanup provider."
         if config.stt.fallback == "online" else
         "Audio stays on this computer. Caelum downloads speech models once from Hugging Face "
         "or GitHub."

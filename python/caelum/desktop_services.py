@@ -10,14 +10,15 @@ from pathlib import Path
 from .config import validate
 
 
-def request(action):
+def request(action, *, config=None, progress=None):
     root = os.environ.get("XDG_RUNTIME_DIR")
     if not root:
         raise RuntimeError("Open Caelum inside your desktop session")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(2)
+        client.settimeout(310 if config is not None else 2)
         client.connect(str(Path(root) / "caelum/control.sock"))
-        client.sendall(json.dumps({"action": action}).encode() + b"\n")
+        client.sendall(json.dumps({"action": action, **({"config": config} if config is not None else {}),
+                                 **({"progress": progress} if progress is not None else {})}).encode() + b"\n")
         result = json.loads(client.makefile("r").readline(65536))
         if "error" in result:
             raise RuntimeError(result["error"])
@@ -172,9 +173,11 @@ def service_presentation(status):
         return "Paused", "Resume to use the recording shortcut."
     state = status.get("state", "hidden")
     engine = status.get("engine")
-    if state in ("hidden", "success", "unrefined", "no_speech") and engine:
+    if state in ("hidden", "success", "unrefined", "no_speech", "model_ready") and engine:
         if engine["state"] == "loading":
             return "Getting ready…", "Your speech model is loading."
+        if engine["state"] == "unloaded":
+            return "Model resting", "The model will load when you next dictate."
         if engine["state"] in ("error", "missing"):
             return "Speech model needs attention", engine["message"] or "Open Settings to download a model."
         if state == "hidden":
@@ -198,6 +201,11 @@ def service_presentation(status):
             return "Microphone unavailable", "Open Settings to choose a microphone and test input."
         return "Recording failed", "Check Settings and try recording again."
     labels = {
+        "model_downloading": ("Downloading speech model", "The download continues in the background."),
+        "model_stalled": ("Download stalled", "Waiting for the connection. Open Settings for details."),
+        "model_loading": ("Loading speech model", "Getting the local model ready."),
+        "model_ready": ("Model ready", "Local dictation is ready."),
+        "model_failed": ("Model failed", "Open Settings to retry. Your previous model is unchanged."),
         "hidden": (
             "Ready",
             "Use Record or your approved desktop shortcut to begin."

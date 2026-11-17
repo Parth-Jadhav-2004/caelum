@@ -123,7 +123,7 @@ async def test_background_load_returns_immediately_and_can_retry_missing_model(m
         await release.wait()
 
     engine.load.side_effect = load_model
-    monkeypatch.setattr("caelum.local_stt.LocalEngine", lambda: engine)
+    monkeypatch.setattr("caelum.local_stt.LocalEngine", lambda **_: engine)
     provider = Providers(local_config(), client=AsyncMock())
     try:
         provider.configure_local()
@@ -178,7 +178,7 @@ def test_recommendation_table(total, available, cores, language, expected):
 def test_no_avx2_and_locale_detection(monkeypatch):
     hardware = Hardware(mem_total_mb=16384, mem_available_mb=8000, cores=8,
                         language="en", arch="x86_64")
-    assert recommend(hardware)["id"] == "parakeet-110m"
+    assert recommend(hardware)["id"] is None
     assert recommend(replace(hardware, arch="aarch64"))["id"] == "parakeet-v3"
     monkeypatch.setenv("LC_ALL", "hi_IN.UTF-8")
     assert detect(Config()).language == "hi"

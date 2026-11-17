@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import random
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -69,6 +70,7 @@ class Transcript:
     words: list
     start: int = 0
     end: int = 0
+    language: str = ""
 
 
 class Providers:
@@ -86,66 +88,115 @@ class Providers:
         self.local_message = ""
         self.on_loading = None
         self.on_processing = None
-        self.legacy_lock = asyncio.Lock()
+        self.idle_handle = None
+        self.idle_task = None
+        self.local_activity = 0
+        self._closing = False
         self.reset_metrics()
 
-    def configure_local(self, force=False):
-        """Schedule native loading only; the daemon socket must remain responsive."""
-        cfg = self.config.stt
+    @staticmethod
+    def signature(config):
+        cfg = config.stt
         wanted = cfg.engine == "local" or cfg.fallback == "local"
-        signature = (cfg.local_model if wanted else "", cfg.local_threads,
-                     cfg.language.split("_")[0].split("-")[0].lower(),
-                     cfg.vocabulary, self.config.app.silence_dbfs)
+        return (cfg.local_model if wanted else "", cfg.local_threads,
+                cfg.language.split("_")[0].split("-")[0].lower(), cfg.vocabulary,
+                config.app.silence_dbfs, cfg.local_device)
+
+    async def prepare_local(self, config):
+        """Load a candidate without altering the active engine or configuration."""
+        signature = self.signature(config)
+        if not signature[0]:
+            return None
+        from .local_stt import LocalEngine
+
+        candidate = LocalEngine(threads=signature[1], language=signature[2],
+                                vocabulary=signature[3], silence_dbfs=signature[4],
+                                device=signature[5])
+        try:
+            await candidate.load(signature[0])
+            return candidate
+        except BaseException:
+            await candidate.aclose()
+            raise
+
+    async def commit_local(self, config, candidate):
+        previous = self.local_engine
+        self.local_engine = candidate
+        self.local_signature = self.signature(config)
+        self.local_state, self.local_message = ("ready" if candidate else "missing"), ""
+        if previous and previous is not candidate:
+            await previous.aclose()
+        self.arm_idle(config)
+
+    def configure_local(self, force=False):
+        """Schedule startup loading; model changes use prepare/commit before saving."""
+        if self._closing:
+            return
+        signature = self.signature(self.config)
         if signature == self.local_signature and not force:
             return
         self.local_signature = signature
         previous = self.local_task
         self.local_state = "loading" if signature[0] else "missing"
+        config = self.config
 
         async def refresh():
             if previous:
                 await asyncio.gather(asyncio.shield(previous), return_exceptions=True)
             if signature != self.local_signature:
                 return
-            if not signature[0]:
-                if self.local_engine:
-                    await self.local_engine.unload()
-                return
-            from .local_stt import LocalEngine
-
-            if self.local_engine is None:
-                self.local_engine = LocalEngine()
-            engine = self.local_engine
-            from .local_stt import auto_threads
-
-            engine.threads = signature[1] or auto_threads()
-            engine.language, engine.vocabulary, engine.silence_dbfs = signature[2:]
             try:
-                await engine.load(signature[0])
-                if signature == self.local_signature:
-                    self.local_state, self.local_message = "ready", ""
+                candidate = await self.prepare_local(config)
+                if signature != self.local_signature:
+                    if candidate:
+                        await candidate.aclose()
+                    return
+                await self.commit_local(config, candidate)
             except ProviderError as error:
                 if signature == self.local_signature:
                     self.local_state = "missing" if error.kind == "missing_model" else "error"
                     self.local_message = str(error)
         self.local_task = asyncio.create_task(refresh())
 
+    def cancel_idle(self):
+        self.local_activity += 1
+        if self.idle_handle:
+            self.idle_handle.cancel()
+            self.idle_handle = None
+
+    def arm_idle(self, config=None):
+        self.cancel_idle()
+        seconds = (config or self.config).stt.local_idle_seconds
+        if self._closing or not seconds or not self.local_engine or self.local_state != "ready":
+            return
+        revision = self.local_activity
+        engine = self.local_engine
+
+        async def release():
+            # Work may have started after the timer fired but before this task ran.
+            if revision != self.local_activity or self.local_engine is not engine:
+                return
+            await engine.unload()
+            if revision == self.local_activity and self.local_engine is engine:
+                self.local_state = "unloaded"
+
+        def expire():
+            self.idle_handle = None
+            self.idle_task = asyncio.create_task(release())
+        self.idle_handle = asyncio.get_running_loop().call_later(seconds, expire)
+
     def engine_status(self):
         cfg = self.config.stt
         if cfg.engine != "local":
             return {"kind": "online", "model": None, "state": "ready", "message": ""}
-        if not cfg.local_model and cfg.local_model_path:
-            from .local_stt import check_local
-
-            try:
-                check_local(cfg)
-                return {"kind": "local", "model": None, "state": "ready", "message": ""}
-            except ProviderError as error:
-                return {"kind": "local", "model": None, "state": "error", "message": str(error)}
         return {"kind": "local", "model": cfg.local_model or None,
                 "state": self.local_state, "message": self.local_message}
 
     async def aclose(self):
+        self._closing = True
+        self.cancel_idle()
+        if self.idle_task:
+            await asyncio.gather(self.idle_task, return_exceptions=True)
         if self.local_task:
             await asyncio.gather(self.local_task, return_exceptions=True)
         if self.local_engine:
@@ -188,10 +239,7 @@ class Providers:
                 if importlib.util.find_spec(EXTRA_MODULES[extra]) is None:
                     raise ProviderError("Needs an extra component.", "local_setup")
                 return [provider.local_model]
-            from .local_stt import check_local
-
-            check_local(provider)
-            return [provider.model]
+            raise ProviderError("Speech model not downloaded", "missing_model")
         try:
             response = await self.client.get(
                 provider.base_url.rstrip("/") + "/models",
@@ -215,7 +263,9 @@ class Providers:
             result = await (self._local_stt(pcm, start, end) if kind == "local"
                             else self._online_stt(pcm, start, end))
         except ProviderError as error:
-            if kind == "local" and cfg.fallback == "online":
+            if kind == "local" and cfg.fallback == "online" and error.kind in {
+                "missing_model", "local_setup",
+            }:
                 if self.on_processing:
                     await self.on_processing()
                 result = await self._online_stt(pcm, start, end)
@@ -230,17 +280,17 @@ class Providers:
             self.metrics["fallback"] = kind
         self.metrics["engine"] = kind
         self.metrics["model"] = cfg.local_model if kind == "local" else cfg.model
+        self.metrics["language"] = result.language or cfg.language or "auto"
         return result
 
     async def _local_stt(self, pcm, start=0, end=None):
         cfg = self.config.stt
         end = end if end is not None else start + len(pcm) // 2
-        if not cfg.local_model and cfg.local_model_path:
-            from .local_stt import transcribe
-
-            async with self.legacy_lock:
-                return Transcript(normalize(await transcribe(cfg, pcm)), [], start, end)
-        self.configure_local()
+        self.cancel_idle()
+        if self.idle_task:
+            await asyncio.gather(self.idle_task, return_exceptions=True)
+            self.idle_task = None
+        self.configure_local(force=self.local_state == "unloaded")
         loading = self.local_state == "loading"
         if loading and self.on_loading:
             await self.on_loading()
@@ -249,13 +299,17 @@ class Providers:
                 await asyncio.wait_for(asyncio.shield(self.local_task), 20)
             except TimeoutError:
                 raise ProviderError("Speech model is still getting ready. Try again.",
-                                    "timeout") from None
+                                    "local_load_timeout") from None
         if self.local_state != "ready" or not self.local_engine:
             raise ProviderError(self.local_message or "Speech model not downloaded",
                                 "missing_model" if self.local_state == "missing" else "local_setup")
         if loading and self.on_processing:
             await self.on_processing()
-        result = await self.local_engine.transcribe(pcm, start, end)
+        self.cancel_idle()  # Startup loading can have armed a timer while we waited.
+        try:
+            result = await self.local_engine.transcribe(pcm, start, end)
+        finally:
+            self.arm_idle()
         self.metrics["decode_ms"] = self.local_engine.decode_ms
         from .models import record_stats
 
@@ -323,7 +377,7 @@ class Providers:
                             "request_started_monotonic": began,
                         }
                     )
-                    return Transcript(text, words, start, end)
+                    return Transcript(text, words, start, end, body.get("language", ""))
             except (httpx.TimeoutException, TimeoutError):
                 raise ProviderError("Transcription timed out; retry or cancel", "timeout") from None
             except httpx.ConnectError:
@@ -335,7 +389,9 @@ class Providers:
 
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
-        if self.config.stt.engine == "local" or self.metrics.get("engine") == "local" or not cfg.model:
+        if self.metrics.get("engine", self.config.stt.engine) == "local":
+            return offline_cleanup(raw, cfg.replacements), False
+        if not cfg.model:
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
@@ -409,3 +465,15 @@ class Providers:
             return raw, False
         finally:
             self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000
+
+
+def offline_cleanup(text, replacements):
+    """Deterministic local cleanup. Dictionary replacements run once, without cascades."""
+    text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
+    text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
+    if replacements:
+        mapping = {key.casefold(): value for key, value in replacements.items()}
+        pattern = r"(?<!\w)(?:" + "|".join(re.escape(key) for key in sorted(
+            replacements, key=len, reverse=True)) + r")(?!\w)"
+        text = re.sub(pattern, lambda match: mapping[match.group().casefold()], text, flags=re.I)
+    return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text)).strip()

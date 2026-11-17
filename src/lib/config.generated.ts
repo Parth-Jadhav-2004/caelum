@@ -17,8 +17,8 @@ export interface STTConfig {
   local_model: string
   local_threads: number
   fallback: string
-  local_binary: string
-  local_model_path: string
+  local_device: string
+  local_idle_seconds: number
   local_timeout_seconds: number
   base_url: string
   model: string
@@ -32,6 +32,7 @@ export interface STTConfig {
 }
 export interface CleanupConfig {
   style: string
+  replacements: Record<string, string>
   base_url: string
   key_env: string
   model: string

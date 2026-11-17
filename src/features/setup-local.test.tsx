@@ -28,9 +28,10 @@ beforeEach(() => {
         privacy: "",
       };
     if (method === "models.list") return list;
-    if (method === "models.download") {
+    if (method === "models.use") {
       list.models[0].state = "downloading";
-      return { ok: true };
+      list.pending_use = "parakeet-v3";
+      return { saved: true };
     }
     if (method === "devices") return [];
     if (method === "shortcut.check") return "Available";
@@ -64,82 +65,96 @@ function mount() {
   );
   return client;
 }
-async function goToPractice() {
+async function chooseLocal() {
   await userEvent.click(
-    await screen.findByRole("button", { name: "Download and continue" }),
+    screen.getByRole("combobox", { name: "Transcribe with" }),
   );
   await userEvent.click(
-    await screen.findByRole("button", { name: "Test microphone" }),
+    screen.getByRole("option", { name: "On this computer" }),
   );
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Continue" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Continue" }),
-  );
-  await screen.findByRole("heading", { name: "Try dictation" });
+  await screen.findByRole("radiogroup", { name: "Speech model" });
 }
-it("chooses local, downloads in the background, and practices without upload consent", async () => {
-  const client = mount();
+async function goToPractice() {
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Check your microphone" });
   await waitFor(() =>
-    expect(
-      screen.getByRole("radio", { name: /On this computer/ }),
-    ).toBeChecked(),
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled(),
   );
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Choose your shortcut" });
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Try it" });
+}
+it("starts a model download on the welcome screen and skips API keys", async () => {
+  mount();
+  await chooseLocal();
+  await userEvent.click(screen.getByRole("radio", { name: "Parakeet" }));
+  expect(ipc).toHaveBeenCalledWith("models.use", {
+    id: "parakeet-v3",
+    when_ready: true,
+  });
+  expect(
+    screen.getByRole("heading", { name: "Welcome to Caelum" }),
+  ).toBeInTheDocument();
   await goToPractice();
-  expect(ipc).toHaveBeenCalledWith("models.use", { id: "parakeet-v3" });
+  expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+  expect(ipc).not.toHaveBeenCalledWith("setup.validate", expect.anything());
   expect(
     screen.getByText("Your practice recording stays on this computer."),
   ).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Record practice" }),
   ).toBeDisabled();
-  expect(screen.getByText("Almost ready")).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Wait here" }));
-  list.models[0].state = "installed";
-  await act(async () => {
-    await client.invalidateQueries({ queryKey: ["models"] });
-  });
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Record practice" }),
-  );
-  expect(ipc).toHaveBeenCalledWith("practice", { consent: false });
-  expect(await screen.findByText("Hello Caelum")).toBeInTheDocument();
+  expect(current.stt.local_model).toBe("");
 });
-it("finishes setup while a model continues downloading", async () => {
+it("can finish while the selected model keeps downloading", async () => {
   mount();
+  await chooseLocal();
+  await userEvent.click(screen.getByRole("radio", { name: "Parakeet" }));
   await goToPractice();
-  await userEvent.click(screen.getByRole("button", { name: "Skip for now" }));
+  await userEvent.click(screen.getByRole("button", { name: "Try it later" }));
+  await userEvent.click(screen.getByRole("button", { name: "Done" }));
   expect(ipc).toHaveBeenCalledWith("setup.finish", { skip_practice: true });
   expect(ipc).not.toHaveBeenCalledWith("models.cancel", expect.anything());
 });
-it("recommends Online plainly for Hindi", async () => {
+it("allows setup without choosing or downloading a model", async () => {
+  mount();
+  await chooseLocal();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Continue without a model" }),
+  );
+  await screen.findByRole("heading", { name: "Check your microphone" });
+  expect(ipc).not.toHaveBeenCalledWith("models.use", expect.anything());
+  expect(current.stt.engine).toBe("local");
+});
+it("explains the Online recommendation for Hindi", async () => {
   list.hardware.language = "hi";
   list.recommended = {
     id: null,
     reason_code: "indian_language",
-    reason_text:
-      "On-device models aren't good at Hindi yet. Online works best for now.",
+    reason_text: "Online works best for Hindi for now.",
   };
   mount();
-  expect(await screen.findByRole("radio", { name: /^Online/ })).toBeChecked();
+  await chooseLocal();
   expect(
     await screen.findByText(list.recommended.reason_text),
   ).toBeInTheDocument();
 });
-it("offers retry, Online, and skip after download failure", async () => {
+it("keeps a failed download visible and allows setup to continue", async () => {
   const client = mount();
+  await chooseLocal();
+  await userEvent.click(screen.getByRole("radio", { name: "Parakeet" }));
   await goToPractice();
   list.models[0].state = "failed";
+  list.models[0].error = {
+    code: "offline",
+    message: "Download failed. Check your connection.",
+  };
   await act(async () => {
     await client.invalidateQueries({ queryKey: ["models"] });
   });
   expect(
-    await screen.findByText("Couldn't download Parakeet"),
+    await screen.findByText("Download failed. Check your connection."),
   ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
-  expect(
-    screen.getByRole("button", { name: "Use Online instead" }),
-  ).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Skip for now" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Try it later" })).toBeEnabled();
 });

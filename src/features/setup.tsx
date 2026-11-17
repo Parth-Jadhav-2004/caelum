@@ -20,6 +20,8 @@ import {
 import { Choice, Shortcut } from "./settings";
 import { MicrophoneMeter, useMicrophoneLevel } from "./microphone";
 import { DeviceSelect, Waveform } from "./dashboard";
+import { ModelPicker, ModelDownloadLine } from "./models";
+import { useModels } from "@/hooks/use-models";
 const titles = [
   "Welcome to Caelum",
   "Connect your speech service",
@@ -40,6 +42,21 @@ export function Setup({
     queryKey: ["bootstrap"],
     queryFn: () => ipc("bootstrap", {}),
   });
+  const [mode, setMode] = useState(config.stt.engine);
+  const [selectedModel, setSelectedModel] = useState(config.stt.local_model);
+  const [skipPractice, setSkipPractice] = useState(false);
+  const modelList = useModels(config.stt.language);
+  const desiredModel =
+    selectedModel ||
+    modelList.data?.pending_use ||
+    config.stt.local_model ||
+    modelList.data?.recommended?.id ||
+    "";
+  const selected = modelList.models.find((model) => model.id === desiredModel);
+  const localReady =
+    config.stt.engine === "local" &&
+    (!desiredModel || config.stt.local_model === desiredModel) &&
+    selected?.state === "installed";
   const manageKeys = bootstrap.data?.setup?.complete === true;
   const openSettings = useApp((s) => s.openSettings);
   const names = [
@@ -83,7 +100,7 @@ export function Setup({
       practiceInput.current?.focus();
       try {
         const result = await ipc("practice", {
-          consent,
+          consent: mode === "local" || consent,
           ...(interactive ? { interactive: true, insert: true } : {}),
         });
         setPractice(result.text);
@@ -95,7 +112,7 @@ export function Setup({
         setBusy(false);
       }
     },
-    [consent],
+    [consent, mode],
   );
   useEffect(() => {
     if (step !== 3) return;
@@ -117,7 +134,7 @@ export function Setup({
     };
   }, [step, config.app.hotkey]);
   useEffect(() => {
-    if (step !== 4) return;
+    if (step !== 4 || (mode === "local" && !localReady)) return;
     const parts = config.app.hotkey
       .split("+")
       .map((v) => v.trim().toUpperCase());
@@ -180,6 +197,8 @@ export function Setup({
     config.app.recording_mode,
     busy,
     recordPractice,
+    mode,
+    localReady,
   ]);
   useEffect(
     () => () => {
@@ -217,11 +236,46 @@ export function Setup({
       void ipc("sample.cancel", {});
     };
   }, [step, config.app.microphone, micAttempt]);
-  async function advance() {
+  async function advance(withoutModel = false) {
     setBusy(true);
     setNotice("");
     try {
       if (step === 0) {
+        if (mode === "local") {
+          let saved = config;
+          if (
+            !withoutModel &&
+            desiredModel &&
+            desiredModel !== modelList.data?.pending_use &&
+            !(
+              config.stt.engine === "local" &&
+              config.stt.local_model === desiredModel
+            )
+          ) {
+            await ipc("models.use", { id: desiredModel, when_ready: true });
+            saved = (await bootstrap.refetch()).data?.config ?? config;
+            await modelList.refetch();
+          }
+          // Empty local mode permits setup while a pending model downloads. The
+          // model id itself is committed only after the candidate loads.
+          if (saved.stt.engine !== "local")
+            await commit({
+              ...saved,
+              stt: {
+                ...saved.stt,
+                engine: "local",
+                local_model: "",
+                fallback: "none",
+              },
+            });
+          setStep(2);
+          return;
+        }
+        if (config.stt.engine !== "online")
+          await commit({
+            ...config,
+            stt: { ...config.stt, engine: "online", fallback: "none" },
+          });
         if (
           bootstrap.data?.setup?.complete === false &&
           !config.cleanup.model &&
@@ -281,7 +335,7 @@ export function Setup({
           autostart: true,
           enabled: autostart ?? bootstrap.data?.autostart ?? false,
         });
-        await ipc("setup.finish", {});
+        await ipc("setup.finish", skipPractice ? { skip_practice: true } : {});
         await bootstrap.refetch();
         navigate("home");
       }
@@ -315,6 +369,58 @@ export function Setup({
               <p className="text-meta text-muted-foreground">
                 About two minutes
               </p>
+              <Choice
+                label="Transcribe with"
+                value={mode}
+                items={[
+                  ["online", "Online"],
+                  ["local", "On this computer"],
+                ]}
+                change={setMode}
+              />
+              {mode === "local" && (
+                <>
+                  <p className="text-meta text-muted-foreground">
+                    Audio stays on this computer. No API key needed.
+                  </p>
+                  <Choice
+                    label="Dictation language"
+                    value={config.stt.language || "auto"}
+                    items={[
+                      ["auto", "Auto"],
+                      ["en", "English"],
+                      ["hi", "Hindi"],
+                      ["es", "Spanish"],
+                      ["fr", "French"],
+                      ["de", "German"],
+                      ["ja", "Japanese"],
+                    ]}
+                    change={(v) =>
+                      void action(() =>
+                        commit({
+                          ...config,
+                          stt: {
+                            ...config.stt,
+                            language: v === "auto" ? "" : v,
+                          },
+                        }),
+                      )
+                    }
+                  />
+                  <ModelPicker
+                    language={config.stt.language}
+                    selected={selectedModel}
+                    onSelect={(id) => {
+                      setSelectedModel(id);
+                      void action(async () => {
+                        await ipc("models.use", { id, when_ready: true });
+                        await bootstrap.refetch();
+                        await modelList.refetch();
+                      });
+                    }}
+                  />
+                </>
+              )}
             </>
           )}
           {step === 1 && (
@@ -499,6 +605,11 @@ export function Setup({
           )}
           {step === 4 && (
             <>
+              {mode === "local" && (
+                <p className="text-meta text-muted-foreground">
+                  Your practice recording stays on this computer.
+                </p>
+              )}
               <p className="text-body">
                 {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
                 <kbd>{config.app.hotkey}</kbd> and say:
@@ -523,8 +634,12 @@ export function Setup({
                 {[
                   [
                     "Service",
-                    config.stt.base_url.includes("groq") ? "Groq" : "Custom",
-                    1,
+                    mode === "local"
+                      ? "On this computer"
+                      : config.stt.base_url.includes("groq")
+                        ? "Groq"
+                        : "Custom",
+                    mode === "local" ? 0 : 1,
                   ],
                   ["Microphone", config.app.microphone ?? "System default", 2],
                   ["Shortcut", config.app.hotkey, 3],
@@ -569,6 +684,30 @@ export function Setup({
           )}
         </div>
       </section>
+      {step > 0 && mode === "local" && desiredModel && (
+        <ModelDownloadLine modelId={desiredModel} />
+      )}
+      {step === 0 && mode === "local" && (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void advance(true)}
+        >
+          Continue without a model
+        </Button>
+      )}
+      {step === 4 && mode === "local" && !practicePassed && (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            setSkipPractice(true);
+            setStep(5);
+          }}
+        >
+          Try it later
+        </Button>
+      )}
       {keyStoredInFile && (
         <p role="alert" className="text-body">
           Key stored without encryption. Review Settings after setup.
@@ -591,7 +730,7 @@ export function Setup({
             disabled={busy && step === 5}
             onClick={() => {
               if (busy) void action(() => ipc("sample.cancel", {}));
-              else setStep(step - 1);
+              else setStep(step === 2 && mode === "local" ? 0 : step - 1);
             }}
           >
             {busy ? "Cancel" : "Back"}
@@ -601,7 +740,10 @@ export function Setup({
         )}
         <Button
           disabled={
-            busy || (step === 1 && !consent) || (step === 2 && !micPassed)
+            busy ||
+            (step === 1 && !consent) ||
+            (step === 2 && !micPassed) ||
+            (step === 4 && mode === "local" && !localReady)
           }
           onClick={() => void advance()}
         >
@@ -612,7 +754,11 @@ export function Setup({
             : manageKeys
               ? "Save keys"
               : step === 0
-                ? "Get started"
+                ? mode === "local"
+                  ? desiredModel && selected?.state === "not_installed"
+                    ? "Download and continue"
+                    : "Continue"
+                  : "Get started"
                 : step === 5
                   ? "Done"
                   : step === 4 && !practicePassed

@@ -2,7 +2,7 @@
   "version": 1,
   "models": [
     {
-      "id": "parakeet-v3",
+      "id": "parakeet-v3", "reference_wait_ms": 513,
       "label": "Parakeet",
       "tier": "recommended",
       "blurb": "Fast and accurate for English and 24 European languages.",
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "id": "parakeet-110m",
+      "id": "parakeet-110m", "reference_wait_ms": 198,
       "label": "Small and quick",
       "tier": "small",
       "blurb": "English only. Light on memory.",
@@ -86,7 +86,7 @@
       ]
     },
     {
-      "id": "cohere-transcribe",
+      "id": "cohere-transcribe", "reference_wait_ms": 1331,
       "label": "Most accurate",
       "tier": "accurate",
       "blurb": "Fewest mistakes. Needs 8 GB memory.",
@@ -124,7 +124,7 @@
       ]
     },
     {
-      "id": "whisper-turbo",
+      "id": "whisper-turbo", "reference_wait_ms": 7198,
       "label": "Any language",
       "tier": "any",
       "blurb": "99 languages. Slower on most computers.",

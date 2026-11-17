@@ -2,6 +2,9 @@ import { contracts, matches } from "./contracts";
 import { invoke } from "@tauri-apps/api/core";
 import type { Config } from "./config.generated";
 export type { Config };
+export type ConfigPatch = {
+  [Section in keyof Config]?: Partial<Config[Section]>;
+};
 export interface Feedback {
   state: string;
   elapsed_ms: number;
@@ -21,7 +24,7 @@ export interface Status {
   engine?: {
     kind: "online" | "local";
     model: string | null;
-    state: "ready" | "loading" | "error" | "missing";
+    state: "ready" | "loading" | "error" | "missing" | "unloaded";
     message: string;
   };
 }
@@ -33,6 +36,9 @@ export interface Dictation {
   word_count: number;
   refined: number;
   copied: number;
+  engine?: "online" | "local";
+  language?: string;
+  stt_model?: string;
 }
 export interface Summary {
   total_words: number;
@@ -66,6 +72,7 @@ export interface ModelProgress {
   state:
     | "queued"
     | "downloading"
+    | "stalled"
     | "paused"
     | "verifying"
     | "installing"
@@ -95,6 +102,10 @@ export interface SpeechModel extends Omit<ModelProgress, "state"> {
   requires_extra: string | null;
   stored_in: string;
   decode_ms: number | null;
+  runtime_state?:
+    "ready" | "loading" | "error" | "missing" | "unloaded" | "failed";
+  runtime_message?: string;
+  reference_wait_ms?: number;
 }
 export interface ModelList {
   hardware: {
@@ -111,9 +122,10 @@ export interface ModelList {
   recommended: { id: string | null; reason_code: string; reason_text: string };
   models: SpeechModel[];
   pending_use: string | null;
+  storage_bytes: number;
 }
 interface Methods {
-  "models.list": [Record<string, never>, ModelList];
+  "models.list": [{ language?: string }, ModelList];
   "models.download": [{ id: string }, Ack];
   "models.pause": [{ id: string }, Ack];
   "models.resume": [{ id: string }, Ack];
@@ -128,7 +140,10 @@ interface Methods {
   devices: [Record<string, never>, Device[]];
   "history.delete": [{ id?: string }, Ack];
   "history.export": [{ path: string }, Ack];
-  "settings.save": [{ config: Config }, { saved: boolean; warning?: string }];
+  "settings.save": [
+    { config: ConfigPatch },
+    { saved: boolean; warning?: string },
+  ];
   "service.start": [Record<string, never>, Ack];
   "service.stop": [{ discard?: boolean }, Ack];
   control: [

@@ -14,6 +14,7 @@ export const useDownloads = create<{
     const messages: Partial<Record<ModelProgress["state"], string>> = {
       downloading: "Download started",
       paused: "Download paused",
+      stalled: "Download stalled. Waiting for the connection.",
       ready: `${label ?? "Speech model"} is ready`,
       failed: event.error?.message ?? "Download stopped",
     };

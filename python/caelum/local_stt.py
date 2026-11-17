@@ -3,7 +3,6 @@
 import asyncio
 import os
 import re
-import shutil
 import time
 import unicodedata
 from collections import Counter
@@ -12,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .audio import RATE, wav_bytes
+from .audio import RATE
 from .models import get_model, installed, models_dir
 from .providers import ProviderError, Transcript
 
@@ -60,14 +59,14 @@ def _sherpa_words(result, duration):
 
 
 class SherpaTransducer:
-    def __init__(self, model, path, threads, language="", vocabulary=""):
+    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
         import sherpa_onnx
 
         files = {item["role"]: str(path / item["path"]) for item in model["files"]}
         options = dict(
             encoder=files["encoder"], decoder=files["decoder"], joiner=files["joiner"],
             tokens=files["tokens"], model_type="nemo_transducer", num_threads=threads,
-            sample_rate=RATE, provider="cpu",
+            sample_rate=RATE, provider=device,
         )
         pieces = [line.rsplit(" ", 1)[0] for line in Path(files["tokens"]).read_text().splitlines()]
         characters = {piece for piece in pieces if len(piece) == 1}
@@ -105,6 +104,7 @@ class SherpaTransducer:
         stream.accept_waveform(RATE, samples)
         self.recognizer.decode_stream(stream)
         result = stream.result
+        self.detected_language = getattr(result, "lang", "")
         return result.text, _sherpa_words(result, len(samples) / RATE), list(result.tokens)
 
 
@@ -120,55 +120,59 @@ def hotword_phrases(vocabulary):
 
 class SherpaCohere:
 
-    def __init__(self, model, path, threads, language="", vocabulary=""):
+    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
         import sherpa_onnx
 
         files = {item["role"]: str(path / item["path"]) for item in model["files"]}
+        self.language = language if language in model["languages"] else "en"
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_cohere_transcribe(
             encoder=files["encoder"], decoder=files["decoder"], tokens=files["tokens"],
-            num_threads=threads, language=language if language in model["languages"] else "en",
-            use_punct=True, use_itn=True, provider="cpu",
+            num_threads=threads, language=self.language,
+            use_punct=True, use_itn=True, provider=device,
         )
 
     def transcribe(self, samples):
         stream = self.recognizer.create_stream()
         stream.accept_waveform(RATE, samples)
         self.recognizer.decode_stream(stream)
+        self.detected_language = getattr(stream.result, "lang", "") or getattr(self, "language", "en")
         return stream.result.text, [], []
 
 
 class SherpaCanary(SherpaCohere):
-    def __init__(self, model, path, threads, language="", vocabulary=""):
+    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
         import sherpa_onnx
 
         files = {item["role"]: str(path / item["path"]) for item in model["files"]}
         language = language if language in model["languages"] else "en"
+        self.language = language
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_canary(
             encoder=files["encoder"], decoder=files["decoder"], tokens=files["tokens"],
-            src_lang=language, tgt_lang=language, num_threads=threads, provider="cpu",
+            src_lang=language, tgt_lang=language, num_threads=threads, provider=device,
         )
 
 
 class SherpaMoonshine(SherpaCohere):
-    def __init__(self, model, path, threads, language="", vocabulary=""):
+    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
         import sherpa_onnx
 
         files = {item["role"]: str(path / item["path"]) for item in model["files"]}
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_moonshine(
             preprocessor=files["preprocessor"], encoder=files["encoder"],
             uncached_decoder=files["uncached_decoder"], cached_decoder=files["cached_decoder"],
-            tokens=files["tokens"], num_threads=threads, provider="cpu",
+            tokens=files["tokens"], num_threads=threads, provider=device,
         )
 
 
 class FasterWhisper:
-    def __init__(self, model, path, threads, language="", vocabulary="", prefer_cuda=True):
+    def __init__(self, model, path, threads, language="", vocabulary="", prefer_cuda=True, device="auto"):
         from faster_whisper import WhisperModel
 
         self.path, self.threads = str(path), threads
         # A local directory and local_files_only prevent implicit HF downloads.
         self.device = "cpu"
-        if prefer_cuda:
+        self.allow_cpu_fallback = device != "gpu"
+        if prefer_cuda and device != "cpu":
             try:
                 import ctranslate2
 
@@ -179,7 +183,10 @@ class FasterWhisper:
                                               cpu_threads=threads, local_files_only=True)
                     self.device = "cuda"
             except (RuntimeError, OSError):
-                pass
+                if device == "gpu":
+                    raise ProviderError("GPU is unavailable. Choose Auto or CPU in Settings.", "local_setup") from None
+        if self.device == "cpu" and device == "gpu":
+            raise ProviderError("GPU is unavailable. Choose Auto or CPU in Settings.", "local_setup")
         if self.device == "cpu":
             self.model = WhisperModel(str(path), device="cpu", compute_type="int8",
                                       cpu_threads=threads, num_workers=1, local_files_only=True)
@@ -190,7 +197,7 @@ class FasterWhisper:
         try:
             return self._decode(samples, retry)
         except (RuntimeError, OSError):
-            if self.device != "cuda":
+            if self.device != "cuda" or not self.allow_cpu_fallback:
                 raise
             # CTranslate2 can construct a CUDA model even when cuBLAS/cuDNN
             # are missing; capability enumeration alone is insufficient.
@@ -203,20 +210,21 @@ class FasterWhisper:
             return self._decode(samples, retry)
 
     def _decode(self, samples, retry=False):
-        segments, _ = self.model.transcribe(
+        segments, info = self.model.transcribe(
             samples, language=self.language, initial_prompt=self.vocabulary,
             # The runtime retries high-compression / low-confidence outputs
             # using temperature fallback. Never use sherpa for Whisper.
             temperature=(0.4, 0.6, 0.8, 1.0) if retry else (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
             condition_on_previous_text=not retry, no_repeat_ngram_size=4 if retry else 0,
         )
+        self.detected_language = getattr(info, "language", "")
         segments = list(segments)  # Actual decode happens while consuming the iterator.
         if segments and all(segment.no_speech_prob > 0.85 for segment in segments):
             return "", [], []
         return " ".join(segment.text.strip() for segment in segments).strip(), [], []
 
 
-def runtime_adapter(model, path, threads, language, vocabulary, prefer_cuda=True):
+def runtime_adapter(model, path, threads, language, vocabulary, prefer_cuda=True, device="auto"):
     adapters = {
         "sherpa-transducer": SherpaTransducer,
         "sherpa-cohere": SherpaCohere,
@@ -226,13 +234,21 @@ def runtime_adapter(model, path, threads, language, vocabulary, prefer_cuda=True
     }
     adapter = adapters[model["runtime"]]
     if adapter is FasterWhisper:
-        return adapter(model, path, threads, language, vocabulary, prefer_cuda)
-    return adapter(model, path, threads, language, vocabulary)
+        return adapter(model, path, threads, language, vocabulary, prefer_cuda, device)
+    # The shipped sherpa runtime is CPU-only; an explicit GPU choice must not lie.
+    if device == "gpu":
+        import sherpa_onnx
+
+        if "CUDAExecutionProvider" not in getattr(sherpa_onnx, "get_available_providers", lambda: [])():
+            raise ProviderError("GPU is unavailable for this model. Choose Auto or CPU.", "local_setup")
+    return adapter(model, path, threads, language, vocabulary,
+                   device="cuda" if device == "gpu" else "cpu")
 
 
 class LocalEngine:
     def __init__(self, *, root=None, threads=0, language="", vocabulary="",
-                 silence_dbfs=-60, adapter_factory=None, prefer_cuda=True):
+                 silence_dbfs=-60, adapter_factory=None, prefer_cuda=True, device="auto",
+                 speech_detector=None):
         if type(threads) is not int or not 0 <= threads <= 256:
             raise ValueError("Local thread count must be between 0 and 256")
         self.root = Path(root) if root is not None else models_dir()
@@ -242,6 +258,9 @@ class LocalEngine:
         self.silence_dbfs = silence_dbfs
         self.adapter_factory = adapter_factory
         self.prefer_cuda = prefer_cuda
+        self.device = device
+        self._speech_detector = speech_detector
+        self._provided_detector = speech_detector is not None
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="caelum-local")
         self.lock = asyncio.Lock()
         self.state = "idle"
@@ -278,31 +297,43 @@ class LocalEngine:
             if not installed(model_id, self.root):
                 raise ProviderError("Speech model not downloaded", "missing_model")
             model = get_model(model_id)
+            if self.language and "*" not in model["languages"] and self.language not in model["languages"]:
+                raise ProviderError("This model doesn't support the chosen language. Choose another model or Online.",
+                                    "local_setup")
+            language = self.language
             if self.adapter_factory is None:
-                from .hardware import detect
+                from .hardware import detect, local_support
 
                 hardware = detect(directory=self.root)
+                if not language and not model["auto_language"]:
+                    language = hardware.language if hardware.language in model["languages"] else "en"
+                if reason := local_support(hardware):
+                    raise ProviderError(reason, "local_setup")
                 if hardware.mem_total_mb < model["min_mem_total_mb"]:
                     raise ProviderError("This speech model needs 8 GB memory.", "local_setup")
                 if 0 < hardware.mem_available_mb < model["min_ram_available_mb"]:
                     raise ProviderError("Not enough memory for this speech model. Close apps and try again.",
                                         "local_setup")
-            args = (model, self.root / model_id, self.threads, self.language, self.vocabulary)
+            args = (model, self.root / model_id, self.threads, language, self.vocabulary)
             new = (self.adapter_factory(*args) if self.adapter_factory
-                   else runtime_adapter(*args, prefer_cuda=self.prefer_cuda))
+                   else runtime_adapter(*args, prefer_cuda=self.prefer_cuda, device=self.device))
+            if self._speech_detector is None:
+                from .vad import Silero
+
+                self._speech_detector = Silero()
             self._adapter = new
             self.model_id = model_id
             self.load_seconds = time.monotonic() - began
             self.state, self.message = "ready", ""
         except ProviderError as error:
-            self.state = "error"
+            self.state = "ready" if self._adapter is not None else "error"
             self.message = str(error)
             raise
         except ImportError:
-            self.state, self.message = "error", "Needs an extra component."
+            self.state, self.message = ("ready" if self._adapter else "error"), "Needs an extra component."
             raise ProviderError(self.message, "local_setup") from None
         except Exception:
-            self.state, self.message = "error", "Speech model needs attention. Check files in Settings."
+            self.state, self.message = ("ready" if self._adapter else "error"), "Speech model needs attention. Check files in Settings."
             raise ProviderError(self.message, "local_setup") from None
 
     async def transcribe(self, pcm, start=0, end=None):
@@ -322,20 +353,32 @@ class LocalEngine:
             return Transcript("", [], start, end)
         began = time.monotonic()
         try:
-            text, words, tokens = self._adapter.transcribe(samples)
-            text = text.strip()
-            if repetition_guard(text, len(samples) / RATE, tokens) and isinstance(self._adapter, FasterWhisper):
-                text, words, tokens = self._adapter.transcribe(samples, retry=True)
-            if repetition_guard(text, len(samples) / RATE, tokens):
-                raise ProviderError("Couldn't make sense of that. Try again.", "local_decode")
-            if not any(unicodedata.category(char)[0] in ("L", "N") for char in text):
-                text, words = "", []
-            words = [
-                {**word, "start": word["start"] + start / RATE,
-                 "end": word["end"] + start / RATE}
-                for word in words
-            ]
-            return Transcript(text, words, start, end)
+            from .vad import pause_chunks
+
+            regions = self._speech_detector(samples)
+            runtime = get_model(self.model_id)["runtime"]
+            limit = 35 if runtime == "sherpa-cohere" else 30 if runtime == "faster-whisper" else 60
+            texts, all_words, languages = [], [], set()
+            for begin, stop in pause_chunks(regions, limit):
+                chunk = samples[begin:stop]
+                text, words, tokens = self._adapter.transcribe(chunk)
+                text = text.strip()
+                if repetition_guard(text, len(chunk) / RATE, tokens) and isinstance(self._adapter, FasterWhisper):
+                    text, words, tokens = self._adapter.transcribe(chunk, retry=True)
+                if repetition_guard(text, len(chunk) / RATE, tokens):
+                    raise ProviderError("Couldn't make sense of that. Try again.", "local_decode")
+                detected = getattr(self._adapter, "detected_language", "")
+                if detected:
+                    languages.add(detected)
+                text = filter_output(text, self.vocabulary)
+                if text:
+                    texts.append(text)
+                    all_words.extend({**word, "start": word["start"] + (start + begin) / RATE,
+                                      "end": word["end"] + (start + begin) / RATE}
+                                     for word in words)
+            language = self.language or (next(iter(languages)) if len(languages) == 1 else
+                                         "mixed" if languages else "auto")
+            return Transcript(" ".join(texts), all_words, start, end, language)
         except ProviderError:
             raise
         except Exception:
@@ -345,6 +388,8 @@ class LocalEngine:
 
     def _unload(self):
         self._adapter = None
+        if not self._provided_detector:
+            self._speech_detector = None
         self.model_id = None
         self.state, self.message = "idle", ""
 
@@ -359,42 +404,25 @@ class LocalEngine:
             self.worker.shutdown(wait=False, cancel_futures=True)
 
 
-def check_local(config):
-    binary = shutil.which(config.local_binary)
-    if not binary:
-        raise ProviderError("Install whisper.cpp and set its whisper-cli executable in Settings", "local_setup")
-    if not config.local_model_path or not Path(config.local_model_path).is_file():
-        raise ProviderError("Choose an existing whisper.cpp GGML model file in Settings", "local_setup")
-    return binary
 
-
-async def transcribe(config, pcm):
-    binary = check_local(config)
-    fd = os.memfd_create("caelum-audio", flags=0)
-    process = None
-    try:
-        with os.fdopen(os.dup(fd), "wb") as stream:
-            stream.write(wav_bytes(pcm))
-        os.lseek(fd, 0, os.SEEK_SET)
-        args = [binary, "-m", config.local_model_path, "-f", f"/proc/self/fd/{fd}",
-                "-nt", "-np", "-l", config.language or "auto"]
-        if config.vocabulary:
-            args.extend(["--prompt", config.vocabulary])
-        process = await asyncio.create_subprocess_exec(
-            *args, pass_fds=(fd,), stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
-            stdout, _ = await asyncio.wait_for(process.communicate(), config.local_timeout_seconds)
-        except TimeoutError:
-            raise ProviderError("Local transcription timed out; choose a smaller model or increase its timeout", "timeout") from None
-        if process.returncode:
-            raise ProviderError("Local transcription failed; check the executable and model file", "local_setup")
-        return stdout.decode("utf-8").strip()
-    except (OSError, UnicodeError):
-        raise ProviderError("Local transcription unavailable; check whisper.cpp installation", "local_setup") from None
-    finally:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await process.wait()
-        os.close(fd)
+def filter_output(text, vocabulary):
+    """Reject recognizer boilerplate and verbatim prompt dumps conservatively."""
+    if not any(unicodedata.category(char)[0] in ("L", "N") for char in text):
+        return ""
+    def canonical(value):
+        return " ".join(re.findall(r"\w+", value.casefold()))
+    normalized = canonical(text)
+    phrases = [canonical(value) for value in hotword_phrases(vocabulary)]
+    # A single name can be a legitimate dictation. A whole vocabulary list is not.
+    if len(phrases) >= 2 and normalized == " ".join(phrases):
+        return ""
+    if normalized in {"subtitles by the amara org community", "subtitles by amara org"} or (
+        text.strip().casefold() in {"[music]", "(music)", "[applause]", "(applause)"}
+    ):
+        return ""
+    # Whisper sometimes prepends its prompt before the actual spoken sentence.
+    prompt = " ".join(phrases)
+    if len(phrases) >= 2 and normalized.startswith(prompt + " "):
+        pattern = r"[\W_]*".join(re.escape(word) for word in prompt.split())
+        text = re.sub(r"^\s*" + pattern + r"[\W_]*", "", text, count=1, flags=re.I)
+    return text.strip()

@@ -21,7 +21,10 @@ beforeEach(() => {
   vi.mocked(ipc).mockImplementation((async (method: string) =>
     method === "models.list" ? data : { ok: true }) as typeof ipc);
 });
-function mount(onSelect?: (id: string) => void, beforeUse?: () => Promise<void>) {
+function mount(
+  onSelect?: (id: string) => void,
+  beforeUse?: () => Promise<void>,
+) {
   return render(
     <QueryClientProvider
       client={
@@ -39,7 +42,7 @@ function mount(onSelect?: (id: string) => void, beforeUse?: () => Promise<void>)
   );
 }
 it.each<[SpeechModel["state"], string]>([
-  ["not_installed", "Download 671 MB"],
+  ["not_installed", "Download"],
   ["queued", "Waiting…"],
   ["downloading", "Pause"],
   ["paused", "Resume"],
@@ -73,7 +76,7 @@ it("shows in-use and loading states without offering removal", async () => {
     },
   });
   mount();
-  expect(await screen.findByText("Getting ready…")).toBeInTheDocument();
+  expect(await screen.findByText("Loading…")).toBeInTheDocument();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Parakeet" }),
   );
@@ -133,10 +136,10 @@ it("exposes hidden models but disables hardware- and component-blocked downloads
   );
   expect(screen.getByText("Needs 8 GB memory")).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Download 1.7 GB" }),
+    screen.getByRole("button", { name: "Download Most accurate" }),
   ).toBeDisabled();
   expect(
-    screen.getByRole("button", { name: "Download 1.6 GB" }),
+    screen.getByRole("button", { name: "Download Any language" }),
   ).toBeDisabled();
   expect(
     screen.getByRole("button", { name: "How to add it" }),
@@ -159,7 +162,9 @@ it("flushes pending settings before applying a model", async () => {
     if (method === "models.use") order.push("use");
     return { ok: true };
   }) as typeof ipc);
-  mount(undefined, async () => { order.push("flush"); });
+  mount(undefined, async () => {
+    order.push("flush");
+  });
   await userEvent.click(await screen.findByRole("button", { name: "Use" }));
   await waitFor(() => expect(order).toEqual(["flush", "use"]));
 });
@@ -168,6 +173,8 @@ it("has no detectable semantic accessibility violations in the local picker", as
   data = structuredClone(testModels);
   const { container } = mount();
   await screen.findByRole("radiogroup");
-  const result = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
+  const result = await axe.run(container, {
+    rules: { "color-contrast": { enabled: false } },
+  });
   expect(result.violations.map((violation) => violation.id)).toEqual([]);
 });

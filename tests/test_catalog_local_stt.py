@@ -35,7 +35,7 @@ def fake_engine(monkeypatch):
             assert samples[0] == 2000 / 32768
             return "Hello world", [{"word": "Hello", "start": 0.1, "end": 0.5}], []
 
-    return LocalEngine(adapter_factory=Adapter), threads
+    return LocalEngine(adapter_factory=Adapter, speech_detector=lambda samples: [(0, len(samples))]), threads
 
 
 async def test_engine_interface_and_dedicated_worker(fake_engine):
@@ -143,7 +143,7 @@ async def test_errors_do_not_expose_native_or_dictation_text(fake_engine):
         engine.adapter_factory = Mock(side_effect=RuntimeError("private model path"))
         with pytest.raises(ProviderError):
             await engine.load("parakeet-110m")
-        assert engine.state == "error"
+        assert engine.state == "ready"
         assert engine.model_id == "parakeet-v3"  # Failed switch did not destroy the old model.
         assert "private" not in engine.message
     finally:

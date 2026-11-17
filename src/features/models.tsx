@@ -22,9 +22,7 @@ export function size(bytes: number) {
     : `${Math.ceil(bytes / 1e6)} MB`;
 }
 function displaySize(model: SpeechModel) {
-  return size(
-    model.id === "parakeet-110m" ? model.disk_bytes : model.download_bytes,
-  );
+  return size(model.download_bytes);
 }
 export function languageName(code: string) {
   try {
@@ -61,17 +59,15 @@ export function DownloadProgress({ model }: { model: SpeechModel }) {
           aria-valuetext={`${Math.round(model.received_bytes / 1e6)} megabytes of ${Math.round(total / 1e6)}`}
         />
       )}
-      {!checking && (
-        <p className="text-xs text-muted-foreground">
-          {checking
-            ? "Checking files…"
-            : `${model.state === "paused" ? "Paused · " : ""}${size(model.received_bytes)} of ${size(total)}`}
-          {!checking &&
-            model.state !== "paused" &&
-            model.eta_seconds !== null &&
-            ` · about ${Math.max(1, Math.ceil(model.eta_seconds / 60))} min left`}
-        </p>
-      )}
+      <p className="text-meta text-muted-foreground">
+        {checking
+          ? "Checking files…"
+          : `${model.state === "queued" ? "Queued" : model.state === "paused" ? "Paused" : model.state === "stalled" ? "Stalled · waiting for connection" : "Downloading"} · ${size(model.received_bytes)} of ${size(total)}`}
+        {!checking &&
+          model.state !== "paused" &&
+          model.eta_seconds !== null &&
+          ` · about ${Math.max(1, Math.ceil(model.eta_seconds / 60))} min left`}
+      </p>
     </div>
   );
 }
@@ -80,12 +76,14 @@ export function ModelPicker({
   selected,
   onSelect,
   beforeUse,
+  language,
 }: {
+  language?: string;
   selected?: string;
   onSelect?: (id: string) => void;
   beforeUse?: () => Promise<void>;
 }) {
-  const { data, models, isPending, error, refetch } = useModels();
+  const { data, models, isPending, error, refetch } = useModels(language);
   const client = useQueryClient();
   const status = useApp((s) => s.status);
   const announcement = useDownloads((s) => s.announcement);
@@ -129,12 +127,26 @@ export function ModelPicker({
         </Button>
       </div>
     );
+  if (data?.recommended.reason_code === "unsupported")
+    return (
+      <p role="status" className="py-4 text-body text-muted-foreground">
+        {data.recommended.reason_text}
+      </p>
+    );
   const visible = models.filter((m) => all || m.visible);
   return (
     <div className="space-y-4">
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>
+      <p className="pt-4 text-meta text-muted-foreground">
+        Models use {size(data?.storage_bytes ?? 0)}
+      </p>
+      {data?.recommended.id === null && data.recommended.reason_text && (
+        <p className="text-body text-muted-foreground">
+          {data.recommended.reason_text}
+        </p>
+      )}
       <div
         ref={root}
         role="radiogroup"
@@ -142,9 +154,12 @@ export function ModelPicker({
         className="space-y-3"
       >
         {visible.map((model) => {
-          const loading = model.in_use && status?.engine?.state === "loading";
+          const loading =
+            model.runtime_state === "loading" ||
+            (model.in_use && status?.engine?.state === "loading");
           const active = [
             "downloading",
+            "stalled",
             "paused",
             "verifying",
             "installing",
@@ -165,7 +180,7 @@ export function ModelPicker({
                     value={model.id}
                     className="mt-1 size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                     checked={chosen === model.id}
-                    disabled={disabled || busy === model.id}
+                    disabled={disabled || loading || busy === model.id}
                     onChange={() => select(model)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -211,20 +226,70 @@ export function ModelPicker({
                       {model.label}
                     </label>
                     {model.id === data?.recommended.id && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        Recommended for this computer
+                      <span className="ml-2 text-meta text-muted-foreground">
+                        Recommended for{" "}
+                        {languageName(
+                          language || data?.hardware.language || "en",
+                        )}
                       </span>
                     )}
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      {model.blurb}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {displaySize(model)}
-                    </p>
+                    <dl className="space-y-1 text-meta text-muted-foreground">
+                      <div>
+                        <dt className="inline">Wait when you stop: </dt>
+                        <dd className="inline">
+                          {model.decode_ms != null
+                            ? `${(model.decode_ms / 1000).toFixed(1)} s last time`
+                            : model.reference_wait_ms
+                              ? `about ${(model.reference_wait_ms / 1000).toFixed(1)} s on a reference CPU`
+                              : "Measured after your first dictation"}
+                        </dd>
+                      </div>
+                      {(model.wer.open_asr_latest ??
+                        model.wer.open_asr_v1_1) !== undefined && (
+                        <div>
+                          <dt className="sr-only">Accuracy</dt>
+                          <dd>
+                            About 1 in{" "}
+                            {Math.max(
+                              1,
+                              Math.round(
+                                100 /
+                                  (model.wer.open_asr_latest ??
+                                    model.wer.open_asr_v1_1 ??
+                                    100),
+                              ),
+                            )}{" "}
+                            words wrong <span>(English tests)</span>
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="inline">Languages: </dt>
+                        <dd className="inline">
+                          {model.languages.includes("*")
+                            ? "99 languages"
+                            : model.languages.length > 3
+                              ? `${model.languages.length} languages, including ${model.languages.slice(0, 3).map(languageName).join(", ")}`
+                              : model.languages.map(languageName).join(", ")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="inline">Download: </dt>
+                        <dd className="inline">{displaySize(model)}</dd>
+                      </div>
+                    </dl>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
-                  {onSelect ? (
+                  {onSelect &&
+                  ![
+                    "queued",
+                    "downloading",
+                    "stalled",
+                    "paused",
+                    "verifying",
+                    "installing",
+                  ].includes(model.state) ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -235,7 +300,7 @@ export function ModelPicker({
                     </Button>
                   ) : model.state === "queued" ? (
                     <>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-meta text-muted-foreground">
                         Waiting…
                       </span>
                       <Button
@@ -250,7 +315,9 @@ export function ModelPicker({
                         Cancel
                       </Button>
                     </>
-                  ) : ["downloading", "paused"].includes(model.state) ? (
+                  ) : ["downloading", "stalled", "paused"].includes(
+                      model.state,
+                    ) ? (
                     <>
                       <Button
                         variant="outline"
@@ -283,20 +350,29 @@ export function ModelPicker({
                       </Button>
                     </>
                   ) : ["verifying", "installing"].includes(model.state) ? (
-                    <span className="text-xs text-muted-foreground">
-                      Checking files…
-                    </span>
+                    <span className="sr-only">Preparing download</span>
                   ) : ready ? (
                     <>
-                      {model.in_use ? (
-                        <span className="px-2 text-xs text-muted-foreground">
-                          {loading ? "Getting ready…" : "In use"}
+                      {loading && !model.in_use ? (
+                        <span
+                          role="status"
+                          className="px-2 text-meta text-muted-foreground"
+                        >
+                          Loading…
+                        </span>
+                      ) : model.in_use ? (
+                        <span className="px-2 text-meta text-muted-foreground">
+                          {loading
+                            ? "Loading…"
+                            : model.runtime_state === "unloaded"
+                              ? "Resting · loads when needed"
+                              : "Ready · in use"}
                         </span>
                       ) : (
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={disabled || busy === model.id}
+                          disabled={disabled || loading || busy === model.id}
                           onClick={() => select(model)}
                         >
                           Use
@@ -336,11 +412,19 @@ export function ModelPicker({
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </>
+                  ) : loading ? (
+                    <span
+                      role="status"
+                      className="text-meta text-muted-foreground"
+                    >
+                      Loading…
+                    </span>
                   ) : (
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={disabled || busy === model.id}
+                      aria-label={`Download ${model.label}`}
+                      disabled={disabled || loading || busy === model.id}
                       onClick={() =>
                         void run(model.id, () =>
                           ipc("models.download", { id: model.id }),
@@ -351,7 +435,7 @@ export function ModelPicker({
                         ? "Try again"
                         : damaged[model.id]
                           ? "Download again"
-                          : `Download ${displaySize(model)}`}
+                          : "Download"}
                     </Button>
                   )}
                 </div>
@@ -361,13 +445,20 @@ export function ModelPicker({
                   <DownloadProgress model={model} />
                 </div>
               )}
+              {model.runtime_message &&
+                (model.runtime_state === "failed" ||
+                  model.runtime_state === "error") && (
+                  <p role="alert" className="mt-2 text-meta text-destructive">
+                    {model.runtime_message}
+                  </p>
+                )}
               {model.error && (
-                <p className="mt-2 text-xs text-destructive">
+                <p className="mt-2 text-meta text-destructive">
                   {model.error.message}
                 </p>
               )}
               {damaged[model.id] && (
-                <p className="mt-2 text-xs text-destructive">
+                <p className="mt-2 text-meta text-destructive">
                   Some files are damaged. Download them again (
                   {displaySize(model)}).
                 </p>
@@ -375,9 +466,7 @@ export function ModelPicker({
               {model.disabled_reason &&
                 (!ready ||
                   model.disabled_reason === "Needs an extra component.") && (
-                  <p
-                    className={`mt-2 text-xs ${model.disabled_reason.includes("free") ? "text-destructive" : "text-muted-foreground"}`}
-                  >
+                  <p className="mt-2 text-meta text-muted-foreground">
                     {model.disabled_reason}{" "}
                     {model.disabled_reason === "Needs an extra component." && (
                       <Button
@@ -392,7 +481,7 @@ export function ModelPicker({
                     )}
                   </p>
                 )}
-              <details className="mt-3 text-xs leading-6 text-muted-foreground">
+              <details className="mt-3 text-meta leading-6 text-muted-foreground">
                 <summary className="flex w-fit cursor-pointer list-none items-center gap-1">
                   Details <ChevronDown className="size-3" />
                 </summary>
@@ -407,23 +496,12 @@ export function ModelPicker({
                         " · Detects the language automatically"}
                     </dd>
                   </div>
-                  {model.wer.open_asr_latest !== undefined && (
-                    <div>
-                      <dt className="inline font-medium">Mistakes: </dt>
-                      <dd className="inline">
-                        About {Math.round(model.wer.open_asr_latest)} in 100
-                        words on standard English tests
-                      </dd>
-                    </div>
-                  )}
                   <div>
-                    <dt className="inline font-medium">
-                      Speed on this computer:{" "}
-                    </dt>
+                    <dt className="inline font-medium">Timing: </dt>
                     <dd className="inline">
-                      {model.decode_ms === null
-                        ? "Measured after your first dictation"
-                        : `${(model.decode_ms / 1000).toFixed(1)} s after you let go`}
+                      Reference timing uses 7–17 second English clips on an
+                      Intel i5-13450HX CPU. Your wait varies with hardware and
+                      recording length.
                     </dd>
                   </div>
                   <div>
@@ -472,7 +550,7 @@ export function ModelPicker({
         </Button>
       )}
       {data?.pending_use && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           Caelum will switch to{" "}
           {models.find((m) => m.id === data.pending_use)?.label} when it’s
           downloaded.
@@ -506,16 +584,35 @@ export function ModelDownloadLine({ modelId }: { modelId: string }) {
     return () => clearTimeout(timeout);
   }, [model?.state]);
   if (!model) return null;
+  if (model.runtime_state === "loading")
+    return (
+      <p role="status" className="text-body text-muted-foreground">
+        Loading {model.label}…
+      </p>
+    );
+  if (model.runtime_state === "failed" || model.runtime_state === "error")
+    return (
+      <p role="alert" className="text-body text-destructive">
+        {model.runtime_message || "Couldn't load the model. Retry in Settings."}
+      </p>
+    );
   if (model.state === "installed")
     return ready ? (
       <p role="status" className="text-sm text-muted-foreground">
-        {model.label} is ready
+        {model.label}
+        {model.runtime_state === "ready" ? " is ready" : " downloaded"}
       </p>
     ) : null;
   if (
-    !["queued", "downloading", "paused", "verifying", "installing"].includes(
-      model.state,
-    )
+    ![
+      "queued",
+      "downloading",
+      "stalled",
+      "paused",
+      "verifying",
+      "installing",
+      "failed",
+    ].includes(model.state)
   )
     return null;
   return (
@@ -527,12 +624,8 @@ export function ModelDownloadLine({ modelId }: { modelId: string }) {
         {announcement}
       </div>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm">
-          {model.state === "paused"
-            ? "Download paused"
-            : `Downloading ${model.label}`}
-        </p>
-        {["paused", "downloading"].includes(model.state) && (
+        <p className="text-sm">{model.label}</p>
+        {["paused", "downloading", "stalled"].includes(model.state) && (
           <Button
             size="sm"
             variant="ghost"
@@ -549,7 +642,13 @@ export function ModelDownloadLine({ modelId }: { modelId: string }) {
           </Button>
         )}
       </div>
-      <DownloadProgress model={model} />
+      {model.state === "failed" ? (
+        <p role="alert" className="text-meta text-destructive">
+          {model.error?.message ?? "Download failed. Retry in Settings."}
+        </p>
+      ) : (
+        <DownloadProgress model={model} />
+      )}
     </section>
   );
 }

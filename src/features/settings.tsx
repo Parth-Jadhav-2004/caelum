@@ -14,6 +14,7 @@ import { ipc, type Config } from "@/lib/ipc";
 import { action, Heading, Confirm } from "@/components/common";
 import { useApp } from "@/stores/app";
 import { Button } from "@/components/ui/button";
+import { ModelPicker } from "./models";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -336,89 +337,224 @@ export function Settings({
           )}
           {group === "Transcription" && (
             <>
-              <Row title="Transcribe with">
+              <Row title="Transcription engine">
                 <Choice
-                  label="Transcription provider"
-                  value={
-                    config.stt.base_url === "https://api.groq.com/openai/v1"
-                      ? "groq"
-                      : "custom"
-                  }
+                  label="Transcription engine"
+                  value={config.stt.engine}
                   items={[
-                    ["groq", "Groq"],
-                    ["custom", "Custom provider"],
-                  ]}
-                  change={(v) => {
-                    if (v === "groq")
-                      change({
-                        ...config,
-                        stt: {
-                          ...config.stt,
-                          base_url: "https://api.groq.com/openai/v1",
-                          model: "whisper-large-v3-turbo",
-                          key_env: "GROQ_API_KEY",
-                        },
-                      });
-                    else setGroup("Advanced");
-                  }}
-                />
-              </Row>
-              <Row title="Clean up my text">
-                <Choice
-                  label="Text cleanup"
-                  value={
-                    !config.cleanup.model
-                      ? "off"
-                      : config.cleanup.reasoning_effort === "high"
-                        ? "high"
-                        : "low"
-                  }
-                  items={[
-                    ["off", "Off"],
-                    ["low", "Light"],
-                    ["high", "Thorough"],
+                    ["online", "Online"],
+                    ["local", "On this computer"],
                   ]}
                   change={(v) =>
                     change({
                       ...config,
-                      cleanup: {
-                        ...config.cleanup,
-                        model:
-                          v === "off"
-                            ? ""
-                            : config.cleanup.model || "openai/gpt-oss-20b",
-                        reasoning_effort: v === "off" ? "" : v,
+                      stt: {
+                        ...config.stt,
+                        engine: v,
+                        fallback:
+                          config.stt.fallback === v
+                            ? "none"
+                            : config.stt.fallback,
                       },
                     })
                   }
                 />
               </Row>
-              <Row title="Connection" detail={connection || undefined}>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={connectionChecking}
-                    onClick={() => {
-                      setConnectionChecking(true);
-                      void action(() => ipc("providers.check", {}))
-                        .then((v) => {
-                          if (v) setConnection(v);
-                        })
-                        .finally(() => setConnectionChecking(false));
-                    }}
+              {config.stt.engine === "local" ? (
+                <>
+                  <ModelPicker
+                    language={config.stt.language}
+                    beforeUse={() => commit?.(config) ?? Promise.resolve()}
+                  />
+                  <Row title="Run local models on">
+                    <Choice
+                      label="Local model device"
+                      value={config.stt.local_device}
+                      items={[
+                        ["auto", "Auto"],
+                        ["gpu", "GPU"],
+                        ["cpu", "CPU"],
+                      ]}
+                      change={(v) => set("stt", "local_device", v)}
+                    />
+                  </Row>
+                  <Row
+                    title="Free memory after"
+                    detail="The model loads again when you next dictate."
                   >
-                    <Check />
-                    {connectionChecking ? "Checking…" : "Test connection"}
-                  </Button>
-                  <Button variant="secondary" onClick={() => navigate("setup")}>
-                    <KeyRound />
-                    Manage keys
-                  </Button>
-                </div>
-              </Row>
+                    <Choice
+                      label="Unload idle model"
+                      value={String(config.stt.local_idle_seconds)}
+                      items={[
+                        ["60", "1 minute"],
+                        ["300", "5 minutes"],
+                        ["900", "15 minutes"],
+                        ["0", "Never"],
+                        ...(![0, 60, 300, 900].includes(
+                          config.stt.local_idle_seconds,
+                        )
+                          ? [
+                              [
+                                String(config.stt.local_idle_seconds),
+                                `${config.stt.local_idle_seconds} seconds`,
+                              ] as [string, string],
+                            ]
+                          : []),
+                      ]}
+                      change={(v) =>
+                        set("stt", "local_idle_seconds", Number(v))
+                      }
+                    />
+                  </Row>
+                  <Row
+                    title="If the model is missing or won’t load"
+                    detail="Unclear speech is never sent Online."
+                  >
+                    <Choice
+                      label="Local model fallback"
+                      value={config.stt.fallback}
+                      items={[
+                        ["none", "Keep audio on this computer"],
+                        ["online", "Use Online"],
+                      ]}
+                      change={(v) => set("stt", "fallback", v)}
+                    />
+                  </Row>
+                  <p className="py-4 text-meta text-muted-foreground">
+                    Offline cleanup removes um and uh, handles “new line”, and
+                    applies Dictionary replacements.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Row title="Transcribe with">
+                    <Choice
+                      label="Transcription provider"
+                      value={
+                        config.stt.base_url === "https://api.groq.com/openai/v1"
+                          ? "groq"
+                          : "custom"
+                      }
+                      items={[
+                        ["groq", "Groq"],
+                        ["custom", "Custom provider"],
+                      ]}
+                      change={(v) => {
+                        if (v === "groq")
+                          change({
+                            ...config,
+                            stt: {
+                              ...config.stt,
+                              base_url: "https://api.groq.com/openai/v1",
+                              model: "whisper-large-v3-turbo",
+                              key_env: "GROQ_API_KEY",
+                            },
+                          });
+                        else setGroup("Advanced");
+                      }}
+                    />
+                  </Row>
+                  <Row title="Clean up my text">
+                    <Choice
+                      label="Text cleanup"
+                      value={
+                        !config.cleanup.model
+                          ? "off"
+                          : config.cleanup.reasoning_effort === "high"
+                            ? "high"
+                            : "low"
+                      }
+                      items={[
+                        ["off", "Off"],
+                        ["low", "Light"],
+                        ["high", "Thorough"],
+                      ]}
+                      change={(v) =>
+                        change({
+                          ...config,
+                          cleanup: {
+                            ...config.cleanup,
+                            model:
+                              v === "off"
+                                ? ""
+                                : config.cleanup.model || "openai/gpt-oss-20b",
+                            reasoning_effort: v === "off" ? "" : v,
+                            style:
+                              v === "high"
+                                ? "thorough"
+                                : v === "low"
+                                  ? "light"
+                                  : config.cleanup.style,
+                          },
+                        })
+                      }
+                    />
+                  </Row>
+                  {config.cleanup.model && (
+                    <Row title="Cleanup style">
+                      <Choice
+                        label="Cleanup style"
+                        value={config.cleanup.style}
+                        items={[
+                          ["light", "Light"],
+                          ["thorough", "Thorough"],
+                          ["email", "Email"],
+                          ["casual", "Casual"],
+                          ["code", "Code"],
+                        ]}
+                        change={(v) => set("cleanup", "style", v)}
+                      />
+                    </Row>
+                  )}
+                  <Row title="Connection" detail={connection || undefined}>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        disabled={connectionChecking}
+                        onClick={() => {
+                          setConnectionChecking(true);
+                          void action(() => ipc("providers.check", {}))
+                            .then((v) => {
+                              if (v) setConnection(v);
+                            })
+                            .finally(() => setConnectionChecking(false));
+                        }}
+                      >
+                        <Check />
+                        {connectionChecking ? "Checking…" : "Test connection"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => navigate("setup")}
+                      >
+                        <KeyRound />
+                        Manage keys
+                      </Button>
+                    </div>
+                  </Row>
+                  <Row title="When Online is unavailable">
+                    <Choice
+                      label="Online fallback"
+                      value={config.stt.fallback}
+                      items={[
+                        ["none", "Ask me to retry"],
+                        ["local", "Use a local model"],
+                      ]}
+                      change={(v) => set("stt", "fallback", v)}
+                    />
+                  </Row>
+                  {config.stt.fallback === "local" && (
+                    <ModelPicker
+                      language={config.stt.language}
+                      selected={config.stt.local_model}
+                      onSelect={(id) => set("stt", "local_model", id)}
+                    />
+                  )}
+                </>
+              )}
             </>
           )}
-          {group === "Transcription" && (
+          {group === "Transcription" && config.stt.engine === "online" && (
             <Row title="Model">
               <Input
                 aria-label="Transcription model"
@@ -683,6 +819,8 @@ export function Dictionary({
   change: (next: Config) => void;
 }) {
   const [word, setWord] = useState("");
+  const [spoken, setSpoken] = useState("");
+  const [replacement, setReplacement] = useState("");
   const words = config.stt.vocabulary
     .split(/[,\n]/)
     .map((w) => w.trim())
@@ -724,6 +862,70 @@ export function Dictionary({
               variant="ghost"
               aria-label={`Remove ${w}`}
               onClick={() => save(words.filter((_, j) => i !== j))}
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <h2 className="pt-4 text-section font-medium">Replacements</h2>
+      <p className="text-meta text-muted-foreground">
+        Applied when you use a local model.
+      </p>
+      <form
+        className="flex flex-wrap gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          change({
+            ...config,
+            cleanup: {
+              ...config.cleanup,
+              replacements: {
+                ...config.cleanup.replacements,
+                [spoken.trim()]: replacement.trim(),
+              },
+            },
+          });
+          setSpoken("");
+          setReplacement("");
+        }}
+      >
+        <Input
+          aria-label="Spoken phrase"
+          placeholder="When I say"
+          value={spoken}
+          onChange={(event) => setSpoken(event.target.value)}
+          className="min-w-32 flex-1"
+        />
+        <Input
+          aria-label="Replacement text"
+          placeholder="Replace with"
+          value={replacement}
+          onChange={(event) => setReplacement(event.target.value)}
+          className="min-w-32 flex-1"
+        />
+        <Button disabled={!spoken.trim()}>Add replacement</Button>
+      </form>
+      <ul>
+        {Object.entries(config.cleanup.replacements).map(([from, to]) => (
+          <li
+            key={from}
+            className="flex min-h-12 items-center justify-between gap-3 border-b text-body"
+          >
+            <span className="min-w-0 break-words">
+              {from} → {to || "(remove)"}
+            </span>
+            <Button
+              variant="ghost"
+              aria-label={`Remove replacement ${from}`}
+              onClick={() => {
+                const next = { ...config.cleanup.replacements };
+                delete next[from];
+                change({
+                  ...config,
+                  cleanup: { ...config.cleanup, replacements: next },
+                });
+              }}
             >
               Remove
             </Button>

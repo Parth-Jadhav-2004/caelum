@@ -110,6 +110,12 @@ class Orchestrator:
         await self.hud.emit(self.feedback)
 
     async def handle(self, action, token="", address=None):
+        # Native model staging can hold the control lock for seconds. Status is
+        # read-only and must remain available to the sidecar throughout loading.
+        if action == "status":
+            return {"feedback": self.feedback, "paused": self.paused, "state": self.state,
+                    "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
+                    "metrics": self.recent_metrics[-1:]}
         async with self.control_lock:
             if self.stopping and action != "status":
                 return
@@ -163,7 +169,7 @@ class Orchestrator:
                     Chunker(self.provider, self.config.stt)
                     if self.config.app.strategy == "chunked"
                     and self.config.stt.fallback == "none"
-                    and not (self.config.stt.engine == "local" and not self.config.stt.local_model)
+                    and self.config.stt.engine == "online"
                     else None
                 )
                 self.poll_task = asyncio.create_task(self.poll())

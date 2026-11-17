@@ -6,7 +6,6 @@ import os
 import signal
 import sys
 import threading
-import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -58,9 +57,15 @@ class Backend:
         self._download_tray = (0, "")
         self.reload_model = None
         self.model_tasks = set()
+        self.switching_model = None
+        self.model_failures = {}
 
     def model_progress(self, data):
         self.emit("model-download", data)
+        if data["id"] in {self.pending_model, load(self.path).stt.local_model}:
+            task = asyncio.create_task(self.notify_model_state(data))
+            self.model_tasks.add(task)
+            task.add_done_callback(self.model_tasks.discard)
         if data["state"] == "ready":
             # Reload a model chosen during onboarding, even though its id has
             # not changed since the download began.
@@ -71,6 +76,12 @@ class Backend:
                 if not done.cancelled() and done.exception():
                     self.emit("model-attention", {"message": "Couldn't switch speech model. Open Settings."})
             task.add_done_callback(completed)
+
+    async def notify_model_state(self, data):
+        with suppress(OSError, RuntimeError, ValueError):
+            await asyncio.to_thread(request, "model-progress", progress={
+                "id": data["id"], "state": data["state"],
+            })
 
     async def model_ready(self, model_id):
         async with self.mutation_lock:
@@ -96,7 +107,7 @@ class Backend:
             pass
 
     async def apply_pending(self):
-        if not self.pending_model or not installed(self.pending_model):
+        if not self.pending_model or self.pending_model in self.model_failures or not installed(self.pending_model):
             return
         try:
             await self.idle()
@@ -107,21 +118,63 @@ class Backend:
         self.pending_model = None
         (models_dir() / "pending-use.json").unlink(missing_ok=True)
 
+    async def save_settings(self, config, previous):
+        """The process owning the active engine commits a validated model switch."""
+        from .config import validate
+        from .providers import Providers
+
+        validate(config)
+        running = (await self.status())["running"]
+        changed = Providers.signature(config) != Providers.signature(previous)
+        if running and changed:
+            # The daemon stages the candidate, persists, then swaps. A failed load
+            # leaves both the saved config and the previous engine untouched.
+            await asyncio.to_thread(request, "settings", config=asdict(config))
+        elif changed and (config.stt.engine == "local" or config.stt.fallback == "local"):
+            provider = Providers(config)
+            candidate = None
+            try:
+                candidate = await provider.prepare_local(config)
+                await asyncio.to_thread(save, config, self.path)
+            finally:
+                if candidate:
+                    await candidate.aclose()
+                await provider.aclose()
+        else:
+            await asyncio.to_thread(save, config, self.path)
+            if running:
+                try:
+                    await asyncio.to_thread(request, "reload")
+                except (RuntimeError, OSError) as error:
+                    return f"Saved; service not updated: {error}"
+        return None
+
     async def use_model(self, model_id):
         get_model(model_id)
         await self.idle()
-        self.pending_model = None
-        (models_dir() / "pending-use.json").unlink(missing_ok=True)
+        previous = load(self.path)
         config = load(self.path)
         config.stt.engine, config.stt.local_model = "local", model_id
         if config.stt.fallback == "local":
             config.stt.fallback = "none"
-        await asyncio.to_thread(save, config, self.path)
+        self.switching_model = model_id
+        self.model_failures.pop(model_id, None)
+        self.emit("models-changed", {"id": model_id})
+        try:
+            await self.save_settings(config, previous)
+        except Exception as error:
+            from .providers import ProviderError
+
+            self.model_failures[model_id] = (str(error) if isinstance(error, (ProviderError, RuntimeError))
+                                           else "Couldn't load this speech model. Try again.")
+            raise
+        finally:
+            self.switching_model = None
+            self.emit("models-changed", {"id": model_id})
+        self.pending_model = None
+        (models_dir() / "pending-use.json").unlink(missing_ok=True)
         self.setup_checks.discard("provider")
         self.setup_checks.discard("practice")
-        if (await self.status())["running"]:
-            await asyncio.to_thread(request, "reload")
-        self.emit("models-changed", {"id": model_id})
 
     async def status(self):
         try:
@@ -135,20 +188,22 @@ class Backend:
         if "engine" not in value:
             ready = (config.stt.engine != "local" or bool(
                 config.stt.local_model and installed(config.stt.local_model)
-            ) or bool(config.stt.local_model_path and not config.stt.local_model))
+            ))
             value["engine"] = {"kind": config.stt.engine, "model": config.stt.local_model or None,
-                               "state": "ready" if ready else "missing", "message": ""}
+                               "state": ("unloaded" if ready and config.stt.engine == "local" else
+                                         "ready" if ready else "missing"), "message": ""}
         title, detail = service_presentation(value if value["running"] else None)
-        progress = self.models.states.get(config.stt.local_model, {})
-        if config.stt.engine == "local" and progress.get("state") == "downloading" and (
-            value.get("state") in ("hidden", "success", "unrefined", "saved", "copied", "no_speech")
-            and not value.get("pending_audio")
-        ):
-            now = time.monotonic()
-            if now - self._download_tray[0] >= 5:
-                percent = min(100, int(progress["received_bytes"] / max(1, progress["total_bytes"]) * 100))
-                self._download_tray = (now, f"Downloading {get_model(config.stt.local_model)['label']} {percent}%")
-            title = self._download_tray[1] or "Downloading speech model"
+        selected = self.switching_model or self.pending_model or config.stt.local_model
+        progress = self.models.states.get(selected, {})
+        if value.get("state") in ("hidden", "success", "unrefined", "saved", "copied", "no_speech"):
+            if self.switching_model:
+                title, detail = "Loading speech model", get_model(selected)["label"]
+            elif progress.get("state") in ("queued", "downloading", "stalled", "verifying", "installing", "failed"):
+                labels = {"queued": "Download queued", "downloading": "Downloading speech model",
+                          "stalled": "Download stalled", "verifying": "Checking speech model",
+                          "installing": "Installing speech model", "failed": "Model download failed"}
+                title = labels[progress["state"]]
+                detail = (progress.get("error") or {}).get("message", get_model(selected)["label"])
         return {**value, "title": title, "detail": detail}
 
     async def idle(self):
@@ -234,8 +289,22 @@ class Backend:
             return await self.status()
         if method == "models.list":
             await self.models.recover()
-            return {**self.models.list(config, await asyncio.to_thread(detect, config)),
-                    "pending_use": self.pending_model}
+            hardware = await asyncio.to_thread(detect, config)
+            if "language" in params:
+                hardware.language = params["language"] or hardware.language
+            result = await asyncio.to_thread(self.models.list, config, hardware)
+            status = await self.status()
+            for model in result["models"]:
+                if model["id"] == self.switching_model:
+                    model["runtime_state"] = "loading"
+                elif model["id"] in self.model_failures:
+                    model["runtime_state"] = "failed"
+                    model["runtime_message"] = self.model_failures[model["id"]]
+                elif model["in_use"]:
+                    engine = status.get("engine", {})
+                    model["runtime_state"] = engine.get("state", "unloaded")
+                    model["runtime_message"] = engine.get("message", "")
+            return {**result, "pending_use": self.pending_model}
         if method.startswith("models."):
             model_id = params["id"]
             get_model(model_id)
@@ -318,10 +387,12 @@ class Backend:
             previous = load(self.path)
             if config.stt != previous.stt:
                 await self.idle()
-                if config.stt.engine != previous.stt.engine or config.stt.local_model != previous.stt.local_model:
-                    self.pending_model = None
-                    (models_dir() / "pending-use.json").unlink(missing_ok=True)
-            await asyncio.to_thread(save, config, self.path)
+            warning = await self.save_settings(config, previous)
+            if (config.stt.engine != previous.stt.engine or config.stt.local_model != previous.stt.local_model) and (
+                config.stt.engine == "online" or config.stt.local_model
+            ):
+                self.pending_model = None
+                (models_dir() / "pending-use.json").unlink(missing_ok=True)
             if config.stt != previous.stt or config.cleanup != previous.cleanup:
                 self.setup_checks.discard("provider")
                 self.setup_checks.discard("practice")
@@ -332,12 +403,7 @@ class Backend:
                     self.setup_checks.discard("practice")
                 if previous.app.hotkey != config.app.hotkey:
                     self.setup_checks.discard("shortcut")
-            if (await self.status())["running"]:
-                try:
-                    await asyncio.to_thread(request, "reload")
-                except (RuntimeError, OSError) as error:
-                    return {"saved": True, "warning": f"Saved; service not updated: {error}"}
-            return {"saved": True}
+            return {"saved": True, **({"warning": warning} if warning else {})}
         elif method == "providers.check":
             return await connection_status(config)
         elif method == "credentials.store":

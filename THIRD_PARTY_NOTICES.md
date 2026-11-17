@@ -20,7 +20,7 @@ Whisper component use these runtimes:
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): MIT.
 - [CTranslate2](https://github.com/OpenNMT/CTranslate2): MIT.
 
-Model weights are not bundled. The catalog records the source, revision,
+Speech model weights are not bundled. The catalog records the source, revision,
 SHA-256, licence and attribution for every downloadable model:
 
 - Parakeet TDT 0.6B v3 and Parakeet TDT-CTC 110M by NVIDIA,
@@ -43,3 +43,13 @@ is the pinned Parakeet v2 repository's `test_wavs/0.wav`; that repository declar
 CC BY 4.0. Recordings are downloaded only by an explicit developer command,
 outside the source tree, and are not included in packages.
 
+
+## Silero voice activity detector — MIT
+
+`python/caelum/data/silero_vad.onnx` is the Silero detector distributed by
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx).
+It is bundled so silence detection never needs a runtime download. Snapshot
+retrieved November 17, 2026; SHA-256:
+`9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6`.
+The upstream [Silero license](https://github.com/snakers4/silero-vad/blob/master/LICENSE)
+is included verbatim in `python/caelum/data/Silero-LICENSE.txt` and the Python wheel.

@@ -9,6 +9,11 @@ import time
 from collections import deque
 
 STATES = {
+    "model_downloading",
+    "model_stalled",
+    "model_loading",
+    "model_ready",
+    "model_failed",
     "hidden",
     "starting",
     "listening",
@@ -27,9 +32,14 @@ STATES = {
     "cancelled",
 }
 LABELS = {
+    "model_downloading": "Downloading model",
+    "model_stalled": "Download stalled",
+    "model_loading": "Loading model",
+    "model_ready": "Model ready",
+    "model_failed": "Model failed",
     "starting": "Starting…",
     "loading": "Getting ready…",
-    "missing_model": "Speech model not downloaded",
+    "missing_model": "Model missing",
     "success_fallback_online": "Done · used Online",
     "success_fallback_local": "Done · used this computer",
     "processing": "Transcribing",
@@ -47,9 +57,9 @@ ERRORS = {
     "insert": "Insert failed",
     "capture": "Capture interrupted",
     "hud": "Feedback unavailable",
-    "missing_model": "Speech model not downloaded",
-    "local_decode": "Couldn't make sense of that",
-    "local_setup": "Speech model needs attention",
+    "missing_model": "Model missing",
+    "local_decode": "Unclear speech",
+    "local_setup": "Model unavailable",
 }
 
 
@@ -61,10 +71,11 @@ def presentation(kind):
     return {
         "visible": kind != "hidden",
         "capture": capture,
-        "width": 140 if capture else 320 if kind == "error" else 264 if kind == "copied" else 184,
-        "dwell": {"success": 0.6, "unrefined": 0.6, "error": 5,
-                  "no_speech": 0.8, "copied": 2, "cancelled": 0.0}.get(kind),
-        "actions": ("cancel", "stop") if capture else ("retry", "cancel") if kind == "error" else (),
+        "width": 140 if capture else 320 if kind in ("error", "missing_model") else 264 if kind in ("copied", "success_fallback_online", "success_fallback_local") else 184,
+        "dwell": {"model_downloading": 2, "model_stalled": 5, "model_ready": 2, "model_failed": 5, "success": 0.6, "unrefined": 0.6, "error": 5,
+                  "no_speech": 0.8, "copied": 2, "cancelled": 0.0, "missing_model": 5,
+                  "success_fallback_online": 2, "success_fallback_local": 2}.get(kind),
+        "actions": ("cancel", "stop") if capture else ("retry", "cancel") if kind in ("error", "missing_model") else (),
     }
 
 
@@ -226,7 +237,7 @@ def run(reduced_motion=False, high_contrast=False):
                 accent
                 if kind in ("recording", "success", "unrefined", "success_fallback_online", "success_fallback_local")
                 else error
-                if kind in ("error", "missing_model")
+                if kind in ("error", "missing_model", "model_failed")
                 else white
             )
         )
@@ -245,7 +256,7 @@ def run(reduced_motion=False, high_contrast=False):
         else:
             label = (
                 ERRORS.get(display_state.get("error_code"), LABELS.get(kind, ""))
-                if kind == "error"
+                if kind in ("error", "missing_model")
                 else LABELS.get(kind, "")
             )
             cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
@@ -254,12 +265,12 @@ def run(reduced_motion=False, high_contrast=False):
             if label_width > 180:
                 cr.set_font_size(12)
                 label_width = cr.text_extents(label).width
-            cx = x + 20 if kind == "error" else x + (capsule_width - (24 + label_width)) / 2 + 7
-            if kind in ("processing", "starting", "loading"):
+            cx = x + 20 if kind in ("error", "missing_model") else x + (capsule_width - (24 + label_width)) / 2 + 7
+            if kind in ("processing", "starting", "loading", "model_loading", "model_downloading"):
                 angle = 0 if reduced_motion else (now % 1.2) / 1.2 * math.tau
                 cr.arc(cx, cy, 6, angle, angle + math.pi * 1.45)
                 cr.stroke()
-            elif kind in ("success", "unrefined", "success_fallback_online", "success_fallback_local"):
+            elif kind in ("success", "unrefined", "success_fallback_online", "success_fallback_local", "model_ready"):
                 cr.move_to(cx - 5, cy)
                 cr.line_to(cx - 1, cy + 4)
                 cr.line_to(cx + 6, cy - 4)
@@ -270,7 +281,7 @@ def run(reduced_motion=False, high_contrast=False):
                     cr.line_to(cx + dx, cy + dy)
                 cr.close_path()
                 cr.stroke()
-            elif kind in ("error", "missing_model"):
+            elif kind in ("error", "missing_model", "model_failed"):
                 cr.move_to(cx, cy - 7)
                 cr.line_to(cx + 7, cy + 6)
                 cr.line_to(cx - 7, cy + 6)
@@ -384,7 +395,7 @@ def run(reduced_motion=False, high_contrast=False):
         controls.set_opacity(fade.opacity(time.monotonic()))
         error_controls.set_opacity(fade.opacity(time.monotonic()))
         controls.set_visible(state["state"] in ("listening", "recording"))
-        error_controls.set_visible(state["state"] == "error")
+        error_controls.set_visible(state["state"] in ("error", "missing_model"))
         kind = state["state"]
         capsule_width = presentation(kind)["width"]
         if win.get_realized():

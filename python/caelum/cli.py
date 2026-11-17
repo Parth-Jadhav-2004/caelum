@@ -81,19 +81,17 @@ async def doctor(config):
     checks["desktop_session"] = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
     checks["runtime_directory"] = bool(os.environ.get("XDG_RUNTIME_DIR"))
     if config.stt.engine == "local":
-        from .local_stt import check_local
-        from .models import installed
-        from .providers import ProviderError
+        import importlib.util
 
-        try:
-            if config.stt.local_model:
-                if not installed(config.stt.local_model):
-                    raise ProviderError("Speech model not downloaded", "missing_model")
-            else:
-                check_local(config.stt)
-            checks["local_transcription_ready"] = True
-        except ProviderError:
-            checks["local_transcription_ready"] = False
+        from .hardware import detect, local_support
+        from .models import EXTRA_MODULES, get_model, installed
+
+        checks["local_models_supported"] = local_support(detect(config)) is None
+        ready = bool(config.stt.local_model) and installed(config.stt.local_model)
+        if ready:
+            extra = get_model(config.stt.local_model)["requires_extra"] or "local"
+            ready = importlib.util.find_spec(EXTRA_MODULES[extra]) is not None
+        checks["local_transcription_ready"] = ready and checks["local_models_supported"]
     for name, provider in (("stt", config.stt), ("cleanup", config.cleanup)):
         if config.stt.engine == "local":
             continue
