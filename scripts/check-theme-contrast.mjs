@@ -6,7 +6,7 @@ import console from "node:console";
 import assert from "node:assert/strict";
 import { parse, wcagContrast } from "culori";
 const main = fs.readFileSync("src/index.css", "utf8");
-const imported = fs.readFileSync("src/lib/t3-themes.generated.css", "utf8");
+
 function tokens(body) {
   return Object.fromEntries(
     [...body.matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((m) => [
@@ -21,7 +21,7 @@ const palettes = new Map([
   ["caelum/light", light],
   ["caelum/dark", { ...light, ...dark }],
 ]);
-for (const match of imported.matchAll(
+for (const match of main.matchAll(
   /:root(\.dark)?\[data-color-theme="([\w-]+)"\]\s*\{([^}]+)\}/g,
 )) {
   palettes.set(`${match[2]}/${match[1] ? "dark" : "light"}`, {
@@ -50,6 +50,13 @@ function value(palette, name) {
 }
 const pairs = [
   ["foreground", "background"],
+  ["muted-foreground", "popover"],
+  ["muted-foreground", "sidebar"],
+  ["accent-brand", "sidebar"],
+  ["accent-brand", "background"],
+  ["accent-brand", "sidebar-status"],
+  ["foreground", "sidebar-status"],
+  ["destructive", "background"],
   ["card-foreground", "card"],
   ["popover-foreground", "popover"],
   ["muted-foreground", "background"],
@@ -61,14 +68,22 @@ const pairs = [
   ["sidebar-foreground", "sidebar"],
   ["sidebar-accent-foreground", "sidebar-accent"],
 ];
+const controlPairs = [
+  ["input", "background"],
+  ["ring", "background"],
+  ["foreground", "card"],
+];
 const audit = [];
 for (const [name, palette] of palettes) {
-  for (const [fg, bg] of pairs) {
+  for (const [fg, bg] of [...pairs, ...controlPairs]) {
     const ratio = wcagContrast(
       parse(value(palette, fg)),
       parse(value(palette, bg)),
     );
-    assert(ratio >= 4.5, `${name}: ${fg}/${bg}: ${ratio.toFixed(2)}`);
+    const minimum = controlPairs.some(([a, b]) => a === fg && b === bg)
+      ? 3
+      : 4.5;
+    assert(ratio >= minimum, `${name}: ${fg}/${bg}: ${ratio.toFixed(2)}`);
     audit.push({
       theme: name,
       foreground: fg,
@@ -81,5 +96,5 @@ if (process.argv.includes("--json"))
   console.log(JSON.stringify(audit, null, 2));
 else
   console.log(
-    `Verified ${audit.length} text pairs across ${palettes.size} palette/appearance/contrast variants (minimum 4.5:1).`,
+    `Verified ${audit.length} text pairs across ${palettes.size} palette/appearance/contrast variants (text ≥4.5:1, controls ≥3:1).`,
   );

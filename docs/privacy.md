@@ -25,10 +25,10 @@ Contributor model or endpoint names require explicit training consent in setup, 
 
 Setup explains this data flow before practice uploads. Local microphone testing
 never uploads. Provider validation sends only credentials to model-list endpoints;
-it does not send audio or transcripts. Practice records at most five seconds after
-explicit upload consent, shows only the final result inside setup, and saves no
-history entry or audio file. Copy is a separate action and carries the same
-clipboard-manager limits described above. Closing setup cancels pending work and
+it does not send audio or transcripts. After explicit upload consent, practice records
+up to 15 seconds and saves no history entry or audio file. On Hyprland, the final
+result is inserted into the setup box through the clipboard; clipboard managers
+may keep it. Elsewhere, the final result is only shown in setup. Closing setup cancels pending work and
 ignores late results; an upload already received by a provider cannot be recalled.
 Setup progress contains only a stage number and completion flag, never keys or
 practice text. Reopening an incomplete setup revalidates provider access.

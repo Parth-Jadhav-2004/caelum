@@ -22,10 +22,7 @@ export class ErrorBoundary extends Component<
           className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center"
           role="alert"
         >
-          <h1 className="text-2xl font-semibold">Something went wrong</h1>
-          <p>
-            Caelum couldn’t display this screen. Reload the window to try again.
-          </p>
+          <h1 className="text-title font-semibold">Something went wrong</h1>
           <Button
             onClick={() =>
               (this.props.reload ?? (() => window.location.reload()))()

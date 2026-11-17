@@ -26,16 +26,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "deb",
-      "rpm"
-    ],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png"
-    ],
-    "externalBin": [
-      "binaries/caelum-engine"
-    ]
+    "resources": {
+      "../public/licenses/": "licenses/",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
+    "targets": ["deb", "rpm"],
+    "icon": ["icons/32x32.png", "icons/128x128.png"],
+    "externalBin": ["binaries/caelum-engine"]
   }
 }

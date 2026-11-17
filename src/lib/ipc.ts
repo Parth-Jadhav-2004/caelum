@@ -77,8 +77,11 @@ interface Methods {
   "credentials.store": [{ name: string; value: string }, string];
   "credentials.delete": [{ name: string }, Ack];
   "microphone.test": [Record<string, never>, Ack];
-  practice: [{ consent: boolean }, { text: string; refined: boolean }];
-  "sample.cancel": [Record<string, never>, Ack];
+  practice: [
+    { consent: boolean; interactive?: boolean; insert?: boolean },
+    { text: string; refined: boolean; inserted?: boolean },
+  ];
+  "sample.cancel": [{ finish?: boolean }, Ack];
   "setup.validate": [
     { consent: boolean; keys?: Record<string, string> },
     { storage: Record<string, string> },

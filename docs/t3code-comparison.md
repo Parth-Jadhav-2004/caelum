@@ -57,44 +57,16 @@ JSON/VS Code imports, and Open VSX search. Those are extensible user libraries,
 not additional finite built-ins. **Custom imports and a theme editor have not
 been added to Caelum.**
 
-Implemented in this change:
+Current implementation after the Caelum redesign:
 
-- Settings → General has separate **Appearance** and **Color theme** shadcn
-  Select controls. Palette changes apply immediately and use the existing
-  serialized, debounced settings save. Restart restores the saved choice.
-- The default is T3 Code. Existing `desktop.theme` values retain their meaning;
-  `desktop.color_theme` is additive. Old TOML files without it default to T3 Code.
-  Other settings and the SQLite schema are unchanged. Caelum mint remains selectable.
-- A literal-only TypeScript AST importer maps upstream semantic colors to
-  shadcn CSS variables. It does not execute upstream TypeScript. Generated CSS
-  records the source commit. Default dark canvas is `#0a0a0a`, surface `#111111`,
-  accent `#346bf1`; controls use an 8px base radius. Destructive buttons use
-  error-colored text on a tinted surface, avoiding fixed white labels over
-  palettes whose error text color is deliberately bright.
-- Functional headings replace promotional copy: “Dictation”, “Settings”, and
-  explicit recording/empty-state instructions, including task-based setup steps. Existing navigation, controls,
-  waveform behavior, keyboard support, and reduced-motion preference remain.
-- Full upstream MIT attribution is in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)
-  and is copied into native package documentation. This grants no new license
-  to Caelum's own code.
-
-The mapping adapts color roles to Caelum's shadcn components; it is not a pixel
-copy of the T3 application. High contrast remains a Caelum override. The isolated
-GTK layer-shell recording HUD does **not** consume frontend CSS and retains its
-native styling. System window decorations also follow the desktop/compositor.
-The initial HTML is dark T3 Code until saved settings load; a saved light or
-nondefault palette can briefly transition at startup. A safe, minimal preference
-cache could address that later.
-
-To regenerate intentionally from an inspected upstream checkout:
-
-```bash
-node scripts/import-t3-themes.mjs /path/to/t3code
-npm run check
-```
-
-Review the generated diff and update attribution when changing the pinned source.
-No upstream dependency or network access is needed at application runtime.
+- Appearance provides Dark, Light and System, independent of the persisted Mint,
+  Iris or Ochre accent. Legacy palette IDs still load and render as Caelum Mint.
+- Caelum owns its layered near-black surfaces, type scale and monochrome mark.
+  T3 palettes, their generated stylesheet, and their importer no longer ship.
+- The bundled Inter font is licensed under OFL-1.1. Attribution and distribution
+  details are in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+- The GTK layer-shell pill keeps matching neutral surfaces without consuming
+  frontend CSS. System window decorations follow the desktop/compositor.
 
 ## Request handling and failure behavior
 

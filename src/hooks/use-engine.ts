@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notifyError } from "@/components/common";
 import { validStatus } from "@/lib/contracts";
 import { ipc, errorText, type Status } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
@@ -22,7 +22,7 @@ export function useEngine(onQuit: () => void) {
         } catch (error) {
           useApp.getState().setStatus(null);
           useApp.getState().setEngineError(errorText(error));
-          toast.error(errorText(error), { id: "protocol-error" });
+          notifyError(error, { id: "protocol-error" });
         }
       })
         .then((stop) => {
@@ -34,7 +34,7 @@ export function useEngine(onQuit: () => void) {
           return true;
         })
         .catch((e) => {
-          toast.error(errorText(e));
+          notifyError(e);
           return false;
         });
     }
@@ -72,20 +72,19 @@ export function useEngine(onQuit: () => void) {
       statusRevision++;
       useApp.getState().setStatus(null);
       useApp.getState().setEngineError(errorText(error));
-      toast.error(errorText(error), {
+      notifyError(error, {
         duration: Infinity,
         id: "engine-disconnected",
       });
     });
-    register<unknown>("desktop:error", (error) =>
-      toast.error(errorText(error)),
-    );
+    register<unknown>("desktop:error", (error) => notifyError(error));
     register("desktop:quit", onQuit);
+    register("desktop:settings", () => useApp.getState().navigate("settings"));
     register<{ message: string }>("engine:status-error", (value) => {
       statusRevision++;
       useApp.getState().setStatus(null);
       useApp.getState().setEngineError(value.message);
-      toast.error(value.message, { id: "status-error" });
+      notifyError(value.message, { id: "status-error" });
     });
     return () => {
       disposed = true;

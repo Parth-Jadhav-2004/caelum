@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import type { Status } from "@/lib/ipc";
-export type Page = "home" | "statistics" | "history" | "settings" | "setup";
+export type Page =
+  "dictionary" | "home" | "statistics" | "history" | "settings" | "setup";
 interface AppState {
   page: Page;
+  settingsGroup: string;
+  openSettings: (group: string) => void;
   status: Status | null;
   engineError: string | null;
   setEngineError: (message: string | null) => void;
@@ -11,6 +14,8 @@ interface AppState {
 }
 export const useApp = create<AppState>((set) => ({
   page: "home",
+  settingsGroup: "General",
+  openSettings: (settingsGroup) => set({ page: "settings", settingsGroup }),
   status: null,
   engineError: null,
   setEngineError: (engineError) => set({ engineError }),

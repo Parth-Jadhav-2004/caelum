@@ -156,8 +156,10 @@ method("providers.check", result=STRING)
 method("credentials.store", obj({"name": STRING, "value": STRING}), STRING)
 method("credentials.delete", obj({"name": STRING}))
 method("microphone.test")
-method("practice", obj({"consent": BOOL}), obj({"text": STRING, "refined": BOOL}))
-method("sample.cancel")
+method("practice", obj({"consent": BOOL, "interactive": BOOL, "insert": BOOL},
+                       optional=("interactive", "insert")),
+       obj({"text": STRING, "refined": BOOL, "inserted": BOOL}, optional=("inserted",)))
+method("sample.cancel", obj({"finish": BOOL}, optional=("finish",)))
 method(
     "setup.validate",
     obj({"consent": BOOL, "keys": STRINGS}, optional=("keys",)),

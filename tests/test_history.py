@@ -197,3 +197,17 @@ def test_total_words_migrates_existing_history_once(storage):
     assert history.summary()["total_words"] == 3
     record(storage, "two", "four five")
     assert History(storage[1], history.path).summary()["total_words"] == 5
+
+
+def test_forever_history_retains_old_entries_until_changed(storage):
+    config, path, history = storage
+    record(storage, "old")
+    old = (datetime.now(timezone.utc) - timedelta(days=4000)).isoformat()
+    with history.connect() as connection:
+        connection.execute("UPDATE dictations SET created_at = ?", (old,))
+    config.desktop.history_forever = True
+    save(config, path)
+    assert [row["id"] for row in history.read()] == ["old"]
+    config.desktop.history_forever = False
+    save(config, path)
+    assert history.read() == []
