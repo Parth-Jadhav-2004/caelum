@@ -110,7 +110,9 @@ def build(target, output, epoch):
                 "source": subprocess.check_output(
                     ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
                 ).strip(),
-                "source_date": epoch,
+                "source_date": int(subprocess.check_output(
+                    ["git", "log", "-1", "--format=%ct"], cwd=ROOT, text=True,
+                ).strip()),
             }),
         )
         # Avoid metadata paths referring to the build machine.

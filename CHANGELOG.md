@@ -26,7 +26,7 @@ Native Wayland overlay behavior, physical shortcuts, live microphone/provider wo
 
 ### Verification
 
-Release publication requires the five-target candidate workflow, package installation/IPC/simulated-audio/native bootstrap checks, checksums and provenance verification, and the protected signing environment. The exact candidate run and source SHA accompany the release assets. The update-check changes passed 94 frontend tests, 368 Python tests (6 opt-in cases skipped), 10 Rust tests, lint, contrast, build, and bundle-budget checks locally; the release workflow reruns its automated checks for this version.
+Release publication requires the five-target candidate workflow, package installation/IPC/simulated-audio/native bootstrap checks, checksums and provenance verification, and the protected signing environment. The exact candidate run and source SHA accompany the release assets. The update-check changes passed 94 frontend tests, 372 Python tests (6 opt-in cases skipped), 10 Rust tests, lint, contrast, build, and bundle-budget checks locally; the release workflow reruns its automated checks for this version.
 
 ### Full changelog
 

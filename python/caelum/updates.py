@@ -298,6 +298,29 @@ def check():
     return {"version": manifest["version"], "raw": raw, "signature": signature}
 
 
+def testing_source(release, version):
+    """Read the source commit date; publication time cannot order installed builds."""
+    source = release.get("target_commitish")
+    with network_client(30) as client:
+        if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
+            provenance = json.loads(fetch(
+                client, f"{RELEASES}/download/{release['tag_name']}/candidate.json", 65536,
+            ))
+            source = provenance["sha"]
+            if (
+                provenance.get("schema") != 1 or provenance.get("version") != version
+                or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)
+            ):
+                raise ValueError("Invalid testing source provenance")
+        commit = json.loads(fetch(
+            client, f"https://api.github.com/repos/{REPOSITORY}/git/commits/{source}", 65536,
+        ))
+    date = datetime.fromisoformat(commit["committer"]["date"].replace("Z", "+00:00"))
+    if commit.get("sha") != source or date.tzinfo is None:
+        raise ValueError("Invalid testing source commit")
+    return source, date.timestamp()
+
+
 def check_testing():
     """Discover testing releases for manual installation; never stage unsigned bytes."""
     info = installed()
@@ -332,10 +355,16 @@ def check_testing():
                 continue
             source = release.get("target_commitish")
             same_build = bool(info.get("source") and info["source"] == source)
-            published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
-            if not same_build and published.timestamp() <= info.get("source_date", 0):
-                continue
             base_version = ".".join(map(str, version))
+            installed_date = info.get("source_date")
+            if (
+                not same_build and base_version == info["version"]
+                and type(installed_date) is int and installed_date > 0
+            ):
+                source, source_date = testing_source(release, base_version)
+                same_build = bool(info.get("source") and info["source"] == source)
+                if not same_build and source_date <= installed_date:
+                    continue
             target = info["target"]
             name = (
                 f"caelum-{base_version}-1-x86_64.pkg.tar.zst" if target == "arch"

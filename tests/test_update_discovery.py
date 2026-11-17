@@ -12,8 +12,17 @@ def discovery(monkeypatch):
     monkeypatch.setattr(updates, "installed", lambda: info)
     monkeypatch.setattr(updates, "compatible", lambda _: True)
 
-    def serve(releases, status=200):
+    def serve(releases, status=200, source_date="2026-11-16T10:00:00Z"):
         def respond(request):
+            if "/git/commits/" in request.url.path:
+                return httpx.Response(200, json={
+                    "sha": request.url.path.rsplit("/", 1)[1],
+                    "committer": {"date": source_date},
+                })
+            if request.url.path.endswith("/candidate.json"):
+                return httpx.Response(200, json={
+                    "schema": 1, "version": "0.4.1", "sha": "a" * 40,
+                })
             assert str(request.url) == (
                 "https://api.github.com/repos/Parth-Jadhav-2004/caelum/releases?per_page=20"
             )
@@ -78,3 +87,29 @@ def test_network_and_metadata_errors_do_not_report_up_to_date(discovery, payload
     serve(payload, status)
     with pytest.raises(RuntimeError, match="Could not check testing releases"):
         updates.check_testing()
+
+
+@pytest.mark.parametrize("target", ["a" * 40, "main"])
+def test_delayed_publication_cannot_offer_older_same_version_source(discovery, target):
+    info, serve = discovery
+    info.update(source="b" * 40, source_date=1794910000)
+    item = preview(source=target)
+    item["published_at"] = "2026-11-20T10:00:00Z"
+    serve([item], source_date="2026-11-16T10:00:00Z")
+    assert updates.check_testing() is None
+
+
+def test_newer_same_version_source_is_offered_based_on_commit_provenance(discovery):
+    info, serve = discovery
+    info.update(source="b" * 40, source_date=1794800000)
+    item = preview()
+    item["published_at"] = "2026-11-01T10:00:00Z"
+    serve([item], source_date="2026-11-17T10:00:00Z")
+    assert updates.check_testing() == {"version": "0.4.1-rc.2", "installed": False}
+
+
+def test_semantically_newer_package_is_not_hidden_by_source_date(discovery):
+    info, serve = discovery
+    info.update(source="b" * 40, source_date=9999999999)
+    serve([preview("v0.4.2-rc.1")])
+    assert updates.check_testing() == {"version": "0.4.2-rc.1", "installed": False}
