@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,6 +9,9 @@ import { Settings } from "./settings";
 import { ipc } from "@/lib/ipc";
 import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async () => undefined),
+}));
 vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
 
 function mount(storage: string | { description: string; storage: string }) {
@@ -242,15 +246,71 @@ it("keeps update checks independent of an in-flight connection check", async () 
   );
   expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "System" }));
-  expect(screen.getByRole("button", { name: "Check updates" })).toBeEnabled();
+  expect(
+    await screen.findByRole("button", { name: "Check updates" }),
+  ).toBeEnabled();
 });
 
 it("shows help on screen and focuses the selected group without repeated headings", async () => {
   mount({ description: "Saved", storage: "keyring" });
   await userEvent.click(screen.getByRole("button", { name: "System" }));
-  expect(screen.getByText("Check for updates")).toBeVisible();
+  expect(
+    await screen.findByText("Automatic updates use signed stable releases."),
+  ).toBeVisible();
   expect(screen.getByRole("region", { name: "System" })).toHaveFocus();
   expect(
     screen.queryByRole("heading", { name: "System" }),
   ).not.toBeInTheDocument();
+});
+
+it("finds same-version testing builds without offering unsigned automatic installation", async () => {
+  mount({ description: "Saved", storage: "keyring" });
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "updates.check"
+      ? Promise.resolve(null)
+      : method === "updates.testing"
+        ? Promise.resolve({ version: "0.4.1-rc.2", installed: false })
+        : original(method, params)) as typeof ipc);
+  await userEvent.click(screen.getByRole("button", { name: "System" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Check updates" }),
+  );
+  expect(
+    await screen.findByRole("button", { name: "Download testing build" }),
+  ).toBeEnabled();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "0.4.1-rc.2 is available for manual installation",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Update & restart" }),
+  ).not.toBeInTheDocument();
+  expect(ipc).not.toHaveBeenCalledWith("updates.stage", {});
+  await userEvent.click(
+    screen.getByRole("button", { name: "Download testing build" }),
+  );
+  expect(invoke).toHaveBeenCalledWith("open_releases", {
+    version: "0.4.1-rc.2",
+  });
+});
+
+it("reports a failed testing check while keeping a signed stable update available", async () => {
+  mount({ description: "Saved", storage: "keyring" });
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "updates.check"
+      ? Promise.resolve({ version: "0.4.2" })
+      : method === "updates.testing"
+        ? Promise.reject(new Error("Rate limited"))
+        : original(method, params)) as typeof ipc);
+  await userEvent.click(screen.getByRole("button", { name: "System" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Check updates" }),
+  );
+  expect(
+    await screen.findByRole("button", { name: "Update & restart" }),
+  ).toBeEnabled();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Testing releases could not be checked",
+  );
 });
