@@ -125,6 +125,10 @@ They supersede the earlier remaining-license and single-key-rotation statements.
   package/IPC/EOF and native WebKit/Xvfb startup checks, and its Setup screenshot
   was inspected. It was installed locally as a patched 0.4.2 build; published
   v0.4.2 assets were not replaced.
+- Review follow-up: queued downloads with expired signatures, invalid signatures,
+  missing metadata, or an unrecognized installation remain discoverable for
+  removal. Installation verification is unchanged. All 83 scoped updater and
+  sidecar tests passed, including four new recovery cases; Ruff passed.
 
 Physical recording and tray acceptance for a new release remain separate from
 these automated regression checks; see [acceptance.md](acceptance.md).

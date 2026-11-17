@@ -403,6 +403,40 @@ def test_pending_status_clears_an_already_installed_package(release):
     assert not pending.exists()
 
 
+@pytest.mark.parametrize("invalid", ["expired", "signature", "missing_metadata"])
+def test_invalid_queued_update_remains_discardable(release, monkeypatch, invalid):
+    pending = staged(release)
+    if invalid == "expired":
+        monkeypatch.setattr(updates.time, "time", lambda: release.manifest["expires"])
+    elif invalid == "signature":
+        (pending / "update.json.sig").write_bytes(b"invalid signature")
+    else:
+        (pending / "update.json").unlink()
+    original_run = subprocess.run
+
+    def no_authorization(command, **kwargs):
+        assert command[0] == "/usr/bin/openssl", "Invalid downloads must not request installation"
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", no_authorization)
+    assert updates.pending_update() is True
+    assert pending.is_dir()
+    with pytest.raises((ValueError, OSError)):
+        updates.apply_pending()
+    assert pending.is_dir()
+    updates.discard_pending()
+    assert not pending.exists()
+    assert updates.pending_update() is False
+
+
+def test_queued_update_remains_discardable_without_install_metadata(release, monkeypatch):
+    pending = staged(release)
+    monkeypatch.setattr(updates, "installed", lambda: None)
+    assert updates.pending_update() is True
+    updates.discard_pending()
+    assert not pending.exists()
+
+
 def test_installer_output_cannot_enter_sidecar_protocol(release, monkeypatch, capfd):
     import sys
 

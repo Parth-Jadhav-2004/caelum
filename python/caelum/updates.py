@@ -484,15 +484,22 @@ def install_verified(pending):
 
 
 def pending_update():
-    """Only offer queued packages newer than the installation on disk."""
+    """Keep downloads removable; only clear authenticated obsolete updates."""
     info = installed()
     pending = cache_dir() / "pending"
-    if not info or not pending.is_dir():
+    if not pending.is_dir():
         return False
-    manifest, _ = verify_manifest(
-        read_regular(pending / "update.json", 65536),
-        read_regular(pending / "update.json.sig", 4096), info,
-    )
+    if not info:
+        return True
+    try:
+        manifest, _ = verify_manifest(
+            read_regular(pending / "update.json", 65536),
+            read_regular(pending / "update.json.sig", 4096), info,
+        )
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        # Pending status also controls Discard. Invalid/expired metadata must
+        # remain discoverable; apply_pending still performs full verification.
+        return True
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
         discard_pending()
         return False
