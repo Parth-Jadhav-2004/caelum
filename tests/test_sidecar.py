@@ -149,6 +149,52 @@ async def test_supervised_process_terminates_after_grace_deadline(backend, monke
     assert backend.process is None
 
 
+@pytest.mark.parametrize("discard", [False, True])
+async def test_shutdown_and_eof_do_not_repeat_daemon_teardown(backend, monkeypatch, discard):
+    calls = []
+
+    def request(action):
+        calls.append(action)
+        return {"running": True, "state": "hidden"}
+
+    monkeypatch.setattr("caelum.sidecar.request", request)
+    await backend.dispatch("shutdown", {"discard": discard})
+    await backend.dispatch("shutdown", {"discard": True})
+    await backend.stop()  # sidecar's EOF cleanup
+    assert calls == (["shutdown"] if discard else ["status", "prepare-update"])
+
+
+async def test_slow_update_check_does_not_block_shutdown(tmp_path):
+    # Exercise the real JSONL scheduler, rather than calling dispatch serially.
+    code = (
+        "import time; from caelum import updates; "
+        "updates.check = lambda: time.sleep(2); "
+        "from caelum.sidecar import main; main()"
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", code,
+        env={**os.environ, "XDG_RUNTIME_DIR": str(tmp_path),
+             "CAELUM_CONFIG": str(tmp_path / "settings.toml")},
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        for identifier, method in enumerate(("updates.check", "shutdown"), 1):
+            process.stdin.write(json.dumps({"v": 1, "id": identifier, "method": method}).encode() + b"\n")
+        await process.stdin.drain()
+
+        async def first_reply():
+            while line := await process.stdout.readline():
+                frame = json.loads(line)
+                if "id" in frame:
+                    return frame
+
+        reply = await asyncio.wait_for(first_reply(), 1)
+        assert reply == {"v": 1, "id": 2, "result": {"ok": True}}
+    finally:
+        await asyncio.wait_for(process.communicate(), 5)
+
+
 async def test_configuration_contract_matches_python_dataclasses():
     import importlib.util
     from pathlib import Path

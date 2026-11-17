@@ -111,20 +111,29 @@ impl Engine {
         }
         result
     }
-    async fn close(&self) {
+    async fn close(&self, shutdown_complete: bool) {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
         }
-        // One overall graceful budget, including writes and requests. Reserve
-        // two seconds for SIGKILL/reaping instead of stacking request timeouts.
+        // A completed shutdown has already stopped/reaped dictation and flushed
+        // history. Read-only network workers can otherwise keep Python alive
+        // until their socket timeout even after the window is ready to quit.
+        let shutdown = tokio::time::timeout(Duration::from_secs(10), async {
+            if !shutdown_complete {
+                let _ = self.call("sample.cancel", json!({})).await;
+                self.call("shutdown", json!({"discard":true})).await?;
+            }
+            Ok::<(), EngineError>(())
+        })
+        .await;
         transport::stop_child(
             &self.child,
-            async {
-                let _ = self.call("sample.cancel", json!({})).await;
-                let _ = self.call("shutdown", json!({"discard":true})).await;
-                self.requests.finish_input().await;
+            self.requests.finish_input(),
+            if matches!(shutdown, Ok(Ok(()))) {
+                Duration::from_millis(500)
+            } else {
+                Duration::from_secs(2)
             },
-            Duration::from_secs(10),
             Duration::from_secs(2),
         )
         .await;
@@ -151,7 +160,8 @@ async fn restart_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    if !discard.unwrap_or(false) && state.engine.requests.alive() {
+    let shutdown_complete = !discard.unwrap_or(false) && state.engine.requests.alive();
+    if shutdown_complete {
         // The daemon atomically checks idle state and stops accepting captures.
         // Confirmed recovery may explicitly discard; ordinary update restarts may not.
         state
@@ -160,7 +170,7 @@ async fn restart_app(
             .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close().await;
+    state.engine.close(shutdown_complete).await;
     app.restart();
 }
 #[tauri::command]
@@ -201,14 +211,15 @@ async fn quit_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    if !discard && state.engine.requests.alive() {
+    let shutdown_complete = !discard && state.engine.requests.alive();
+    if shutdown_complete {
         state
             .engine
             .call("shutdown", json!({"discard":false}))
             .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close().await;
+    state.engine.close(shutdown_complete).await;
     app.exit(0);
     Ok(())
 }
@@ -467,7 +478,7 @@ fn main() {
         .expect("Failed to initialize Caelum")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                tauri::async_runtime::block_on(app.state::<Desktop>().engine.close());
+                tauri::async_runtime::block_on(app.state::<Desktop>().engine.close(false));
             }
         });
 }

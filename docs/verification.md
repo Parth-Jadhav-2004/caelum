@@ -101,3 +101,26 @@ tray/MPRIS, or every-distro qualification, and does not choose Caelum's license.
 The latest scoped results, physical-test limitations, licensing, Python support,
 and measured performance are in [qualification-0.4.1.md](qualification-0.4.1.md).
 They supersede the earlier remaining-license and single-key-rotation statements.
+
+## Update installation and quit fixes — 17 November 2026
+
+- Installer stdout/stderr are captured at both privilege boundaries so package
+  progress cannot corrupt the sidecar's JSONL stream. Regression tests run a
+  noisy child process and cover cancelled authorization, locked package databases,
+  retained downloads, obsolete pending packages, retries and conditional restart.
+- Shutdown is idempotent across guarded quit, native cleanup and sidecar EOF.
+  A real JSONL subprocess test verifies that a slow update check does not block
+  shutdown. After the daemon acknowledges shutdown (including history flush),
+  the native parent allows 500 ms for sidecar exit before forced reaping; the
+  existing bounded-child test covers stalled cleanup. This is not a physical
+  measurement of tray-to-exit latency.
+- Local checks passed: 97 React tests, 379 Python tests (6 environment-dependent
+  skips), 10 Rust tests, ESLint, Ruff, TypeScript/production bundle limits,
+  theme contrast, generated-contract consistency, Rust formatting and Clippy.
+- The affected host was still on 0.4.1 with a signed 0.4.2 package queued. An
+  abandoned pacman lock was confirmed against process/lock ownership, removed,
+  and the signature-verifying privileged installer successfully upgraded it to
+  0.4.2. Its obsolete queued update was then cleared through the updater.
+
+Physical recording and tray acceptance for a new release remain separate from
+these automated regression checks; see [acceptance.md](acceptance.md).
