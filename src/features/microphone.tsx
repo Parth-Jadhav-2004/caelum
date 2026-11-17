@@ -64,6 +64,7 @@ function MicrophoneCheck({
   const [message, setMessage] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [stopping, setStopping] = useState(false);
+  const [capturePending, setCapturePending] = useState(true);
   const stopped = useRef(false);
   const level = useMicrophoneLevel(listening);
   const devices = useQuery({
@@ -77,8 +78,10 @@ function MicrophoneCheck({
         String(device));
   useEffect(() => {
     let disposed = false;
+    let finished = false;
     stopped.current = false;
     setListening(true);
+    setCapturePending(true);
     setMessage("");
     void ipc("microphone.test", {})
       .then(() => {
@@ -88,11 +91,15 @@ function MicrophoneCheck({
         if (!disposed && !stopped.current) setMessage(briefError(error));
       })
       .finally(() => {
-        if (!disposed) setListening(false);
+        finished = true;
+        if (!disposed) {
+          setListening(false);
+          setCapturePending(false);
+        }
       });
     return () => {
       disposed = true;
-      void ipc("sample.cancel", {}).catch(() => {});
+      if (!finished) void ipc("sample.cancel", {}).catch(() => {});
     };
   }, [attempt]);
   return (
@@ -121,7 +128,7 @@ function MicrophoneCheck({
         {!listening && (
           <Button
             variant="ghost"
-            disabled={stopping}
+            disabled={stopping || capturePending}
             onClick={() => setAttempt((value) => value + 1)}
           >
             Test again
