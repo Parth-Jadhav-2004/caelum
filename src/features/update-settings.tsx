@@ -148,10 +148,30 @@ export function UpdateSettings({
         confirm="Update & restart"
         onCancel={() => setConfirmUpdate(false)}
         onConfirm={async () => {
-          if (!pending.data) await ipc("updates.stage", {});
-          await ipc("updates.apply", {});
-          await invoke("restart_app");
-          setConfirmUpdate(false);
+          try {
+            const queued = await pending.refetch();
+            if (queued.isError) throw queued.error;
+            if (!queued.data) {
+              const available = await ipc("updates.check", {});
+              setUpdate(available?.version ?? null);
+              if (!available) {
+                setUpdateStatus("Caelum is already up to date.");
+                setConfirmUpdate(false);
+                return;
+              }
+              await ipc("updates.stage", {});
+            }
+            const applied = await ipc("updates.apply", {});
+            setUpdate(null);
+            setConfirmUpdate(false);
+            if (applied) await invoke("restart_app");
+            else setUpdateStatus("Caelum is already up to date.");
+          } catch (error) {
+            setUpdateStatus(errorText(error));
+            throw error;
+          } finally {
+            await pending.refetch();
+          }
         }}
       />
     </>

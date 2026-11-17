@@ -26,6 +26,8 @@ TARGETS = {
     "fedora-43": ("fedora", "43", ".rpm"),
 }
 SAFE_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
+INSTALL_FAILED = "The package manager could not install Caelum. Check your package manager, then retry."
+INSTALL_BUSY = "The package database is locked. Finish other package operations, then retry."
 
 
 def version_tuple(value):
@@ -469,7 +471,39 @@ def install_verified(pending):
             ".rpm": ["/usr/bin/dnf", "install", "-y", "--", str(package)],
             ".pkg.tar.zst": ["/usr/bin/pacman", "-U", "--noconfirm", "--", str(package)],
         }[suffix]
-        subprocess.run(command, check=True, env=SAFE_ENV, cwd="/")
+        try:
+            subprocess.run(
+                command, check=True, env=SAFE_ENV, cwd="/",
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError as error:
+            output = (error.stdout or "") + (error.stderr or "")
+            raise RuntimeError(
+                INSTALL_BUSY if "unable to lock database" in output else INSTALL_FAILED
+            ) from error
+
+
+def pending_update():
+    """Keep downloads removable; only clear authenticated obsolete updates."""
+    info = installed()
+    pending = cache_dir() / "pending"
+    if not pending.is_dir():
+        return False
+    if not info:
+        return True
+    try:
+        manifest, _ = verify_manifest(
+            read_regular(pending / "update.json", 65536),
+            read_regular(pending / "update.json.sig", 4096), info,
+        )
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        # Pending status also controls Discard. Invalid/expired metadata must
+        # remain discoverable; apply_pending still performs full verification.
+        return True
+    if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
+        discard_pending()
+        return False
+    return True
 
 
 def apply_pending():
@@ -488,16 +522,20 @@ def apply_pending():
         discard_pending()
         return False
     verify_package(pending / asset["name"], asset)
-    subprocess.run(
-        [
-            "/usr/bin/pkexec",
-            "/usr/bin/python3",
-            "-I",
-            str(BASE / "updates.py"),
-            str(pending),
-        ],
-        check=True,
-    )
+    try:
+        # stdout belongs exclusively to the sidecar JSON protocol. Inheriting it
+        # lets pacman progress break the connection during its own transaction.
+        subprocess.run(
+            ["/usr/bin/pkexec", "/usr/bin/python3", "-I",
+             str(BASE / "updates.py"), str(pending)],
+            check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        if error.returncode in (126, 127):
+            message = "Administrator authorization was cancelled or unavailable. Try again."
+        else:
+            message = INSTALL_BUSY if INSTALL_BUSY in (error.stderr or "") else INSTALL_FAILED
+        raise RuntimeError(message) from error
     shutil.rmtree(pending)
     return True
 
@@ -515,7 +553,9 @@ if __name__ == "__main__":
         if len(sys.argv) != 2:
             raise ValueError("Expected a staged update directory")
         install_verified(Path(sys.argv[1]).resolve(strict=True))
-    except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError):
+    except RuntimeError as error:
+        sys.exit(str(error))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         sys.exit(
             "Caelum update failed verification or installation; the pending update was retained."
         )

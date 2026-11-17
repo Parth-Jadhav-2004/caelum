@@ -27,10 +27,8 @@ def request(action):
 def install_queued_update():
     from .updates import apply_pending
 
-    running = False
     try:
         request("prepare-update")
-        running = True
     except (FileNotFoundError, ConnectionRefusedError):
         pass
     import fcntl
@@ -52,8 +50,7 @@ def install_queued_update():
                         "Dictation is still stopping. Restart Caelum to retry."
                     ) from None
                 time.sleep(0.1)
-        apply_pending()
-    return running
+        return apply_pending()
 
 
 def display_version():
