@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -13,14 +14,17 @@ from pathlib import Path
 from . import credentials
 from .config import config_path, load, save
 from .desktop_services import connection_status, microphones, request, service_presentation
+from .hardware import detect
 from .history import History
 from .ipc_contract import METHODS, error_payload, matches, validate_request
+from .models import ModelManager, get_model, installed, models_dir, verify
 from .onboarding import (
-    PRIVACY,
     Progress,
     check_shortcut,
     practice,
+    privacy,
     record_sample,
+    setup_fingerprint,
     validate_providers,
 )
 
@@ -41,6 +45,83 @@ class Backend:
         self.update = None
         self.setup_checks = set()
         self.shutdown_complete = False
+        progress = Progress.load(self.path)
+        if progress.fingerprint == setup_fingerprint(load(self.path)):
+            self.setup_checks.update(progress.checks)
+        self.models = ModelManager(progress=self.model_progress)
+        self.pending_model = None
+        try:
+            self.pending_model = json.loads((models_dir() / "pending-use.json").read_text())["id"]
+            get_model(self.pending_model)
+        except (OSError, ValueError, KeyError, RuntimeError):
+            self.pending_model = None
+        self._download_tray = (0, "")
+        self.reload_model = None
+        self.model_tasks = set()
+
+    def model_progress(self, data):
+        self.emit("model-download", data)
+        if data["state"] == "ready":
+            # Reload a model chosen during onboarding, even though its id has
+            # not changed since the download began.
+            task = asyncio.create_task(self.model_ready(data["id"]))
+            self.model_tasks.add(task)
+            def completed(done):
+                self.model_tasks.discard(done)
+                if not done.cancelled() and done.exception():
+                    self.emit("model-attention", {"message": "Couldn't switch speech model. Open Settings."})
+            task.add_done_callback(completed)
+
+    async def model_ready(self, model_id):
+        async with self.mutation_lock:
+            config = load(self.path)
+            if config.stt.engine == "local" and config.stt.local_model == model_id:
+                self.reload_model = model_id
+                await self.apply_ready_reload()
+            await self.apply_pending()
+
+    async def apply_ready_reload(self):
+        if self.reload_model is None:
+            return
+        config = load(self.path)
+        if config.stt.local_model != self.reload_model:
+            self.reload_model = None
+            return
+        try:
+            await self.idle()
+            if (await self.status())["running"]:
+                await asyncio.to_thread(request, "reload")
+            self.reload_model = None
+        except (OSError, RuntimeError):
+            pass
+
+    async def apply_pending(self):
+        if not self.pending_model or not installed(self.pending_model):
+            return
+        try:
+            await self.idle()
+        except RuntimeError:
+            return  # The event watcher retries after the dictation ends.
+        model_id = self.pending_model
+        await self.use_model(model_id)
+        self.pending_model = None
+        (models_dir() / "pending-use.json").unlink(missing_ok=True)
+
+    async def use_model(self, model_id):
+        get_model(model_id)
+        await self.idle()
+        self.pending_model = None
+        (models_dir() / "pending-use.json").unlink(missing_ok=True)
+        config = load(self.path)
+        config.stt.engine, config.stt.local_model = "local", model_id
+        if config.stt.fallback == "local":
+            config.stt.fallback = "none"
+        await asyncio.to_thread(save, config, self.path)
+        self.setup_checks.discard("provider")
+        self.setup_checks.discard("practice")
+        if (await self.status())["running"]:
+            await asyncio.to_thread(request, "reload")
+        self.emit("models-changed", {"id": model_id})
 
     async def status(self):
         try:
@@ -50,7 +131,24 @@ class Backend:
             value = {"running": False, "state": "hidden", "paused": False}
         if value.get("feedback") == {}:
             value.pop("feedback")
+        config = load(self.path)
+        if "engine" not in value:
+            ready = (config.stt.engine != "local" or bool(
+                config.stt.local_model and installed(config.stt.local_model)
+            ) or bool(config.stt.local_model_path and not config.stt.local_model))
+            value["engine"] = {"kind": config.stt.engine, "model": config.stt.local_model or None,
+                               "state": "ready" if ready else "missing", "message": ""}
         title, detail = service_presentation(value if value["running"] else None)
+        progress = self.models.states.get(config.stt.local_model, {})
+        if config.stt.engine == "local" and progress.get("state") == "downloading" and (
+            value.get("state") in ("hidden", "success", "unrefined", "saved", "copied", "no_speech")
+            and not value.get("pending_audio")
+        ):
+            now = time.monotonic()
+            if now - self._download_tray[0] >= 5:
+                percent = min(100, int(progress["received_bytes"] / max(1, progress["total_bytes"]) * 100))
+                self._download_tray = (now, f"Downloading {get_model(config.stt.local_model)['label']} {percent}%")
+            title = self._download_tray[1] or "Downloading speech model"
         return {**value, "title": title, "detail": detail}
 
     async def idle(self):
@@ -61,6 +159,7 @@ class Backend:
             "recording",
             "processing",
             "refining",
+            "loading",
         }:
             raise RuntimeError("Finish dictation or discard pending audio first")
 
@@ -117,12 +216,14 @@ class Backend:
         config = load(self.path)
         if method == "bootstrap":
             from .launcher import entry_path
+            progress = Progress.load(self.path)
+            stage = progress.stage if progress.fingerprint in ("", setup_fingerprint(config)) else 0
 
             return {
                 "version": VERSION,
                 "config": asdict(config),
-                "privacy": PRIVACY,
-                "setup": asdict(Progress.load(self.path)),
+                "privacy": privacy(config),
+                "setup": {"stage": stage, "complete": progress.complete},
                 "autostart": entry_path(True).exists(),
                 "credentials": {
                     name: credentials.describe(name)
@@ -131,6 +232,46 @@ class Backend:
             }
         if method == "status":
             return await self.status()
+        if method == "models.list":
+            await self.models.recover()
+            return {**self.models.list(config, await asyncio.to_thread(detect, config)),
+                    "pending_use": self.pending_model}
+        if method.startswith("models."):
+            model_id = params["id"]
+            get_model(model_id)
+            if method == "models.download" or method == "models.resume":
+                await self.models.submit(model_id)
+            elif method == "models.pause":
+                await self.models.pause(model_id)
+            elif method == "models.cancel":
+                await self.models.cancel(model_id)
+                if self.pending_model == model_id:
+                    self.pending_model = None
+                    (models_dir() / "pending-use.json").unlink(missing_ok=True)
+            elif method == "models.remove":
+                if config.stt.local_model == model_id and (
+                    config.stt.engine == "local" or config.stt.fallback == "local"
+                ):
+                    raise RuntimeError("Switch to another model first.")
+                return {"freed_bytes": await asyncio.to_thread(self.models.remove, model_id)}
+            elif method == "models.verify":
+                await self.idle()
+                result = await asyncio.to_thread(verify, model_id)
+                if not result["ok"]:
+                    (models_dir() / model_id / "receipt.json").unlink(missing_ok=True)
+                return result
+            elif method == "models.use":
+                if params.get("when_ready") and not installed(model_id):
+                    self.pending_model = model_id
+                    models_dir().mkdir(parents=True, exist_ok=True)
+                    (models_dir() / "pending-use.json").write_text(json.dumps({"id": model_id}))
+                    await self.models.submit(model_id)
+                else:
+                    await self.use_model(model_id)
+                return {"saved": True}
+            else:
+                raise ValueError("Unknown model operation")
+            return {"ok": True}
         if method == "devices":
             return [
                 {"label": label, "value": value}
@@ -145,6 +286,7 @@ class Backend:
         elif method == "history.export":
             await asyncio.to_thread(self.history.export, Path(params["path"]))
         elif method == "service.start":
+            await self.models.recover()
             if self.sample_lock.locked():
                 raise RuntimeError("Finish the microphone test first")
             await self.start()
@@ -174,6 +316,11 @@ class Backend:
                         raise ValueError("Unknown configuration option")
                     setattr(target, key, value)
             previous = load(self.path)
+            if config.stt != previous.stt:
+                await self.idle()
+                if config.stt.engine != previous.stt.engine or config.stt.local_model != previous.stt.local_model:
+                    self.pending_model = None
+                    (models_dir() / "pending-use.json").unlink(missing_ok=True)
             await asyncio.to_thread(save, config, self.path)
             if config.stt != previous.stt or config.cleanup != previous.cleanup:
                 self.setup_checks.discard("provider")
@@ -215,14 +362,14 @@ class Backend:
                         if provider.model not in await client.models(provider):
                             raise ValueError("Configured model unavailable")
             finally:
-                await client.client.aclose()
+                await client.aclose()
             return await asyncio.to_thread(credentials.store, name, params["value"])
         elif method == "credentials.delete":
             if params["name"] not in {config.stt.key_env, config.cleanup.key_env}:
                 raise ValueError("Credential is not used by configured providers")
             await asyncio.to_thread(credentials.delete, params["name"])
         elif method == "setup.validate":
-            if params.get("consent") is not True:
+            if config.stt.engine != "local" and params.get("consent") is not True:
                 raise ValueError("Provider-processing consent is required")
             keys = params.get("keys", {})
             allowed = {config.stt.key_env, config.cleanup.key_env}
@@ -271,7 +418,7 @@ class Backend:
                 raise RuntimeError("A microphone test is already running")
             async with self.sample_lock:
                 self.cancelled.clear()
-                if method == "practice" and params.get("consent") is not True:
+                if method == "practice" and params.get("consent") is not True and config.stt.engine != "local":
                     raise ValueError("Explicit audio upload consent is required")
                 target = None
                 if method == "practice" and params.get("insert") is True:
@@ -296,6 +443,8 @@ class Backend:
                 if method == "practice":
                     text, refined = await practice(config, pcm, self.cancelled)
                     self.setup_checks.add("practice")
+                    if config.stt.engine == "local":
+                        self.setup_checks.add("provider")
                     result = {"text": text, "refined": refined}
                     if self.cancelled.is_set():
                         raise RuntimeError("Practice cancelled; sample discarded")
@@ -310,10 +459,24 @@ class Backend:
             else:
                 self.cancelled.set()
         elif method == "setup.finish":
-            if self.setup_checks != {"provider", "microphone", "shortcut", "practice"}:
+            skip = params.get("skip_practice") is True
+            required = ({"microphone", "shortcut"} | (
+                {"provider"} if config.stt.engine != "local" else set()
+            )) if skip else {
+                "provider", "microphone", "shortcut", "practice"
+            }
+            if not required <= self.setup_checks:
                 raise ValueError("Validate providers, microphone, shortcut, and practice first")
-            Progress(4, True).save(self.path)
             await self.start()
+            Progress(4, True).save(self.path)
+        elif method == "setup.stage":
+            Progress(int(params["stage"]), False, sorted(self.setup_checks),
+                     setup_fingerprint(config)).save(self.path)
+        elif method == "setup.skip":
+            config.stt.engine, config.stt.fallback = "online", "none"
+            await asyncio.to_thread(save, config, self.path)
+            self.setup_checks.clear()
+            Progress(0, False).save(self.path)
         elif method == "launcher":
             from .launcher import install
 
@@ -399,6 +562,7 @@ async def run():
                 "sample.cancel",
                 "updates.check",
                 "updates.testing",
+                "models.list",
             }:
                 result = await backend.dispatch(method, params)
             else:
@@ -428,6 +592,12 @@ async def run():
                 if status != previous:
                     emit("status", status)
                     previous = status
+                if backend.pending_model:
+                    async with backend.mutation_lock:
+                        await backend.apply_pending()
+                if backend.reload_model:
+                    async with backend.mutation_lock:
+                        await backend.apply_ready_reload()
             except Exception:
                 emit("status-error", {"message": "Service status unavailable. Retrying…"})
             await asyncio.sleep(0.1)
@@ -456,6 +626,10 @@ async def run():
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await backend.stop()
+        await backend.models.aclose()
+        for task in list(backend.model_tasks):
+            task.cancel()
+        await asyncio.gather(*backend.model_tasks, return_exceptions=True)
         transport.close()
 
 

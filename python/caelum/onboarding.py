@@ -1,11 +1,13 @@
 """Resumable setup and explicitly consented, bounded practice recording."""
 
 import asyncio
+import hashlib
 import json
 import os
 import tempfile
 import time
-from dataclasses import asdict, dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import Capture
@@ -26,17 +28,41 @@ PRIVACY = (
 )
 
 
+def privacy(config):
+    if config.stt.engine != "local":
+        return PRIVACY
+    prefix = (
+        "Audio stays on this computer. If the model can't run, that dictation is sent "
+        "to your online provider."
+        if config.stt.fallback == "online" else
+        "Audio stays on this computer. Caelum downloads speech models once from Hugging Face "
+        "or GitHub."
+    )
+    return prefix + " Regular dictations" + PRIVACY.split("Regular dictations", 1)[1]
+
+
+def setup_fingerprint(config):
+    return hashlib.sha256(json.dumps({
+        "app": asdict(config.app), "stt": asdict(config.stt), "cleanup": asdict(config.cleanup),
+    }, sort_keys=True).encode()).hexdigest()
+
+
 @dataclass
 class Progress:
     stage: int = 0
     complete: bool = False
+    checks: list = field(default_factory=list)
+    fingerprint: str = ""
 
     @classmethod
     def load(cls, config_path):
         path = Path(config_path).with_name("onboarding.json")
         try:
             data = json.loads(path.read_text())
-            return cls(max(0, min(4, int(data["stage"]))), data["complete"] is True)
+            return cls(max(0, min(4, int(data["stage"]))), data["complete"] is True,
+                       [value for value in data.get("checks", []) if value in {
+                           "provider", "microphone", "shortcut", "practice"
+                       }], str(data.get("fingerprint", "")))
         except (OSError, ValueError, KeyError, TypeError):
             return cls()
 
@@ -69,7 +95,7 @@ async def validate_providers(config, credential_resolver=None):
             if settings.model not in await provider.models(settings):
                 raise ProviderError(f"{title} model unavailable; choose another model", "model")
     finally:
-        await provider.client.aclose()
+        await provider.aclose()
 
 
 async def check_shortcut(config):
@@ -127,6 +153,9 @@ def record_sample(config, seconds, cancelled, level=lambda value: None, finished
 
 
 async def practice(config, pcm, cancelled):
+    if config.stt.engine == "local":
+        config = deepcopy(config)
+        config.stt.fallback = "none"  # Practice's explicit promise: stays on this computer.
     provider = Providers(config)
 
     async def transcribe():
@@ -146,4 +175,4 @@ async def practice(config, pcm, cancelled):
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-        await provider.client.aclose()
+        await provider.aclose()

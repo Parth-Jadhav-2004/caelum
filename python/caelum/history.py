@@ -36,6 +36,9 @@ class History:
             estimated_stt_usd REAL, hourly_rate REAL NOT NULL
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS history_date ON dictations(created_at)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(dictations)")}
+        if "engine" not in columns:
+            connection.execute("ALTER TABLE dictations ADD COLUMN engine TEXT NOT NULL DEFAULT 'online'")
         connection.execute("""CREATE TABLE IF NOT EXISTS usage_totals (
             singleton INTEGER PRIMARY KEY CHECK(singleton = 1), words INTEGER NOT NULL
         )""")
@@ -57,11 +60,15 @@ class History:
         if not config.desktop.history_enabled or not preferences.history_enabled:
             return False
         duration = max(0, metrics.get("capture_ms", 0))
-        rate = preferences.stt_usd_per_hour
+        engine = metrics.get("engine", "local" if config.stt.engine == "local" else "online")
+        rate = 0 if engine == "local" else preferences.stt_usd_per_hour
         with closing(self.connect()) as connection, connection:
             self.prune(connection)
             inserted = connection.execute(
-                "INSERT OR IGNORE INTO dictations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                """INSERT OR IGNORE INTO dictations
+                (id,created_at,final_transcript,duration_ms,word_count,latency_ms,stt_model,
+                 cleanup_model,refined,copied,estimated_stt_usd,hourly_rate,engine)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session,
                     datetime.now(timezone.utc).isoformat(),
@@ -69,12 +76,13 @@ class History:
                     duration,
                     len(text.split()),
                     max(0, metrics.get("release_to_dispatch_ms", 0)),
-                    config.stt.model,
+                    metrics.get("model", config.stt.model),
                     config.cleanup.model,
                     int(refined),
                     int(copied),
-                    duration / 3_600_000 * rate if rate else None,
+                    0 if engine == "local" else duration / 3_600_000 * rate if rate else None,
                     rate,
+                    engine,
                 ),
             )
             if inserted.rowcount:

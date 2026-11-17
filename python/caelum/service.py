@@ -33,7 +33,8 @@ async def prepare_update(core, stop):
             or core.work
             and not core.work.done()
             or core.state
-            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech"}
+            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech",
+                    "success_fallback_online", "success_fallback_local"}
         ):
             raise RuntimeError("Finish dictation or discard pending audio before updating")
         core.stopping = True
@@ -133,13 +134,11 @@ async def reload_settings(core, bindings, provider, path=None):
         core.config = updated
         provider.config = updated
         provider.semaphore = asyncio.Semaphore(updated.stt.concurrency)
+        if hasattr(provider, "configure_local"):
+            provider.configure_local(force=provider.local_state in ("missing", "error"))
 
 
 async def serve(config, config_path=None):
-    if config.stt.engine == "local":
-        from .local_stt import check_local
-
-        check_local(config.stt)
     if config.stt.engine != "local" and not await asyncio.to_thread(credential, config.stt.key_env):
         raise ValueError(
             "Add the transcription key in Settings → Open setup / Manage keys "
@@ -235,6 +234,7 @@ async def serve(config, config_path=None):
             else:
                 result = await core.handle(message["action"], token, message.get("address"))
                 if message["action"] == "status":
+                    result["engine"] = provider.engine_status()
                     result["storage_error"] = storage_error
                     result["hotkey"] = core.config.app.hotkey
                     result["recording_mode"] = core.config.app.recording_mode
@@ -261,6 +261,9 @@ async def serve(config, config_path=None):
         await bindings.install()
         server = await asyncio.start_unix_server(handle, path=str(path), limit=4096)
         path.chmod(0o600)
+        provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
+        provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
+        provider.configure_local()
         tasks = [
             asyncio.create_task(safety_monitor(core)),
             asyncio.create_task(lock_monitor(core, locked)),
@@ -302,6 +305,6 @@ async def serve(config, config_path=None):
         await asyncio.gather(*tasks, return_exceptions=True)
         await bindings.remove()
         await hud.close()
-        await provider.client.aclose()
+        await provider.aclose()
         path.unlink(missing_ok=True)
         lock.close()

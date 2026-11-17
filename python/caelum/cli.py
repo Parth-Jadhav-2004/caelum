@@ -32,6 +32,34 @@ def control(action, token=None, address=None):
         return result
 
 
+async def model_command(args, parser):
+    from .models import ModelManager, catalog, installed, models_dir, pin, verify
+
+    if args.action == "list":
+        if args.id:
+            parser.error("models list does not accept an id")
+        for model in catalog()["models"]:
+            state = "installed" if installed(model["id"]) else "not installed"
+            print(f"{model['id']}\t{model['label']}\t{model['download_bytes'] / 1e6:.0f} MB\t{state}")
+        return
+    if not args.id:
+        parser.error(f"models {args.action} requires a catalog id")
+    if args.action == "pin":
+        print(json.dumps(await pin(args.id), indent=2))
+        return
+    manager = ModelManager()
+    if args.action == "download":
+        print(f"Downloading {args.id}; interrupt to pause, run again to resume.", file=sys.stderr)
+        print(await manager.download(args.id))
+    elif args.action == "verify":
+        result = await asyncio.to_thread(verify, args.id)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise RuntimeError("Speech model files need attention")
+    elif args.action == "remove":
+        print(json.dumps({"freed_bytes": manager.remove(args.id), "stored_in": str(models_dir())}))
+
+
 async def doctor(config):
     from .linux import command, hypr_json, wayland_env
     from .portable import SHORTCUTS, backend_name, session_locked
@@ -54,10 +82,15 @@ async def doctor(config):
     checks["runtime_directory"] = bool(os.environ.get("XDG_RUNTIME_DIR"))
     if config.stt.engine == "local":
         from .local_stt import check_local
+        from .models import installed
         from .providers import ProviderError
 
         try:
-            check_local(config.stt)
+            if config.stt.local_model:
+                if not installed(config.stt.local_model):
+                    raise ProviderError("Speech model not downloaded", "missing_model")
+            else:
+                check_local(config.stt)
             checks["local_transcription_ready"] = True
         except ProviderError:
             checks["local_transcription_ready"] = False
@@ -174,12 +207,16 @@ def main():
     )
     sub.add_parser("devices", help="List microphones")
     sub.add_parser("init", help="Create a config file without overwriting an existing one")
-    models = sub.add_parser("models", help="Verify exact provider model identifiers")
-    models.add_argument("provider", choices=["stt", "cleanup"])
-    bench = sub.add_parser("benchmark", help="Opt in to uploading a user-provided WAV corpus")
+    models = sub.add_parser("models", help="Manage local models or verify provider model identifiers")
+    models.add_argument("action", choices=["stt", "cleanup", "list", "download", "remove", "verify", "pin"])
+    models.add_argument("id", nargs="?")
+    bench = sub.add_parser("benchmark", help="Benchmark a user-provided WAV corpus (online uploads)")
     bench.add_argument("manifest", type=Path)
     bench.add_argument("--repeat", type=int, default=3)
     bench.add_argument("--output", default="benchmark-results.json")
+    bench.add_argument("--engine", choices=["online", "local"], default="online")
+    bench.add_argument("--model", help="Pinned local catalog id (required with --engine local)")
+    bench.add_argument("--threads", type=int, default=0, help="Local CPU threads; 0 selects automatically")
     replay = sub.add_parser(
         "hud-demo", help="Replay HUD states without microphone, network, or insertion"
     )
@@ -189,6 +226,11 @@ def main():
         if args.command == "control":
             control(args.action, args.token, args.address)
             return
+        if args.command == "models" and args.action not in ("stt", "cleanup"):
+            asyncio.run(model_command(args, parser))
+            return
+        if args.command == "models" and args.id:
+            parser.error("models stt/cleanup does not accept an id")
         config = load(args.config)
         if args.command == "init":
             path = args.config or config_path()
@@ -207,10 +249,10 @@ def main():
         elif args.command == "doctor":
             sys.exit(asyncio.run(doctor(config)))
         elif args.command == "serve":
-            from .onboarding import PRIVACY
+            from .onboarding import privacy
             from .service import serve
 
-            print(PRIVACY, file=sys.stderr)
+            print(privacy(config), file=sys.stderr)
             asyncio.run(serve(config, args.config))
         elif args.command == "app":
             from .desktop import run
@@ -223,7 +265,7 @@ def main():
 
                 provider = Providers(config)
                 try:
-                    for name in await provider.models(getattr(config, args.provider)):
+                    for name in await provider.models(getattr(config, args.action)):
                         print(name)
                 finally:
                     await provider.client.aclose()
@@ -232,9 +274,22 @@ def main():
         elif args.command == "benchmark":
             if not 1 <= args.repeat <= 20:
                 parser.error("repeat must be between 1 and 20")
-            from .benchmark import benchmark
+            if args.engine == "local":
+                if not args.model:
+                    parser.error("--model is required with --engine local")
+                from .benchmark import local_benchmark
 
-            asyncio.run(benchmark(config, args.manifest, args.repeat, args.output))
+                asyncio.run(local_benchmark(
+                    config, args.manifest, args.repeat, args.output, args.model, args.threads
+                ))
+            else:
+                if args.model or args.threads:
+                    parser.error("--model and --threads require --engine local")
+                if config.stt.engine == "local":
+                    parser.error("Online benchmark requires an online transcription config")
+                from .benchmark import benchmark
+
+                asyncio.run(benchmark(config, args.manifest, args.repeat, args.output))
         elif args.command == "hud-demo":
 
             async def demo():

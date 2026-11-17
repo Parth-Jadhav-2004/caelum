@@ -25,7 +25,10 @@ class App:
 
 @dataclass
 class STT:
-    engine: str = "cloud"
+    engine: str = "online"
+    local_model: str = ""
+    local_threads: int = 0
+    fallback: str = "none"
     local_binary: str = "whisper-cli"
     local_model_path: str = ""
     local_timeout_seconds: float = 300.0
@@ -104,8 +107,22 @@ def load(path=None):
 
 def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
-    if s.engine not in ("cloud", "local"):
-        raise ValueError("Transcription engine must be cloud or local")
+    # The pre-catalog preview called Online "cloud". Preserve those configs.
+    if s.engine == "cloud":
+        s.engine = "online"
+    if s.engine not in ("online", "local"):
+        raise ValueError("Transcription engine must be online or local")
+    if s.fallback not in ("none", "online", "local") or s.fallback == s.engine:
+        raise ValueError("Fallback must be none or the other transcription engine")
+    if type(s.local_threads) is not int or not 0 <= s.local_threads <= 256:
+        raise ValueError("Local thread count must be between 0 and 256")
+    if s.local_model or s.engine == "local" and not s.local_model_path or s.fallback == "local":
+        from .models import ModelError, get_model
+
+        try:
+            get_model(s.local_model)
+        except ModelError:
+            raise ValueError("Choose a known local speech model") from None
     if not s.local_binary.strip() or not 10 <= s.local_timeout_seconds <= 1800:
         raise ValueError("Local binary and timeout are invalid")
     if len(s.vocabulary) > 4000:
@@ -150,6 +167,8 @@ def validate(config):
     if len(set(modifiers)) != len(modifiers):
         raise ValueError("Hotkey modifiers must not repeat")
     for provider in (s, c):
+        if s.engine == "local" and s.fallback != "online":
+            continue  # Neither audio nor cleanup text can leave this machine.
         url = urlparse(provider.base_url)
         if url.scheme != "https" and not (
             url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1")

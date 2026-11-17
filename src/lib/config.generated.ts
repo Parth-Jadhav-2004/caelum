@@ -14,6 +14,9 @@ export interface AppConfig {
 }
 export interface STTConfig {
   engine: string
+  local_model: string
+  local_threads: number
+  fallback: string
   local_binary: string
   local_model_path: string
   local_timeout_seconds: number

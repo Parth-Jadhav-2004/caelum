@@ -135,6 +135,25 @@ def promote(data, github):
     )
 
 
+def test_local_runtime_is_vendored_by_default_and_has_size_budget(tmp_path):
+    import build_package
+
+    command = build_package.requirements_command(tmp_path / "requirements.txt")
+    assert command[command.index("--extra") + 1] == "local"
+    assert "--locked" in command
+    assert "whisper" not in command
+    library = tmp_path / "lib"
+    package = library / "sherpa_onnx"
+    package.mkdir(parents=True)
+    binary = package / "runtime.so"
+    binary.write_bytes(b"runtime")
+    assert build_package.check_local_runtime(library) == 7
+    with binary.open("wb") as stream:
+        stream.truncate(build_package.LOCAL_RUNTIME_BUDGET + 1)
+    with pytest.raises(RuntimeError, match="50 MB"):
+        build_package.check_local_runtime(library)
+
+
 def test_interrupted_publication_resumes_then_published_rerun_is_noop(release_candidate):
     github = GitHub()
     github.interrupt = True

@@ -15,7 +15,10 @@ high_contrast = false
 silence_dbfs = -60.0 # conservative silence rejection, never an audio gate
 
 [stt]
-engine = "cloud" # cloud or local (offline whisper.cpp; no cloud cleanup)
+engine = "online"                # online | local
+local_model = ""                 # Catalog id, e.g. parakeet-v3
+local_threads = 0                # 0 = automatic (at most 4)
+fallback = "none"                # Opt-in only: none | online | local
 local_binary = "whisper-cli" # executable name or full path
 local_model_path = "" # full path to a downloaded whisper.cpp GGML model
 local_timeout_seconds = 300.0

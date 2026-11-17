@@ -79,7 +79,78 @@ class Providers:
             limits=httpx.Limits(max_connections=5), follow_redirects=False
         )
         self.semaphore = asyncio.Semaphore(config.stt.concurrency)
+        self.local_engine = None
+        self.local_task = None
+        self.local_signature = None
+        self.local_state = "missing"
+        self.local_message = ""
+        self.on_loading = None
+        self.on_processing = None
+        self.legacy_lock = asyncio.Lock()
         self.reset_metrics()
+
+    def configure_local(self, force=False):
+        """Schedule native loading only; the daemon socket must remain responsive."""
+        cfg = self.config.stt
+        wanted = cfg.engine == "local" or cfg.fallback == "local"
+        signature = (cfg.local_model if wanted else "", cfg.local_threads,
+                     cfg.language.split("_")[0].split("-")[0].lower(),
+                     cfg.vocabulary, self.config.app.silence_dbfs)
+        if signature == self.local_signature and not force:
+            return
+        self.local_signature = signature
+        previous = self.local_task
+        self.local_state = "loading" if signature[0] else "missing"
+
+        async def refresh():
+            if previous:
+                await asyncio.gather(asyncio.shield(previous), return_exceptions=True)
+            if signature != self.local_signature:
+                return
+            if not signature[0]:
+                if self.local_engine:
+                    await self.local_engine.unload()
+                return
+            from .local_stt import LocalEngine
+
+            if self.local_engine is None:
+                self.local_engine = LocalEngine()
+            engine = self.local_engine
+            from .local_stt import auto_threads
+
+            engine.threads = signature[1] or auto_threads()
+            engine.language, engine.vocabulary, engine.silence_dbfs = signature[2:]
+            try:
+                await engine.load(signature[0])
+                if signature == self.local_signature:
+                    self.local_state, self.local_message = "ready", ""
+            except ProviderError as error:
+                if signature == self.local_signature:
+                    self.local_state = "missing" if error.kind == "missing_model" else "error"
+                    self.local_message = str(error)
+        self.local_task = asyncio.create_task(refresh())
+
+    def engine_status(self):
+        cfg = self.config.stt
+        if cfg.engine != "local":
+            return {"kind": "online", "model": None, "state": "ready", "message": ""}
+        if not cfg.local_model and cfg.local_model_path:
+            from .local_stt import check_local
+
+            try:
+                check_local(cfg)
+                return {"kind": "local", "model": None, "state": "ready", "message": ""}
+            except ProviderError as error:
+                return {"kind": "local", "model": None, "state": "error", "message": str(error)}
+        return {"kind": "local", "model": cfg.local_model or None,
+                "state": self.local_state, "message": self.local_message}
+
+    async def aclose(self):
+        if self.local_task:
+            await asyncio.gather(self.local_task, return_exceptions=True)
+        if self.local_engine:
+            await self.local_engine.aclose()
+        await self.client.aclose()
 
     def reset_metrics(self):
         self.metrics = {
@@ -105,6 +176,18 @@ class Providers:
 
     async def models(self, provider):
         if provider is self.config.stt and provider.engine == "local":
+            if provider.local_model:
+                import importlib.util
+
+                from .models import EXTRA_MODULES, get_model, installed
+
+                if not installed(provider.local_model):
+                    raise ProviderError("Speech model not downloaded", "missing_model")
+                model = get_model(provider.local_model)
+                extra = model["requires_extra"] or "local"
+                if importlib.util.find_spec(EXTRA_MODULES[extra]) is None:
+                    raise ProviderError("Needs an extra component.", "local_setup")
+                return [provider.local_model]
             from .local_stt import check_local
 
             check_local(provider)
@@ -127,13 +210,65 @@ class Providers:
 
     async def stt(self, pcm, start=0, end=None):
         cfg = self.config.stt
+        kind = "local" if cfg.engine == "local" else "online"
+        try:
+            result = await (self._local_stt(pcm, start, end) if kind == "local"
+                            else self._online_stt(pcm, start, end))
+        except ProviderError as error:
+            if kind == "local" and cfg.fallback == "online":
+                if self.on_processing:
+                    await self.on_processing()
+                result = await self._online_stt(pcm, start, end)
+                kind = "online"
+            elif kind == "online" and cfg.fallback == "local" and error.kind in {
+                "offline", "timeout", "quota",
+            }:
+                result = await self._local_stt(pcm, start, end)
+                kind = "local"
+            else:
+                raise
+            self.metrics["fallback"] = kind
+        self.metrics["engine"] = kind
+        self.metrics["model"] = cfg.local_model if kind == "local" else cfg.model
+        return result
+
+    async def _local_stt(self, pcm, start=0, end=None):
+        cfg = self.config.stt
         end = end if end is not None else start + len(pcm) // 2
-        if cfg.engine == "local":
+        if not cfg.local_model and cfg.local_model_path:
             from .local_stt import transcribe
 
-            async with self.semaphore:
-                text = await transcribe(cfg, pcm)
-                return Transcript(normalize(text), [], start, end)
+            async with self.legacy_lock:
+                return Transcript(normalize(await transcribe(cfg, pcm)), [], start, end)
+        self.configure_local()
+        loading = self.local_state == "loading"
+        if loading and self.on_loading:
+            await self.on_loading()
+        if self.local_task:
+            try:
+                await asyncio.wait_for(asyncio.shield(self.local_task), 20)
+            except TimeoutError:
+                raise ProviderError("Speech model is still getting ready. Try again.",
+                                    "timeout") from None
+        if self.local_state != "ready" or not self.local_engine:
+            raise ProviderError(self.local_message or "Speech model not downloaded",
+                                "missing_model" if self.local_state == "missing" else "local_setup")
+        if loading and self.on_processing:
+            await self.on_processing()
+        result = await self.local_engine.transcribe(pcm, start, end)
+        self.metrics["decode_ms"] = self.local_engine.decode_ms
+        from .models import record_stats
+
+        try:
+            if result.text:
+                await asyncio.to_thread(record_stats, cfg.local_model, self.local_engine.decode_ms)
+        except OSError:
+            pass  # A stats write failure must not lose a successful dictation.
+        return result
+
+    async def _online_stt(self, pcm, start=0, end=None):
+        cfg = self.config.stt
+        end = end if end is not None else start + len(pcm) // 2
         data = {
             "model": cfg.model,
             "response_format": "verbose_json",
@@ -200,7 +335,7 @@ class Providers:
 
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
-        if self.config.stt.engine == "local" or not cfg.model:
+        if self.config.stt.engine == "local" or self.metrics.get("engine") == "local" or not cfg.model:
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"

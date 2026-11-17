@@ -1,0 +1,88 @@
+import type { ModelList, SpeechModel } from "@/lib/ipc";
+
+const base: SpeechModel = {
+  id: "parakeet-v3",
+  tier: "recommended",
+  label: "Parakeet",
+  blurb: "Fast and accurate for English and 24 European languages.",
+  languages: ["en", "de"],
+  auto_language: true,
+  download_bytes: 670576784,
+  disk_bytes: 670576784,
+  licence: {
+    id: "CC-BY-4.0",
+    url: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+    attribution: "NVIDIA, CC BY 4.0",
+  },
+  wer: { open_asr_latest: 7.04 },
+  state: "not_installed",
+  received_bytes: 0,
+  total_bytes: 670576784,
+  bytes_per_sec: 0,
+  eta_seconds: null,
+  error: null,
+  in_use: false,
+  visible: true,
+  disabled_reason: null,
+  requires_extra: null,
+  stored_in: "/test/models/parakeet-v3",
+  decode_ms: null,
+};
+export const testModels: ModelList = {
+  hardware: {
+    mem_total_mb: 16384,
+    mem_available_mb: 8192,
+    cores: 8,
+    arch: "x86_64",
+    avx2: true,
+    avx512: false,
+    disk_free_mb: 10000,
+    nvidia: false,
+    language: "en",
+  },
+  recommended: {
+    id: "parakeet-v3",
+    reason_code: "balanced",
+    reason_text: "Fast and accurate for your computer.",
+  },
+  pending_use: null,
+  models: [
+    base,
+    {
+      ...base,
+      id: "parakeet-110m",
+      tier: "small",
+      label: "Small and quick",
+      blurb: "English only. Light on memory.",
+      download_bytes: 108035095,
+      disk_bytes: 136490421,
+    },
+    {
+      ...base,
+      id: "cohere-transcribe",
+      tier: "accurate",
+      label: "Most accurate",
+      blurb: "Fewest mistakes. Needs 8 GB memory.",
+      download_bytes: 1699791751,
+    },
+    {
+      ...base,
+      id: "whisper-turbo",
+      tier: "any",
+      label: "Any language",
+      blurb: "99 languages. Slower on most computers.",
+      languages: ["*"],
+      download_bytes: 1621665983,
+      requires_extra: "whisper",
+    },
+  ],
+};
+export const noModels: ModelList = {
+  ...testModels,
+  models: [],
+  recommended: {
+    id: null,
+    reason_code: "test",
+    reason_text: "",
+  },
+};

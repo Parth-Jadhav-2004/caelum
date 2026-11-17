@@ -25,9 +25,11 @@ modules available (`uv venv --system-site-packages --python /usr/bin/python3
 --allow-existing`) and install GTK4 and gtk4-layer-shell. The main window does
 not import PyGObject. Tauri's Linux WebView uses GTK3/WebKitGTK internally.
 
-The first run opens Provider → Microphone → Shortcut → Practice. Provider checks
-validate model access without uploading audio. The mic test is local. Practice
-requires explicit upload consent. Keys use Secret Service when available, otherwise
+The first run opens Speech → Microphone → Shortcut → Practice. Choose **On this
+computer** for downloaded models or **Online** for an API provider. Downloads
+continue during setup and while the window is hidden to the tray. The mic test
+is local. Only Online practice requires upload consent; local practice never
+falls back to an upload. Keys use Secret Service when available, otherwise
 an owner-only file with an explicit unencrypted-storage disclosure.
 
 ```sh
@@ -147,12 +149,84 @@ cloud and local recognition. Names and technical terms act as recognition hints.
 Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
 existing conservative validation and fall back to raw text on failure.
 
-For offline dictation, install whisper.cpp separately and download a compatible
-GGML model. In Settings select **Local · offline**, enter the `whisper-cli`
-executable and full model path, save, then use **Check**. No API key is required.
-Model downloads are explicit and are not performed by Caelum. CPU inference speed
-and memory depend on the model and hardware; use a smaller model or increase the
-local timeout on slower machines. Local mode processes whole recordings, keeps
-WAV audio in an anonymous Linux memory file, and terminates inference on cancel.
-It never falls back to cloud transcription and disables cloud cleanup, preserving
-its preferences for later. Update checks remain controlled separately.
+### On this computer
+
+Settings → General → Transcribe offers **On this computer | Online**. The local
+picker shows Parakeet, Small and quick, Most accurate (on ≥8 GB machines), and
+Any language, with five alternatives under **Show all models**. Hardware and
+language guide the recommendation; Hindi and other Indian languages are pointed
+to Online for now. Downloads are resumable, verified against pinned SHA-256
+values, and never start without your action.
+
+Local dictations do not upload audio or refinement text. Fallback is **off by
+default**. “Use Online instead” explicitly authorizes uploading a dictation only
+if the local engine fails. “When you’re offline” can opt into a downloaded model
+when Online fails with a connection, timeout, or quota error. The HUD and history
+record the engine actually used. Update checks remain controlled separately.
+
+Existing configs without an engine remain Online. The old `cloud` spelling
+migrates to `online`; existing whisper.cpp executable/GGML-path configs still
+work as a compatibility path. Choosing a catalog model replaces that path without
+deleting the old executable/path preferences.
+
+Python/source installations need the `local` extra. Native packages vendor it
+by default; weights are **never bundled**.
+
+```sh
+uv sync --locked --extra dev --extra local --extra whisper
+.venv/bin/caelum models list
+.venv/bin/caelum models download parakeet-v3
+.venv/bin/python scripts/download-local-fixtures.py /tmp/opencode/caelum-local-fixtures
+.venv/bin/caelum benchmark /tmp/opencode/caelum-local-fixtures/manifest.json \
+  --engine local --model parakeet-v3 --threads 4 --repeat 3 \
+  --output /tmp/opencode/benchmark-results-parakeet-v3.json
+```
+
+`local` installs sherpa-onnx for Parakeet, Cohere, Canary and Moonshine. `whisper` is optional and
+installs faster-whisper for `whisper-turbo`. With pip, use
+`pip install 'caelum-dictation[local,whisper]'` from a version containing this preview.
+Models are never included in the wheel or downloaded by runtime initialization.
+They live under `$XDG_DATA_HOME/caelum/models` (normally
+`~/.local/share/caelum/models`), with pinned revisions, size/hash checks and receipts.
+Interrupt a CLI download and repeat the command to resume. The desktop also has
+Pause, Resume and Cancel, a single-download queue, Check files, and confirmed
+removal. Use `caelum models verify <id>` for a full hash check or `caelum models
+remove <id>` to reclaim space (switch away from it and stop benchmarks first).
+`caelum models pin <id>` re-fetches a pinned source and prints file metadata for
+review; it never installs files or edits the catalog automatically.
+
+Parakeet vocabulary hints use local hotword biasing. Whisper receives the
+vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
+hints. Local inference is serialized; cancellation discards its result, though
+an in-progress native decode must finish before the worker can unload.
+
+### Optional Whisper component
+
+For Python installations:
+
+```sh
+pip install 'caelum-dictation[local,whisper]'
+```
+
+For native packages, install into a user-owned, ABI-specific component folder
+with the **same Python interpreter** that runs Caelum (no system pip changes):
+
+```sh
+component_dir="${XDG_DATA_HOME:-$HOME/.local/share}/caelum/components/$(python3 -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")')"
+uv pip install --python /usr/bin/python3 --target "$component_dir" 'faster-whisper>=1.2,<2'
+```
+
+Restart Caelum, then download Any language. Component folders are appended after
+packaged dependencies; `.pth` files are not executed. Remove/reinstall the folder
+for a new Python minor version. NVIDIA acceleration is attempted only when
+CTranslate2 reports support; missing CUDA libraries or a failed CUDA decode
+retry locally on CPU, never Online.
+
+The native builder also has an experimental `appimage` target, requiring
+linuxdeploy, its GTK plugin, and appimagetool. It targets **system Python 3.14**;
+GTK4/GI and desktop helpers are host prerequisites for the optional native HUD.
+It is not yet part of signed automated promotion. Clean-VM qualification and
+package-size comparisons remain mandatory before release.
+
+See [local model measurements](docs/local-models-benchmark.md) and the
+[release qualification checklist](docs/local-models-release-checklist.md).

@@ -206,6 +206,14 @@ fn release_url(version: Option<&str>) -> Result<String, String> {
     }
 }
 #[tauri::command]
+fn open_model_help() -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg("https://github.com/Parth-Jadhav-2004/caelum#optional-whisper-component")
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "Could not open your browser".into())
+}
+#[tauri::command]
 async fn quit_app(
     discard: bool,
     app: tauri::AppHandle,
@@ -338,6 +346,7 @@ fn main() {
             quit_app,
             open_releases,
             open_docs,
+            open_model_help,
             restart_app,
             open_key_console,
             frontend_ready

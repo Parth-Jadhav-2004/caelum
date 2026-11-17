@@ -14,6 +14,10 @@ STATES = {
     "listening",
     "recording",
     "processing",
+    "loading",
+    "missing_model",
+    "success_fallback_online",
+    "success_fallback_local",
     "refining",
     "success",
     "unrefined",
@@ -24,6 +28,10 @@ STATES = {
 }
 LABELS = {
     "starting": "Starting…",
+    "loading": "Getting ready…",
+    "missing_model": "Speech model not downloaded",
+    "success_fallback_online": "Done · used Online",
+    "success_fallback_local": "Done · used this computer",
     "processing": "Transcribing",
     "refining": "Transcribing",
     "success": "Inserted",
@@ -39,6 +47,9 @@ ERRORS = {
     "insert": "Insert failed",
     "capture": "Capture interrupted",
     "hud": "Feedback unavailable",
+    "missing_model": "Speech model not downloaded",
+    "local_decode": "Couldn't make sense of that",
+    "local_setup": "Speech model needs attention",
 }
 
 
@@ -213,9 +224,9 @@ def run(reduced_motion=False, high_contrast=False):
         cr.set_source_rgb(
             *(
                 accent
-                if kind in ("recording", "success", "unrefined")
+                if kind in ("recording", "success", "unrefined", "success_fallback_online", "success_fallback_local")
                 else error
-                if kind == "error"
+                if kind in ("error", "missing_model")
                 else white
             )
         )
@@ -244,11 +255,11 @@ def run(reduced_motion=False, high_contrast=False):
                 cr.set_font_size(12)
                 label_width = cr.text_extents(label).width
             cx = x + 20 if kind == "error" else x + (capsule_width - (24 + label_width)) / 2 + 7
-            if kind in ("processing", "starting"):
+            if kind in ("processing", "starting", "loading"):
                 angle = 0 if reduced_motion else (now % 1.2) / 1.2 * math.tau
                 cr.arc(cx, cy, 6, angle, angle + math.pi * 1.45)
                 cr.stroke()
-            elif kind in ("success", "unrefined"):
+            elif kind in ("success", "unrefined", "success_fallback_online", "success_fallback_local"):
                 cr.move_to(cx - 5, cy)
                 cr.line_to(cx - 1, cy + 4)
                 cr.line_to(cx + 6, cy - 4)
@@ -259,7 +270,7 @@ def run(reduced_motion=False, high_contrast=False):
                     cr.line_to(cx + dx, cy + dy)
                 cr.close_path()
                 cr.stroke()
-            elif kind == "error":
+            elif kind in ("error", "missing_model"):
                 cr.move_to(cx, cy - 7)
                 cr.line_to(cx + 7, cy + 6)
                 cr.line_to(cx - 7, cy + 6)

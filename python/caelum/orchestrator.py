@@ -161,7 +161,9 @@ class Orchestrator:
                     return
                 self.chunker = (
                     Chunker(self.provider, self.config.stt)
-                    if self.config.app.strategy == "chunked" and self.config.stt.engine != "local"
+                    if self.config.app.strategy == "chunked"
+                    and self.config.stt.fallback == "none"
+                    and not (self.config.stt.engine == "local" and not self.config.stt.local_model)
                     else None
                 )
                 self.poll_task = asyncio.create_task(self.poll())
@@ -178,7 +180,7 @@ class Orchestrator:
                 if token:
                     self.accepted_tokens.add(token)
                 await self.cancel()
-            elif action == "retry" and self.pcm is not None and self.state == "error":
+            elif action == "retry" and self.pcm is not None and self.state in ("error", "missing_model"):
                 # Reserve the retry before scheduling work: two queued UI clicks
                 # must not create concurrent finalization tasks.
                 self.state = "processing"
@@ -275,6 +277,7 @@ class Orchestrator:
         try:
             async with asyncio.timeout(
                 (self.config.stt.local_timeout_seconds if self.config.stt.engine == "local"
+                 or self.config.stt.fallback == "local"
                  else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
             ):
                 await self.event("processing")
@@ -347,7 +350,9 @@ class Orchestrator:
                 self.failed_at = None
                 await self.bindings.active(False)
                 await self.event(
-                    ("success" if refined else "unrefined") if dispatched else "copied"
+                    ("success_fallback_" + self.provider.metrics["fallback"]
+                     if self.provider.metrics.get("fallback") else
+                     ("success" if refined else "unrefined")) if dispatched else "copied"
                 )
                 if self.on_completed:
                     with suppress(Exception):
@@ -367,7 +372,13 @@ class Orchestrator:
                 self.chunker.cancel()
                 self.chunker = None
             self.failed_at = self.failed_at or time.monotonic()
-            await self.event("error", "network")
+            self.error_kind = error.kind if isinstance(error, ProviderError) else "unavailable"
+            await self.event(
+                "missing_model" if self.error_kind == "missing_model" else "error",
+                "missing_model" if self.error_kind == "missing_model" else
+                "local_setup" if self.error_kind == "local_setup" else
+                "local_decode" if self.config.stt.engine == "local" else "network",
+            )
             self.error_kind = error.kind if isinstance(error, ProviderError) else "unavailable"
             if isinstance(error, ProviderError):
                 with suppress(RuntimeError, OSError, TimeoutError):
