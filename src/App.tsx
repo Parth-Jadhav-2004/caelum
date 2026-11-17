@@ -3,13 +3,15 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQueryClient } from "@tanstack/react-query";
+import { useShallow } from "zustand/react/shallow";
 import { ThemeProvider } from "@/lib/theme";
-import { MotionConfig, motion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import {
   Home,
   Clock3,
@@ -17,7 +19,8 @@ import {
   Settings as SettingsIcon,
   BookOpen,
   Wand2,
-  Info,
+  Pause,
+  Play,
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
@@ -46,17 +49,12 @@ import {
 import { version } from "../package.json";
 import { History } from "@/features/history";
 import { CaelumBrand } from "@/components/brand";
-import { Settings, Choice, Dictionary } from "@/features/settings";
+import { Settings, Dictionary } from "@/features/settings";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
-import {
-  TooltipProvider,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Dashboard, Statistics } from "@/features/dashboard";
 const Setup = lazy(() =>
@@ -83,7 +81,19 @@ export default function App() {
   const settingsGroup = useApp((s) => s.settingsGroup);
   const page = useApp((s) => s.page),
     navigate = useApp((s) => s.navigate),
-    status = useApp((s) => s.status),
+    status = useApp(
+      useShallow((s) =>
+        s.status
+          ? {
+              title: s.status.title,
+              state: s.status.state,
+              running: s.status.running,
+              paused: s.status.paused,
+              pending_audio: s.status.pending_audio,
+            }
+          : null,
+      ),
+    ),
     engineError = useApp((s) => s.engineError);
   const [quitting, setQuitting] = useState(false),
     [restarting, setRestarting] = useState(false),
@@ -97,6 +107,17 @@ export default function App() {
     initialized = useRef(false),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     chain = useRef(Promise.resolve());
+  const content = useRef<HTMLDivElement>(null);
+  const configured = config !== null;
+  useLayoutEffect(() => {
+    if (!configured) return;
+    content.current?.scrollTo?.({ top: 0, behavior: "instant" });
+    // Setup focuses its own step heading once its lazy module has loaded.
+    if (page !== "setup")
+      content.current
+        ?.querySelector<HTMLElement>("h1")
+        ?.focus({ preventScroll: true });
+  }, [page, configured]);
   useEffect(() => {
     if (!bootstrap.data || initialized.current) return;
     initialized.current = true;
@@ -117,7 +138,12 @@ export default function App() {
   }, [bootstrap.data, navigate]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "k" &&
+        !e.repeat &&
+        !e.defaultPrevented
+      ) {
         e.preventDefault();
         setCommand((v) => !v);
       }
@@ -125,14 +151,6 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-  useEffect(() => {
-    document.documentElement.dataset.reducedMotion = String(
-      config?.app.reduced_motion ?? false,
-    );
-    document.documentElement.dataset.highContrast = String(
-      config?.app.high_contrast ?? false,
-    );
-  }, [config?.app.reduced_motion, config?.app.high_contrast]);
   const commit = useCallback(
     async (next: Config) => {
       if (timer.current) clearTimeout(timer.current);
@@ -192,15 +210,33 @@ export default function App() {
     );
   if (!config)
     return (
-      <main className="space-y-6 p-8">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-80 w-full" />
+      <main aria-label="Loading Caelum" aria-busy="true" className="flex h-svh">
+        <div
+          className="hidden w-60 shrink-0 space-y-6 overflow-hidden border-r bg-sidebar px-4 py-6 md:block [[data-sidebar-collapsed=true]_&]:w-12 [[data-sidebar-collapsed=true]_&]:px-2 [[data-setup-complete=false]_&]:hidden"
+          aria-hidden="true"
+        >
+          <Skeleton className="h-10 w-32" />
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} className="h-9" />
+          ))}
+        </div>
+        <div className="min-w-0 flex-1 pt-12">
+          <div className="mx-auto max-w-5xl space-y-8 p-8">
+            <Skeleton className="h-10 w-64 max-w-full" />
+            <Skeleton className="h-40" />
+            <Skeleton className="h-64" />
+          </div>
+        </div>
       </main>
     );
   return (
     <ThemeProvider
       theme={config.desktop.theme}
       colorTheme={config.desktop.color_theme}
+      reducedMotion={config.app.reduced_motion}
+      highContrast={config.app.high_contrast}
+      sidebarVisible={config.desktop.sidebar_visible}
+      setupComplete={bootstrap.data?.setup.complete ?? false}
     >
       <MotionConfig
         reducedMotion={config.app.reduced_motion ? "always" : "user"}
@@ -223,16 +259,18 @@ export default function App() {
             </a>
             {page !== "setup" && (
               <Sidebar
+                id="main-navigation"
                 collapsible="icon"
                 role="navigation"
                 aria-label="Main navigation"
               >
-                <SidebarHeader className="px-4 py-6">
+                <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-2">
                   <SidebarMenu>
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         size="lg"
                         aria-label="Caelum home"
+                        tooltip="Caelum home"
                         onClick={() => navigate("home")}
                       >
                         <CaelumBrand />
@@ -253,7 +291,9 @@ export default function App() {
                             className="h-9"
                           >
                             <Icon />
-                            <span>{title}</span>
+                            <span className="group-data-[collapsible=icon]:sr-only">
+                              {title}
+                            </span>
                             {page === id && (
                               <span className="ml-auto size-1.5 rounded-full bg-accent-brand group-data-[collapsible=icon]:hidden" />
                             )}
@@ -262,9 +302,13 @@ export default function App() {
                       ))}
                       {i === 0 && (
                         <SidebarMenuItem>
-                          <SidebarMenuButton disabled className="h-9">
+                          <SidebarMenuButton
+                            disabled
+                            aria-label="Styles, coming later"
+                            className="h-9"
+                          >
                             <Wand2 />
-                            <span>
+                            <span className="group-data-[collapsible=icon]:sr-only">
                               Styles{" "}
                               <span className="text-meta text-muted-foreground">
                                 Coming later
@@ -276,8 +320,25 @@ export default function App() {
                     </SidebarMenu>
                   ))}
                 </SidebarContent>
-                <SidebarFooter className="gap-4 p-4">
-                  <div className="space-y-3 rounded-lg bg-sidebar-status p-3 group-data-[collapsible=icon]:hidden">
+                <SidebarFooter className="gap-4 p-4 group-data-[collapsible=icon]:p-2">
+                  <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        tooltip={`${status?.title ?? "Connecting…"} · ${status?.paused ? "Resume" : "Pause"} dictation`}
+                        disabled={!status?.running}
+                        onClick={() =>
+                          void action(() =>
+                            ipc("control", {
+                              action: status?.paused ? "resume" : "pause",
+                            }),
+                          )
+                        }
+                      >
+                        {status?.paused ? <Play /> : <Pause />}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                  <div className="space-y-3 rounded-lg border border-sidebar-border bg-sidebar-status p-3 group-data-[collapsible=icon]:hidden">
                     <p
                       role="status"
                       className="flex items-center gap-2 text-body"
@@ -289,24 +350,6 @@ export default function App() {
                     </p>
                     {!["home", "settings"].includes(page) && (
                       <kbd className="inline-block">{config.app.hotkey}</kbd>
-                    )}
-                    {page !== "settings" && (
-                      <>
-                        <Choice
-                          label="Recording mode"
-                          value={config.app.recording_mode}
-                          items={[
-                            ["hold", "Hold"],
-                            ["toggle", "Toggle"],
-                          ]}
-                          change={(v) =>
-                            change({
-                              ...config,
-                              app: { ...config.app, recording_mode: v },
-                            })
-                          }
-                        />
-                      </>
                     )}
                     <label className="flex items-center justify-between gap-3 text-body">
                       Pause
@@ -346,34 +389,30 @@ export default function App() {
             )}
             <SidebarInset>
               {page !== "setup" && (
-                <header className="flex h-12 shrink-0 items-center px-8">
+                <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
                   <SidebarTrigger />
                 </header>
               )}
               <div
+                ref={content}
                 id="main-content"
                 tabIndex={-1}
-                className="min-w-0 flex-1 overflow-auto"
+                aria-label={
+                  page === "setup"
+                    ? "Setup"
+                    : pages.find((p) => p.id === page)?.title
+                }
+                className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
               >
                 {engineError && (
                   <div
                     role="alert"
                     className="mx-8 mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm"
                   >
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          className="flex items-center gap-2 font-medium"
-                          aria-label="Why Caelum stopped"
-                        >
-                          Caelum stopped.
-                          <Info className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-sm">
-                        {engineError}
-                      </TooltipContent>
-                    </Tooltip>
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-medium">Caelum stopped.</p>
+                      <p className="break-words text-meta">{engineError}</p>
+                    </div>
                     <Button
                       variant="outline"
                       onClick={() => setRestarting(true)}
@@ -383,19 +422,18 @@ export default function App() {
                   </div>
                 )}
                 <Suspense fallback={<Skeleton className="m-8 h-80" />}>
-                  <motion.div
+                  <div
                     key={page}
-                    initial={{ opacity: 0.5, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.16 }}
-                    className="mx-auto max-w-5xl px-8 py-8"
+                    className="screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
                   >
                     {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}
                     {page === "history" && <History />}
                     {page === "dictionary" && (
                       <div className="space-y-8">
-                        <h1 className="text-title font-semibold">Dictionary</h1>
+                        <h1 tabIndex={-1} className="text-title font-semibold">
+                          Dictionary
+                        </h1>
                         <Dictionary config={config} change={change} />
                       </div>
                     )}
@@ -405,12 +443,13 @@ export default function App() {
                         config={config}
                         change={change}
                         saveState={saveState}
+                        commit={commit}
                       />
                     )}{" "}
                     {page === "setup" && (
                       <Setup config={config} commit={commit} />
                     )}
-                  </motion.div>
+                  </div>
                   <FrontendReady />
                 </Suspense>
               </div>

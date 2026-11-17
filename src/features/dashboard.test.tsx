@@ -207,6 +207,9 @@ it("shows full history metadata in a separate detail panel", async () => {
   expect(
     screen.getByRole("complementary", { name: "Dictation details" }),
   ).toHaveTextContent("3 words");
+  expect(
+    screen.getByRole("complementary", { name: "Dictation details" }),
+  ).toHaveFocus();
   await userEvent.click(
     screen.getByRole("button", { name: "Close dictation details" }),
   );
@@ -216,4 +219,37 @@ it("shows full history metadata in a separate detail panel", async () => {
   expect(
     screen.getByRole("button", { name: "Show dictation details" }),
   ).toHaveFocus();
+});
+
+it("keeps the previous history visible while a new search is loading", async () => {
+  const entry = {
+    id: "search",
+    created_at: new Date().toISOString(),
+    final_transcript: "Existing words",
+    word_count: 2,
+    duration_ms: 1000,
+    refined: 1,
+    copied: 0,
+  };
+  let completeSearch: (value: (typeof entry)[]) => void = () => {};
+  vi.mocked(ipc).mockImplementation(((method, params) => {
+    if (method === "history") {
+      return (params as { query?: string }).query
+        ? new Promise((resolve) => {
+            completeSearch = resolve;
+          })
+        : Promise.resolve([entry]);
+    }
+    return Promise.resolve({ ok: true });
+  }) as typeof ipc);
+  mount(<History />);
+  await screen.findByText("Existing words");
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Search your dictations" }),
+    "found",
+  );
+  expect(screen.getByText("Existing words")).toBeVisible();
+  expect(screen.queryByLabelText("Loading dictations")).not.toBeInTheDocument();
+  completeSearch([{ ...entry, final_transcript: "Found words" }]);
+  expect(await screen.findByText("Found words")).toBeVisible();
 });

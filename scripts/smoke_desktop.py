@@ -69,6 +69,7 @@ def check(
     width=1100,
     height=780,
     scale=1,
+    sidebar_visible=True,
 ):
     package = package.resolve()
     screenshot = screenshot.resolve()
@@ -78,6 +79,7 @@ def check(
             (work / folder).mkdir(mode=0o700)
         (work / "config/config.toml").write_text(
             f'[desktop]\ntheme="{appearance}"\ncolor_theme="{theme}"\n'
+            f'sidebar_visible={str(sidebar_visible).lower()}\n'
         )
         if completed_setup:
             (work / "config/onboarding.json").write_text('{"stage":4,"complete":true}')
@@ -216,6 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=int, default=1100)
     parser.add_argument("--height", type=int, default=780)
     parser.add_argument("--scale", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--collapsed-sidebar", action="store_true")
     args = parser.parse_args()
     if not args.xvfb:
         parser.error("Install Xvfb or provide --xvfb /path/to/Xvfb")
@@ -230,4 +233,5 @@ if __name__ == "__main__":
         width=args.width,
         height=args.height,
         scale=args.scale,
+        sidebar_visible=not args.collapsed_sidebar,
     )

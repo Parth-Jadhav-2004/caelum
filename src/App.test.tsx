@@ -1,4 +1,11 @@
-import { render, screen, waitFor, within, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
@@ -331,4 +338,82 @@ it("omits key management from the palette until onboarding is complete", async (
     screen.queryByRole("option", { name: "Manage keys" }),
   ).not.toBeInTheDocument();
   expect(ipc).not.toHaveBeenCalledWith("service.start", {});
+});
+
+it("names the sidebar toggle and supports Ctrl+B without repeating on key hold", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  const trigger = screen.getByRole("button", { name: "Toggle Sidebar" });
+  expect(trigger).toHaveAttribute("aria-label", "Toggle Sidebar");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(trigger).toHaveAttribute("aria-controls", "main-navigation");
+  await userEvent.keyboard("{Control>}b{/Control}");
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true, repeat: true });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  const history = within(
+    screen.getByRole("navigation", { name: "Main navigation" }),
+  ).getByRole("button", { name: "History" });
+  expect(history).toHaveAttribute("aria-label", "History");
+  await userEvent.hover(history);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("History");
+  await userEvent.unhover(history);
+  await userEvent.click(trigger);
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
+it("restores the collapsed sidebar from backend settings", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "bootstrap"
+      ? Promise.resolve({
+          config: {
+            ...config,
+            desktop: { ...config.desktop, sidebar_visible: false },
+          },
+          setup: { complete: true },
+          credentials: {},
+        })
+      : original(method, params)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  expect(
+    screen.getByRole("button", { name: "Toggle Sidebar" }),
+  ).toHaveAttribute("aria-expanded", "false");
+});
+
+it("moves focus into the destination screen and keeps one recording mode control", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  expect(
+    screen.queryByRole("combobox", { name: "Recording mode" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "History" }));
+  expect(screen.getByRole("heading", { name: "History" })).toHaveFocus();
+  expect(document.getElementById("main-content")).toHaveAttribute(
+    "aria-label",
+    "History",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(
+    screen.getAllByRole("combobox", { name: "Recording mode" }),
+  ).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  expect(screen.getByRole("region", { name: "Appearance" })).toHaveFocus();
+});
+
+it("lets shortcut capture consume Ctrl+B without collapsing the sidebar", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Recording shortcut" }),
+  );
+  await userEvent.keyboard("{Control>}b{/Control}");
+  expect(
+    screen.getByRole("button", { name: "Recording shortcut" }),
+  ).toHaveTextContent("CTRL + B");
+  expect(
+    screen.getByRole("button", { name: "Toggle Sidebar" }),
+  ).toHaveAttribute("aria-expanded", "true");
 });

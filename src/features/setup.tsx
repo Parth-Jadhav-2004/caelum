@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion } from "motion/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
@@ -69,10 +68,11 @@ export function Setup({
     [autostart, setAutostart] = useState<boolean | null>(null);
   const level = useMicrophoneLevel(step === 2 || step === 4);
   useEffect(() => {
-    document.getElementById("setup-title")?.focus();
+    document.getElementById("setup-title")?.focus({ preventScroll: true });
   }, [step]);
   const [shortcutHint, setShortcutHint] = useState("");
   const generation = useRef(0);
+  const microphoneSave = useRef(Promise.resolve());
   const shortcutRecording = useRef(false);
   const practiceInput = useRef<HTMLTextAreaElement>(null);
   const [practicePassed, setPracticePassed] = useState(false);
@@ -196,7 +196,10 @@ export function Setup({
     setPracticePassed(false);
     setPractice("");
     setNotice("");
-    void ipc("microphone.test", {})
+    void microphoneSave.current
+      .then(() => {
+        if (!disposed) return ipc("microphone.test", {});
+      })
       .then(() => {
         if (!disposed && revision === generation.current) {
           setMicPassed(true);
@@ -290,7 +293,7 @@ export function Setup({
   }
   const credential = bootstrap.data?.credentials[name];
   return (
-    <div className="mx-auto flex min-h-[640px] max-w-[440px] flex-col gap-8 pt-8">
+    <div className="mx-auto flex h-[calc(100svh-64px)] min-h-[360px] max-h-[720px] max-w-[440px] flex-col gap-6 pt-8">
       {!manageKeys && (
         <Progress
           value={((step + 1) / 6) * 100}
@@ -298,18 +301,11 @@ export function Setup({
           className="h-1"
         />
       )}
-      <motion.section
+      <section
         key={step}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.16 }}
-        className="min-h-[400px] space-y-8"
+        className="screen-enter min-h-0 flex-1 space-y-8 overflow-y-auto px-1 pb-2 [scrollbar-gutter:stable]"
       >
-        <h1
-          id="setup-title"
-          tabIndex={-1}
-          className="text-title font-semibold outline-none"
-        >
+        <h1 id="setup-title" tabIndex={-1} className="text-title font-semibold">
           {manageKeys ? "Manage keys" : titles[step]}
         </h1>
         <div className="space-y-6">
@@ -414,14 +410,14 @@ export function Setup({
                 <div className="mt-4">
                   <DeviceSelect
                     value={config.app.microphone}
-                    onChange={(v) =>
-                      void action(() =>
-                        commit({
-                          ...config,
-                          app: { ...config.app, microphone: v },
-                        }),
-                      )
-                    }
+                    onChange={(v) => {
+                      microphoneSave.current = commit({
+                        ...config,
+                        app: { ...config.app, microphone: v },
+                      });
+                      // The check effect reports save failures with its result.
+                      void microphoneSave.current.catch(() => {});
+                    }}
                   />
                 </div>
               </details>
@@ -429,6 +425,8 @@ export function Setup({
                 <Button
                   variant="ghost"
                   onClick={() => {
+                    microphoneSave.current = commit(config);
+                    void microphoneSave.current.catch(() => {});
                     setMicAttempt((v) => v + 1);
                   }}
                 >
@@ -570,13 +568,13 @@ export function Setup({
             </div>
           )}
         </div>
-      </motion.section>
+      </section>
       {keyStoredInFile && (
         <p role="alert" className="text-body">
           Key stored without encryption. Review Settings after setup.
         </p>
       )}
-      <div className="flex justify-between gap-3">
+      <div className="flex shrink-0 justify-between gap-3">
         {manageKeys ? (
           <Button
             variant="ghost"

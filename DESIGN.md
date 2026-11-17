@@ -16,10 +16,10 @@ Spacing uses 4, 8, 12, 16, 24, 32 and 48px. Page padding and section gaps are 32
 
 ## Voice and disclosure
 
-The custom open-sky C mark and tightly set lowercase wordmark identify Caelum without decorative tiles. Light sidebar status uses #eeeeec as a distinct surface.
+Use the published waveform mark from website/mark.svg and the tightly set lowercase wordmark. Native app and tray icons share this mark. Light sidebar status uses #e7e7e5 as a distinct surface.
 
-Everyday words, short labels, one clear action. No uppercase tracked eyebrows, filler subtitles or repeated facts. Settings show label left, control right; longer help belongs in a keyboard-accessible information tooltip. Show transcript metadata on request. Keep explicit upload consent and unencrypted-key warnings. Never imply that a saved key has passed a connection check.
+Everyday words, short labels, one clear action. No uppercase tracked eyebrows, filler subtitles or repeated facts. Settings show label left, control right, with useful help visible below the label. Tooltips name icon-only actions; they do not hide instructions, errors, or results. Accent previews are non-interactive; a labeled menu changes the accent. Show transcript metadata on request. Keep explicit upload consent and unencrypted-key warnings. Never imply that a saved key has passed a connection check.
 
 ## Accessibility and motion
 
-Keep real headings, visible labels, named icon buttons, skip navigation, current-page state, live status and visible keyboard focus. Dialogs restore focus. Fades last 160ms; honour system and explicit reduced motion. Recording uses neutral bars, never a red dot. Audit text contrast with `npm run check:themes` (4.5:1 minimum). The overlay never takes keyboard focus and is hidden at rest.
+Keep real headings, visible labels, named icon buttons, skip navigation, current-page state, live status and visible keyboard focus. Dialogs restore focus. Screen and pill fades last 160ms; sidebar resizing takes 200ms; honour system and explicit reduced motion. Recording uses neutral bars, never a red dot. Audit text contrast with `npm run check:themes` (4.5:1 minimum). The overlay never takes keyboard focus and is hidden at rest.

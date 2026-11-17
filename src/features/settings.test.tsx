@@ -148,9 +148,10 @@ it("persists an accent selected with the keyboard", async () => {
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  await userEvent.click(screen.getByRole("radio", { name: "Mint" }));
-  await userEvent.keyboard("{ArrowRight}");
-  expect(screen.getByRole("radio", { name: "Iris" })).toBeChecked();
+  const accent = screen.getByRole("combobox", { name: "Caelum accent" });
+  accent.focus();
+  await userEvent.keyboard("{ArrowDown}{Home}{ArrowDown}{Enter}");
+  expect(accent).toHaveTextContent("Iris");
   expect(change).toHaveBeenLastCalledWith(
     expect.objectContaining({
       desktop: expect.objectContaining({ color_theme: "caelum-iris" }),
@@ -242,4 +243,14 @@ it("keeps update checks independent of an in-flight connection check", async () 
   expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "System" }));
   expect(screen.getByRole("button", { name: "Check updates" })).toBeEnabled();
+});
+
+it("shows help on screen and focuses the selected group without repeated headings", async () => {
+  mount({ description: "Saved", storage: "keyring" });
+  await userEvent.click(screen.getByRole("button", { name: "System" }));
+  expect(screen.getByText("Check for updates")).toBeVisible();
+  expect(screen.getByRole("region", { name: "System" })).toHaveFocus();
+  expect(
+    screen.queryByRole("heading", { name: "System" }),
+  ).not.toBeInTheDocument();
 });

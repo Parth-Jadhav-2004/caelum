@@ -1,24 +1,24 @@
 # Caelum desktop design
 
-Tauri 2 / React / TypeScript / Tailwind 4 / shadcn/ui. Dark first, optional light
-and system appearance. T3 Code neutral palette by default, with T3 Chat, Grove, Ocean, Ember, Iris,
-and the original Caelum mint available independently of light/dark/system appearance.
-Quiet semantic borders and 8px base radius. System sans-serif text;
-monospace only for shortcut tokens and recording duration.
+Use DESIGN.md as the current product design reference. The app uses Tauri 2,
+React, TypeScript, Tailwind 4, and the installed shadcn primitives.
 
-Use installed shadcn primitives from src/components/ui. Project tokens are defined
-in src/index.css. Sidebar navigation collapses to icons; content stays bounded at
-wide sizes and stacks controls on narrow desktop windows. Native window decorations
-retain compositor-standard controls. Motion is short and respects reduced motion.
-Waveforms display real capture values and never animate fabricated speech energy.
+Tokens live in src/index.css. Caelum has light, dark, and system appearance,
+with independent Mint, Iris, and Ochre accents. Earlier palette names migrate
+to Caelum. Use Inter Variable, neutral controls, and 10px surface radii.
 
-21st search was run for shadcn transcription/dashboard inspiration. Its decorative
-hero and glass results did not fit this utility; official shadcn registry primitives
-were installed instead. No hosted generation or 21st assets were needed.
+Use the published waveform logo in website/mark.svg. Native and web icons share
+its path. The sidebar is 240px expanded and a 48px icon rail when collapsed;
+its saved state and appearance apply at startup. Keep useful help, errors,
+and check results visible. Only icon action names belong in tooltips.
 
-T3 palettes are imported from pinned upstream literals, with MIT attribution in
-THIRD_PARTY_NOTICES.md. Use the existing shadcn Select for palette choice; avoid
-decorative theme cards. Page headings describe tasks, without marketing slogans.
+Home shows the shortcut, recording feedback, daily totals, and three recent
+entries. History is a searchable archive grouped by day, with a separate detail
+panel. Setup keeps its footer stable while long step content scrolls.
 
-Settings → General starts with a dedicated Theme section containing the palette
-and appearance selectors. Keep these preferences visible before service settings.
+Screen and native pill fades last 160ms; sidebar resizing lasts 200ms. Respect
+system and explicit reduced motion. Focus moves to each destination screen,
+and dialogs return focus. Waveforms only use real microphone levels.
+
+21st search was checked for sidebar inspiration; decorative results were
+rejected in favor of existing project primitives. No hosted generation needed.

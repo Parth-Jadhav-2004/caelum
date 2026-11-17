@@ -68,7 +68,7 @@ it("exposes selectable transcript words as text, independently of the details bu
     screen.getByRole("button", { name: "Show dictation details" }),
   ).not.toHaveTextContent("Words a screen reader can read");
 });
-it("offers the Raw explanation on keyboard focus", async () => {
+it("keeps the Raw explanation visible with its metadata", async () => {
   render(
     <TooltipProvider>
       <TranscriptList
@@ -89,10 +89,8 @@ it("offers the Raw explanation on keyboard focus", async () => {
   await userEvent.click(
     screen.getByRole("button", { name: "Show dictation details" }),
   );
-  await userEvent.tab();
-  await userEvent.tab();
-  expect(screen.getByRole("button", { name: "About raw text" })).toHaveFocus();
-  expect(await screen.findByRole("tooltip")).toHaveTextContent(
-    "Text cleanup was skipped or unavailable",
-  );
+  expect(
+    screen.getByText(/Text cleanup was skipped or unavailable/),
+  ).toBeVisible();
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
 });

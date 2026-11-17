@@ -57,6 +57,27 @@ def presentation(kind):
     }
 
 
+class PillFade:
+    """An interruptible fade; repeated status messages never restart it."""
+
+    def __init__(self, reduced_motion=False):
+        self.duration = 0 if reduced_motion else 0.16
+        self.started = 0.0
+        self.initial = 0.0
+        self.target = 0.0
+
+    def opacity(self, now):
+        progress = min(1.0, max(0.0, (now - self.started) / self.duration)) if self.duration else 1.0
+        return self.initial + (self.target - self.initial) * progress
+
+    def move(self, visible, now):
+        target = float(visible)
+        if target != self.target:
+            self.initial = self.opacity(now)
+            self.started = now
+            self.target = target
+
+
 def run(reduced_motion=False, high_contrast=False):
     import gi
 
@@ -146,9 +167,9 @@ def run(reduced_motion=False, high_contrast=False):
         "error_code": "",
     }
     tick = 0
-    transition = time.monotonic()
+    fade = PillFade(reduced_motion)
+    display_state = dict(state)
     dismiss_at = None
-    dismiss_started = None
     input_buffer = bytearray()
     retired_sessions = deque(maxlen=128)
 
@@ -173,18 +194,12 @@ def run(reduced_motion=False, high_contrast=False):
 
     def draw(widget, cr, width, height):
         now = time.monotonic()
-        elapsed = now - transition
-        alpha = min(1, elapsed / (0.08 if reduced_motion else 0.18))
-        offset = 0 if reduced_motion else 6 * (1 - alpha) ** 3
-        if dismiss_started is not None:
-            progress = min(1, (now - dismiss_started) / (0.08 if reduced_motion else 0.16))
-            alpha *= 1 - progress
-            offset += 0 if reduced_motion else progress * 4
+        alpha = fade.opacity(now)
         cr.push_group()
-        kind = state["state"]
+        kind = display_state["state"]
         layout = presentation(kind)
         capture, capsule_width = layout["capture"], layout["width"]
-        x, y = (width - capsule_width) / 2, 8 + offset
+        x, y = (width - capsule_width) / 2, 8
         rounded(cr, x, y, capsule_width, 36, 18)
         cr.set_source_rgb(0.094, 0.094, 0.106)  # #18181b
         cr.fill_preserve()
@@ -192,7 +207,7 @@ def run(reduced_motion=False, high_contrast=False):
         cr.set_line_width(1)
         cr.stroke()
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        kind = state["state"]
+        kind = display_state["state"]
         capture = kind in ("listening", "recording")
         accent, white, error = (0.847, 0.847, 0.847), (0.929, 0.929, 0.937), (0.949, 0.333, 0.353)
         cr.set_source_rgb(
@@ -208,7 +223,7 @@ def run(reduced_motion=False, high_contrast=False):
         cr.set_line_width(1.6)
         if capture:
             for i in range(13):
-                level = 0 if reduced_motion else state["history"][i + 2]
+                level = 0 if reduced_motion else display_state["history"][i + 2]
                 envelope = 0.4 + 0.6 * math.sin(math.pi * (i + 0.5) / 13)
                 bar = 3 + 21 * level * envelope
                 bx = x + 40 + i * 5
@@ -218,7 +233,7 @@ def run(reduced_motion=False, high_contrast=False):
                 cr.stroke()
         else:
             label = (
-                ERRORS.get(state.get("error_code"), LABELS.get(kind, ""))
+                ERRORS.get(display_state.get("error_code"), LABELS.get(kind, ""))
                 if kind == "error"
                 else LABELS.get(kind, "")
             )
@@ -264,21 +279,27 @@ def run(reduced_motion=False, high_contrast=False):
         cr.paint_with_alpha(alpha)
 
     def frame():
-        nonlocal tick, dismiss_started
+        nonlocal tick
         now = time.monotonic()
-        if dismiss_at is not None and now >= dismiss_at and dismiss_started is None:
-            dismiss_started = now
-        if dismiss_started is not None and now - dismiss_started >= (
-            0.08 if reduced_motion else 0.16
-        ):
-            win.set_visible(False)
-            tick = 0
-            return False
+        if dismiss_at is not None and now >= dismiss_at:
+            fade.move(False, now)
+        alpha = fade.opacity(now)
+        controls.set_opacity(alpha)
+        error_controls.set_opacity(alpha)
+        if not fade.target:
+            controls.set_sensitive(False)
+            error_controls.set_sensitive(False)
+            if win.get_realized():
+                win.get_surface().set_input_region(cairo.Region())
+            if alpha <= 0:
+                win.set_visible(False)
+                tick = 0
+                return False
         area.queue_draw()
         return True
 
     def receive(message):
-        nonlocal tick, transition, dismiss_at, dismiss_started
+        nonlocal tick, dismiss_at
         if set(message) - {
             "session_id",
             "sequence",
@@ -329,13 +350,11 @@ def run(reduced_motion=False, high_contrast=False):
         state.update(message)
         if state["state"] == "hidden":
             if win.get_visible():
-                dismiss_started = time.monotonic()
+                fade.move(False, time.monotonic())
             return
         if previous != state["state"] or new_session:
             if new_session or not win.get_visible():
-                transition = time.monotonic()
                 Layer.set_monitor(win, monitor(message.get("output", "")))
-            dismiss_started = None
             dwell = presentation(state["state"])["dwell"]
             dismiss_at = time.monotonic() + dwell if dwell is not None else None
             name = (
@@ -346,6 +365,13 @@ def run(reduced_motion=False, high_contrast=False):
             area.update_property([Gtk.AccessibleProperty.LABEL], [name])
             if hasattr(area, "announce") and previous not in ("listening", "recording"):
                 area.announce(name, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+        display_state.update(state)
+        if previous != state["state"] or new_session:
+            fade.move(True, time.monotonic())
+        controls.set_sensitive(bool(fade.target))
+        error_controls.set_sensitive(bool(fade.target))
+        controls.set_opacity(fade.opacity(time.monotonic()))
+        error_controls.set_opacity(fade.opacity(time.monotonic()))
         controls.set_visible(state["state"] in ("listening", "recording"))
         error_controls.set_visible(state["state"] == "error")
         kind = state["state"]
@@ -354,7 +380,7 @@ def run(reduced_motion=False, high_contrast=False):
             win.get_surface().set_input_region(cairo.Region(cairo.RectangleInt((336 - capsule_width) // 2, 8, capsule_width, 36)))
         win.set_visible(True)  # no present(), activation, or keyboard focus
         if not tick:
-            tick = GLib.timeout_add(33, frame)
+            tick = GLib.timeout_add(16, frame)
 
     def stdin_ready(fd, condition):
         if condition & GLib.IO_HUP:

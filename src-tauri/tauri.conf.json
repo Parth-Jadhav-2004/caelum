@@ -14,6 +14,7 @@
       {
         "label": "main",
         "title": "Caelum",
+        "backgroundColor": "#121214",
         "width": 1100,
         "height": 780,
         "minWidth": 480,

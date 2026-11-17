@@ -13,6 +13,7 @@ import {
 import { useApp } from "@/stores/app";
 import { ipc, type Config } from "@/lib/ipc";
 import { action, Heading } from "@/components/common";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -114,77 +115,118 @@ export function Dashboard({ config }: { config: Config }) {
   }
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-title font-medium">
-          {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
-          <kbd>{config.app.hotkey}</kbd> to dictate anywhere
-        </h1>
-        {status?.backend !== "hyprland" && (
-          <Button
-            variant="secondary"
-            disabled={
-              busy ||
-              !status ||
-              processing ||
-              status.pending_audio ||
-              status.paused ||
-              !status.running
-            }
-            onClick={() => void run(recording ? "stop" : "start")}
-          >
-            {recording ? <Square /> : <Mic />}
-            {recording ? "Finish recording" : "Record"}
-          </Button>
-        )}
-        {status?.backend === "hyprland" && recording && (
-          <Button variant="secondary" onClick={() => void run("stop")}>
-            Finish recording
-          </Button>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-8 border-b pb-6 text-meta text-muted-foreground tabular-nums">
-        <span>
-          <strong className="mr-2 text-foreground">
-            {(summary.data?.today_words ?? 0).toLocaleString()}
-          </strong>
-          Words today
-        </span>
-        <span>
-          <strong className="mr-2 text-foreground">
-            {(summary.data?.wpm ?? 0).toFixed(0)}
-          </strong>
-          Words/min
-        </span>
-        <span>
-          <strong className="mr-2 text-foreground">{streak}</strong>Day streak
-        </span>
-      </div>
-      {(recording || processing) && (
-        <Waveform values={status?.feedback?.history} />
-      )}
-      {status?.pending_audio && !processing && (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => void run("retry")}
+      <section
+        aria-label="Dictation"
+        className="space-y-6 rounded-lg bg-card p-6"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 tabIndex={-1} className="text-title font-medium">
+            {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
+            <kbd>{config.app.hotkey}</kbd> to dictate anywhere
+          </h1>
+          {status?.backend !== "hyprland" && (
+            <Button
+              variant="secondary"
+              disabled={
+                busy ||
+                !status ||
+                processing ||
+                status.pending_audio ||
+                status.paused ||
+                !status.running
+              }
+              onClick={() => void run(recording ? "stop" : "start")}
+            >
+              {recording ? <Square /> : <Mic />}
+              {recording ? "Finish recording" : "Record"}
+            </Button>
+          )}
+          {status?.backend === "hyprland" && recording && (
+            <Button variant="secondary" onClick={() => void run("stop")}>
+              Finish recording
+            </Button>
+          )}
+        </div>
+        <div
+          aria-label="Today’s activity"
+          aria-busy={summary.isPending}
+          className="flex min-h-12 flex-wrap gap-8 border-b pb-6 text-meta text-muted-foreground tabular-nums"
         >
-          <RotateCcw />
-          Retry dictation
-        </Button>
-      )}
-      {(recording || processing || status?.pending_audio) && (
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={() => void run("cancel")}
-        >
-          <X />
-          {status?.pending_audio ? "Discard recording" : "Cancel"}
-        </Button>
-      )}
-      {status?.storage_error && (
-        <p role="alert">History wasn’t saved. Check storage permissions.</p>
-      )}
+          <span>
+            <strong className="mr-2 text-foreground">
+              {summary.isPending ? (
+                <Skeleton className="inline-block h-4 w-8 align-middle" />
+              ) : summary.isError ? (
+                "—"
+              ) : (
+                (summary.data.today_words ?? 0).toLocaleString()
+              )}
+            </strong>
+            Words today
+          </span>
+          <span>
+            <strong className="mr-2 text-foreground">
+              {summary.isPending ? (
+                <Skeleton className="inline-block h-4 w-8 align-middle" />
+              ) : summary.isError ? (
+                "—"
+              ) : (
+                (summary.data.wpm ?? 0).toFixed(0)
+              )}
+            </strong>
+            Words/min
+          </span>
+          <span>
+            <strong className="mr-2 text-foreground">
+              {summary.isPending ? (
+                <Skeleton className="inline-block h-4 w-8 align-middle" />
+              ) : summary.isError ? (
+                "—"
+              ) : (
+                streak
+              )}
+            </strong>
+            Day streak
+          </span>
+        </div>
+        <div className="flex min-h-24 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {recording ? (
+              <Waveform values={status?.feedback?.history} />
+            ) : (
+              <p role="status" className="text-body text-muted-foreground">
+                {processing
+                  ? "Turning your speech into text…"
+                  : status?.detail ||
+                    "Your words appear in the app you’re using."}
+              </p>
+            )}
+          </div>
+          {status?.pending_audio && !processing && (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void run("retry")}
+            >
+              <RotateCcw />
+              Retry dictation
+            </Button>
+          )}
+          {(recording || processing || status?.pending_audio) && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void run("cancel")}
+            >
+              <X />
+              {status?.pending_audio ? "Discard recording" : "Cancel"}
+            </Button>
+          )}
+        </div>
+        {status?.storage_error && (
+          <p role="alert">History wasn’t saved. Check storage permissions.</p>
+        )}
+      </section>
       <History compact />
     </div>
   );
@@ -204,11 +246,33 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 export function Statistics() {
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["summary"],
     queryFn: () => ipc("summary", {}),
     refetchInterval: 5000,
   });
+  if (isPending)
+    return (
+      <div className="space-y-8" aria-label="Loading insights" aria-busy="true">
+        <Heading title="Insights" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    );
+  if (isError)
+    return (
+      <div className="space-y-8">
+        <Heading title="Insights" />
+        <p role="alert">Couldn’t load your activity.</p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
   const max = Math.max(1, ...Object.values(data?.daily ?? {}));
   return (
     <div className="space-y-8">

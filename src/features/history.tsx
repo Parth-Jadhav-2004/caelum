@@ -1,7 +1,18 @@
 import { useHistoryPolling } from "@/hooks/use-history-polling";
-import { useDeferredValue, useState, useRef, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Search, Trash2, X } from "lucide-react";
+import {
+  memo,
+  useDeferredValue,
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+} from "react";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { Download, Search, Trash2, X, Ellipsis } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { ipc } from "@/lib/ipc";
 import { Heading, Confirm, action } from "@/components/common";
@@ -14,11 +25,19 @@ import {
 } from "@/components/transcript";
 import { useApp } from "@/stores/app";
 import { Skeleton } from "@/components/ui/skeleton";
-export function History({ compact = false }: { compact?: boolean }) {
+export const History = memo(function History({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const navigate = useApp((s) => s.navigate);
   const [selectedId, setSelectedId] = useState<string>();
   const menu = useRef<HTMLDetailsElement>(null);
+  const detail = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (selectedId) detail.current?.focus({ preventScroll: true });
+  }, [selectedId]);
   useEffect(() => {
     const outside = (e: PointerEvent) => {
       if (menu.current && !menu.current.contains(e.target as Node))
@@ -50,6 +69,7 @@ export function History({ compact = false }: { compact?: boolean }) {
   const history = useQuery({
     queryKey: ["history", query],
     queryFn: () => ipc("history", { query }),
+    placeholderData: keepPreviousData,
     ...historyPolling,
   });
   const selected = history.data?.find((entry) => entry.id === selectedId);
@@ -106,7 +126,7 @@ export function History({ compact = false }: { compact?: boolean }) {
               className="list-none cursor-pointer rounded-md px-3 py-2"
               aria-label="History actions"
             >
-              •••
+              <Ellipsis className="size-4" aria-hidden="true" />
             </summary>
             <div className="absolute right-0 z-10 flex rounded-lg border bg-popover p-2">
               <Button
@@ -142,7 +162,15 @@ export function History({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       {history.isPending ? (
-        <Skeleton className="h-40" />
+        <div
+          aria-label="Loading dictations"
+          aria-busy="true"
+          className="space-y-3"
+        >
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-22" />
+          ))}
+        </div>
       ) : history.isError ? (
         <p role="alert">History unavailable. Check storage permissions.</p>
       ) : history.data.length ? (
@@ -158,7 +186,8 @@ export function History({ compact = false }: { compact?: boolean }) {
           </div>
         ) : (
           <div
-            className={`grid items-start gap-8 ${selected ? "lg:grid-cols-[minmax(0,1fr)_280px]" : ""}`}
+            aria-busy={history.isPlaceholderData || query !== search}
+            className={`grid min-w-0 items-start gap-8 ${selected ? "lg:grid-cols-[minmax(0,1fr)_280px]" : ""}`}
           >
             <TranscriptList
               entries={history.data}
@@ -170,9 +199,11 @@ export function History({ compact = false }: { compact?: boolean }) {
             />
             {selected && (
               <aside
+                ref={detail}
+                tabIndex={-1}
                 id="history-detail"
                 aria-label="Dictation details"
-                className="sticky top-4 space-y-6 rounded-lg bg-card p-6"
+                className="screen-enter sticky top-4 min-w-0 space-y-6 rounded-lg bg-card p-6 break-words"
                 onKeyDown={(e) => {
                   if (e.key === "Escape") closeDetails();
                 }}
@@ -233,7 +264,7 @@ export function History({ compact = false }: { compact?: boolean }) {
       />
     </div>
   );
-}
+});
 
 export function HistoryTools() {
   const [deleting, setDeleting] = useState(false);

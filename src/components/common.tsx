@@ -145,7 +145,9 @@ export function Confirm({
 export function Heading({ title }: { title: string }) {
   return (
     <header>
-      <h1 className="text-title font-semibold">{title}</h1>
+      <h1 tabIndex={-1} className="text-title font-semibold">
+        {title}
+      </h1>
     </header>
   );
 }
