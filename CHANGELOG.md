@@ -2,6 +2,37 @@
 
 Release notes, newest first.
 
+## 0.4.2
+
+- **Automatic updates.** A new stable version enables signed in-app upgrades from 0.4.0 and the 0.4.1 testing packages. Manual checks also show testing releases with a separate package-manager download action, rather than calling the whole app up to date when only the stable feed was checked.
+- **Build identity.** Native packages record their source commit and source date so testing candidates with the same package version can be distinguished from the installed build.
+- **Desktop polish.** Remember the accessible Ctrl+B sidebar state, restore appearance at startup, add loading states and short reduced-motion-aware fades, improve screen focus and long History lists, distinguish Home from History, and keep Setup navigation stable.
+- **Settings and microphone checks.** Restore useful on-screen help, remove duplicate controls, use the published logo consistently, improve the light-mode status card, save microphone choices before testing, and wait for capture teardown before retrying.
+- **Native feedback.** Fade the recording pill and its controls together, disable tray actions after engine disconnection, and avoid rebuilding the tray for unchanged microphone feedback.
+
+### Downloads
+
+Native x86_64 packages target Arch Linux, Debian 12, Ubuntu 24.04/26.04, and Fedora 43. Use the package matching the distribution and system Python minor version. Package filenames, sizes, and SHA-256 hashes are bound by the signed `update.json`; `candidate.json` and `build-info-*.json` identify the exact source and candidate workflow.
+
+### Upgrade
+
+In Settings → System, choose **Check updates**, then **Update & restart**. The installed updater verifies the release signature and package hash before requesting package-manager authorization. Finish dictation and any pending retry first. A running older binary may require one quit/reopen before the local update-check changes appear.
+
+Configuration, credentials, history paths, and the history schema are unchanged. Automated upgrade fixtures cover preservation from 0.3.9 and 0.4.0. Keep local backups when testing recovery or downgrades; there is no automatic rollback.
+
+### Known limitations
+
+Native Wayland overlay behavior, physical shortcuts, live microphone/provider workflows, device reconnects, mixed-monitor scaling, screen readers, and suspend/resume require release-host acceptance testing. Headless X11/WebKit launches and simulated audio do not certify those cases. Python support remains 3.11–3.14; native package dependencies constrain each target's ABI.
+
+### Verification
+
+Release publication requires the five-target candidate workflow, package installation/IPC/simulated-audio/native bootstrap checks, checksums and provenance verification, and the protected signing environment. The exact candidate run and source SHA accompany the release assets. The update-check changes passed 94 frontend tests, 368 Python tests (6 opt-in cases skipped), 10 Rust tests, lint, contrast, build, and bundle-budget checks locally; the release workflow reruns its automated checks for this version.
+
+### Full changelog
+
+https://github.com/Parth-Jadhav-2004/caelum/compare/v0.4.0...v0.4.2
+
+
 ## 0.4.1 release candidate 1
 
 - **Theme selection.** Choose T3 Code, T3 Chat, Grove, Ocean, Ember, Iris, or Caelum mint in Settings.
