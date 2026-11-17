@@ -31,11 +31,7 @@ it.each(["history", "dashboard"])(
     });
     const view = render(
       <QueryClientProvider client={client}>
-        {page === "history" ? (
-          <History />
-        ) : (
-          <Dashboard config={testConfig} onMicrophone={vi.fn()} />
-        )}
+        {page === "history" ? <History /> : <Dashboard config={testConfig} />}
       </QueryClientProvider>,
     );
     const count = () =>

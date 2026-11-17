@@ -18,13 +18,38 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { errorText } from "@/lib/ipc";
+export function briefError(error: unknown) {
+  const text = typeof error === "string" ? error : errorText(error);
+  if (text.trim().split(/\s+/).length <= 8) return text;
+  if (/without encryption|unencrypted/i.test(text))
+    return "Key saved without encryption.";
+  if (/network|internet|connect|timeout/i.test(text))
+    return "Connection lost. Try again.";
+  if (/credential|api key|provider key/i.test(text))
+    return "Check your API key, then retry.";
+  if (/microphone|capture|speech/i.test(text))
+    return "Couldn’t hear you. Check your microphone.";
+  return "Couldn’t finish. Try again.";
+}
+export function notifyError(
+  error: unknown,
+  options: Parameters<typeof toast.error>[1] = {},
+) {
+  toast.error(briefError(error), {
+    action: {
+      label: "Details",
+      onClick: () => toast.message(errorText(error)),
+    },
+    ...options,
+  });
+}
 export async function action<T>(run: () => Promise<T>, success?: string) {
   try {
     const result = await run();
     if (success) toast.success(success);
     return result;
   } catch (e) {
-    toast.error(errorText(e));
+    notifyError(e);
     return undefined;
   }
 }
@@ -42,7 +67,7 @@ export function CopyButton({ text }: { text: string }) {
               await navigator.clipboard.writeText(text);
               setCopied(true);
               setTimeout(() => setCopied(false), 1800);
-            }, "Copied. Clipboard managers may retain this text.");
+            });
           }}
         >
           {copied ? <Check /> : <Copy />}
@@ -105,7 +130,7 @@ export function Confirm({
               event.preventDefault();
               setBusy(true);
               void onConfirm()
-                .catch((error) => toast.error(errorText(error)))
+                .catch((error) => notifyError(error))
                 .finally(() => setBusy(false));
             }}
           >
@@ -117,24 +142,10 @@ export function Confirm({
     </AlertDialog>
   );
 }
-export function Heading({
-  eyebrow,
-  title,
-  detail,
-}: {
-  eyebrow?: string;
-  title: string;
-  detail: string;
-}) {
+export function Heading({ title }: { title: string }) {
   return (
-    <header className="space-y-2">
-      {eyebrow && (
-        <p className="text-xs font-medium tracking-[.16em] text-primary uppercase">
-          {eyebrow}
-        </p>
-      )}
-      <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-      <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+    <header>
+      <h1 className="text-title font-semibold">{title}</h1>
     </header>
   );
 }

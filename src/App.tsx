@@ -11,12 +11,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ThemeProvider } from "@/lib/theme";
 import { MotionConfig, motion } from "motion/react";
 import {
-  AudioLines,
   Home,
   Clock3,
   ChartNoAxesColumn,
   Settings as SettingsIcon,
-  Command as CommandIcon,
+  BookOpen,
+  Wand2,
+  Info,
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
@@ -42,25 +43,30 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
+import { version } from "../package.json";
+import { History } from "@/features/history";
+import { CaelumBrand } from "@/components/brand";
+import { Settings, Choice, Dictionary } from "@/features/settings";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Dashboard, Statistics } from "@/features/dashboard";
-const History = lazy(() =>
-  import("@/features/history").then((m) => ({ default: m.History })),
-);
-const Settings = lazy(() =>
-  import("@/features/settings").then((m) => ({ default: m.Settings })),
-);
 const Setup = lazy(() =>
   import("@/features/setup").then((m) => ({ default: m.Setup })),
 );
 const pages = [
   { id: "home", title: "Home", icon: Home },
-  { id: "statistics", title: "Statistics", icon: ChartNoAxesColumn },
   { id: "history", title: "History", icon: Clock3 },
+  { id: "dictionary", title: "Dictionary", icon: BookOpen },
+  { id: "statistics", title: "Insights", icon: ChartNoAxesColumn },
   { id: "settings", title: "Settings", icon: SettingsIcon },
 ] as const;
 function FrontendReady() {
@@ -74,6 +80,7 @@ function FrontendReady() {
   return null;
 }
 export default function App() {
+  const settingsGroup = useApp((s) => s.settingsGroup);
   const page = useApp((s) => s.page),
     navigate = useApp((s) => s.navigate),
     status = useApp((s) => s.status),
@@ -81,6 +88,7 @@ export default function App() {
   const [quitting, setQuitting] = useState(false),
     [restarting, setRestarting] = useState(false),
     [command, setCommand] = useState(false),
+    [updateAvailable, setUpdateAvailable] = useState(false),
     [config, setConfig] = useState<Config | null>(null),
     [saveState, setSaveState] = useState("Saved automatically");
   const onQuit = useCallback(() => setQuitting(true), []);
@@ -99,8 +107,10 @@ export default function App() {
       if (bootstrap.data.config.desktop.check_updates)
         void ipc("updates.check", {})
           .then((value) => {
-            if (value)
+            if (value) {
+              setUpdateAvailable(true);
               toast.info(`Caelum ${value.version} is available in Settings.`);
+            }
           })
           .catch(() => {});
     }
@@ -157,11 +167,12 @@ export default function App() {
   }
   if (bootstrap.isError)
     return (
-      <main className="mx-auto max-w-lg space-y-5 p-10">
-        <h1 className="text-xl font-medium">
-          Caelum couldn’t connect to its engine.
-        </h1>
-        <p>{errorText(bootstrap.error)}</p>
+      <main className="mx-auto max-w-lg space-y-5 p-8">
+        <h1 className="text-xl font-medium">Caelum couldn’t start.</h1>
+        <details>
+          <summary>Details</summary>
+          <p>{errorText(bootstrap.error)}</p>
+        </details>
         <Button
           onClick={() => {
             void bootstrap.refetch();
@@ -181,7 +192,7 @@ export default function App() {
     );
   if (!config)
     return (
-      <main className="space-y-6 p-10">
+      <main className="space-y-6 p-8">
         <Skeleton className="h-10 w-56" />
         <Skeleton className="h-80 w-full" />
       </main>
@@ -210,90 +221,135 @@ export default function App() {
             >
               Skip to content
             </a>
-            <Sidebar
-              collapsible="icon"
-              role="navigation"
-              aria-label="Main navigation"
-            >
-              <SidebarHeader className="px-4 py-7">
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      size="lg"
-                      onClick={() => navigate("home")}
-                    >
-                      <AudioLines className="size-7! text-primary" />
-                      <div>
-                        <p className="text-lg font-semibold tracking-tight">
-                          Caelum
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Voice dictation
-                        </p>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarHeader>
-              <SidebarContent className="px-2">
-                <SidebarMenu>
-                  {pages.map(({ id, title, icon: Icon }) => (
-                    <SidebarMenuItem key={id}>
+            {page !== "setup" && (
+              <Sidebar
+                collapsible="icon"
+                role="navigation"
+                aria-label="Main navigation"
+              >
+                <SidebarHeader className="px-4 py-6">
+                  <SidebarMenu>
+                    <SidebarMenuItem>
                       <SidebarMenuButton
-                        isActive={
-                          page === id || (id === "settings" && page === "setup")
-                        }
-                        aria-current={
-                          page === id || (id === "settings" && page === "setup")
-                            ? "page"
-                            : undefined
-                        }
-                        tooltip={title}
-                        onClick={() => navigate(id)}
-                        className="h-11"
+                        size="lg"
+                        aria-label="Caelum home"
+                        onClick={() => navigate("home")}
                       >
-                        <Icon />
-                        <span>{title}</span>
+                        <CaelumBrand />
                       </SidebarMenuButton>
                     </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarHeader>
+                <SidebarContent className="px-2">
+                  {[pages.slice(0, 3), pages.slice(3)].map((group, i) => (
+                    <SidebarMenu key={i} className={i ? "mt-6" : ""}>
+                      {group.map(({ id, title, icon: Icon }) => (
+                        <SidebarMenuItem key={id}>
+                          <SidebarMenuButton
+                            isActive={page === id}
+                            aria-current={page === id ? "page" : undefined}
+                            tooltip={title}
+                            onClick={() => navigate(id)}
+                            className="h-9"
+                          >
+                            <Icon />
+                            <span>{title}</span>
+                            {page === id && (
+                              <span className="ml-auto size-1.5 rounded-full bg-accent-brand group-data-[collapsible=icon]:hidden" />
+                            )}
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                      {i === 0 && (
+                        <SidebarMenuItem>
+                          <SidebarMenuButton disabled className="h-9">
+                            <Wand2 />
+                            <span>
+                              Styles{" "}
+                              <span className="text-meta text-muted-foreground">
+                                Coming later
+                              </span>
+                            </span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )}
+                    </SidebarMenu>
                   ))}
-                </SidebarMenu>
-              </SidebarContent>
-              <SidebarFooter className="gap-4 border-t p-4">
-                <p className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                  <span className="size-1.5 rounded-full bg-primary" />
-                  {status?.title ?? "Connecting…"}
-                </p>
-                <div className="space-y-2 group-data-[collapsible=icon]:hidden">
-                  <p className="text-xs text-muted-foreground">
-                    {config.app.recording_mode === "hold"
-                      ? "Hold to talk"
-                      : "Press to toggle"}
-                  </p>
-                  <p className="font-mono text-xs">{config.app.hotkey}</p>
-                </div>
-              </SidebarFooter>
-            </Sidebar>
+                </SidebarContent>
+                <SidebarFooter className="gap-4 p-4">
+                  <div className="space-y-3 rounded-lg bg-sidebar-status p-3 group-data-[collapsible=icon]:hidden">
+                    <p
+                      role="status"
+                      className="flex items-center gap-2 text-body"
+                    >
+                      <span
+                        className={`size-1.5 rounded-full ${status?.state === "error" ? "bg-destructive" : status?.paused || !status?.running || (page === "settings" && settingsGroup === "Appearance") ? "bg-foreground" : "bg-accent-brand"}`}
+                      />
+                      {status?.title ?? "Connecting…"}
+                    </p>
+                    {!["home", "settings"].includes(page) && (
+                      <kbd className="inline-block">{config.app.hotkey}</kbd>
+                    )}
+                    {page !== "settings" && (
+                      <>
+                        <Choice
+                          label="Recording mode"
+                          value={config.app.recording_mode}
+                          items={[
+                            ["hold", "Hold"],
+                            ["toggle", "Toggle"],
+                          ]}
+                          change={(v) =>
+                            change({
+                              ...config,
+                              app: { ...config.app, recording_mode: v },
+                            })
+                          }
+                        />
+                      </>
+                    )}
+                    <label className="flex items-center justify-between gap-3 text-body">
+                      Pause
+                      <Switch
+                        aria-label="Pause dictation"
+                        disabled={!status?.running}
+                        checked={status?.paused ?? false}
+                        onCheckedChange={(v) =>
+                          void action(() =>
+                            ipc("control", { action: v ? "pause" : "resume" }),
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between text-meta group-data-[collapsible=icon]:hidden">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void action(() => invoke("open_docs"))}
+                    >
+                      Help
+                    </Button>
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      {updateAvailable && (
+                        <span
+                          className="size-1.5 rounded-full bg-foreground"
+                          role="img"
+                          aria-label="Update available"
+                        />
+                      )}
+                      {version}
+                    </span>
+                  </div>
+                </SidebarFooter>
+              </Sidebar>
+            )}
             <SidebarInset>
-              <header className="flex h-16 shrink-0 items-center justify-between border-b px-5">
-                <div className="flex items-center gap-3">
+              {page !== "setup" && (
+                <header className="flex h-12 shrink-0 items-center px-8">
                   <SidebarTrigger />
-                  <span className="text-xs text-muted-foreground">
-                    {pages.find((p) => p.id === page)?.title ?? "Setup"}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  aria-label="Open command menu"
-                  onClick={() => setCommand(true)}
-                >
-                  <CommandIcon className="size-3.5" />
-                  <span className="hidden sm:inline">Quick navigation</span>
-                  <kbd className="text-xs">Ctrl K</kbd>
-                </Button>
-              </header>
+                </header>
+              )}
               <div
                 id="main-content"
                 tabIndex={-1}
@@ -302,15 +358,22 @@ export default function App() {
                 {engineError && (
                   <div
                     role="alert"
-                    className="mx-5 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm sm:mx-10"
+                    className="mx-8 mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm"
                   >
-                    <div className="space-y-1">
-                      <p className="font-medium">Engine unavailable</p>
-                      <p>{engineError}</p>
-                      <p className="text-muted-foreground">
-                        Requests are not replayed automatically.
-                      </p>
-                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="flex items-center gap-2 font-medium"
+                          aria-label="Why Caelum stopped"
+                        >
+                          Caelum stopped.
+                          <Info className="size-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        {engineError}
+                      </TooltipContent>
+                    </Tooltip>
                     <Button
                       variant="outline"
                       onClick={() => setRestarting(true)}
@@ -325,23 +388,20 @@ export default function App() {
                     initial={{ opacity: 0.5, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.16 }}
-                    className="mx-auto max-w-5xl px-5 py-8 sm:px-10 sm:py-10"
+                    className="mx-auto max-w-5xl px-8 py-8"
                   >
-                    {page === "home" && (
-                      <Dashboard
-                        config={config}
-                        onMicrophone={(value) =>
-                          change({
-                            ...config,
-                            app: { ...config.app, microphone: value },
-                          })
-                        }
-                      />
-                    )}{" "}
+                    {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}
                     {page === "history" && <History />}
+                    {page === "dictionary" && (
+                      <div className="space-y-8">
+                        <h1 className="text-title font-semibold">Dictionary</h1>
+                        <Dictionary config={config} change={change} />
+                      </div>
+                    )}
                     {page === "settings" && (
                       <Settings
+                        initialGroup={settingsGroup}
                         config={config}
                         change={change}
                         saveState={saveState}
@@ -363,7 +423,15 @@ export default function App() {
               <CommandGroup heading="Navigation">
                 {[
                   ...pages,
-                  { id: "setup", title: "Setup & keys", icon: SettingsIcon },
+                  ...(bootstrap.data?.setup.complete && page !== "setup"
+                    ? [
+                        {
+                          id: "setup",
+                          title: "Manage keys",
+                          icon: SettingsIcon,
+                        },
+                      ]
+                    : []),
                 ].map(({ id, title, icon: Icon }) => (
                   <CommandItem
                     key={id}
@@ -420,7 +488,7 @@ export default function App() {
               await invoke("restart_app", { discard: true });
             }}
           />
-          <Toaster richColors closeButton />
+          <Toaster closeButton />
         </TooltipProvider>
       </MotionConfig>
     </ThemeProvider>

@@ -78,10 +78,7 @@ impl Engine {
                     Ok(Frame::Reply(id, result)) => reader_requests.resolve(id, result),
                     Ok(Frame::Event(event, data)) => {
                         if event == "status" {
-                            if let Some(tray) = app.tray_by_id("caelum") {
-                                let title = data["title"].as_str().unwrap_or("Connecting…");
-                                let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
-                            }
+                            update_tray(&app, &data);
                         }
                         let _ = app.emit(&format!("engine:{event}"), data);
                     }
@@ -195,6 +192,76 @@ async fn quit_app(
     app.exit(0);
     Ok(())
 }
+struct TrayMenu {
+    status: tauri::menu::MenuItem<tauri::Wry>,
+    pause: tauri::menu::MenuItem<tauri::Wry>,
+    start: tauri::menu::MenuItem<tauri::Wry>,
+    paused: AtomicBool,
+}
+fn update_tray(app: &tauri::AppHandle, data: &Value) {
+    let paused = data["paused"].as_bool().unwrap_or(false);
+    let state = data["state"].as_str().unwrap_or("hidden");
+    let title = data["title"].as_str().unwrap_or("Ready");
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        menu.paused.store(paused, Ordering::SeqCst);
+        let status_line = data["hotkey"]
+            .as_str()
+            .map(|key| format!("{title} – {key}"))
+            .unwrap_or_else(|| title.to_owned());
+        let _ = menu.status.set_text(status_line);
+        let _ = menu.pause.set_text(if paused {
+            "Resume dictation"
+        } else {
+            "Pause dictation"
+        });
+        let _ = menu.start.set_enabled(
+            data["running"].as_bool().unwrap_or(false)
+                && !paused
+                && !data["pending_audio"].as_bool().unwrap_or(false)
+                && matches!(
+                    state,
+                    "hidden" | "success" | "unrefined" | "copied" | "cancelled" | "no_speech"
+                ),
+        );
+    }
+    if let Some(tray) = app.tray_by_id("caelum") {
+        let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
+        // A monochrome line mark changes shape; colour only signals an error.
+        let mut pixels = vec![0u8; 32 * 32 * 4];
+        for y in 4usize..28 {
+            for x in 4usize..28 {
+                let ink = if state == "error" {
+                    (14..18).contains(&x) && ((6..19).contains(&y) || (23..26).contains(&y))
+                } else if paused {
+                    ((9..13).contains(&x) || (19..23).contains(&x)) && (7..25).contains(&y)
+                } else if matches!(state, "starting" | "listening" | "recording") {
+                    let height = [6, 12, 20, 12, 6][((x - 4) / 5).min(4)];
+                    x % 5 < 2 && y.abs_diff(16) < height / 2
+                } else {
+                    let d = (x as i32 - 16).pow(2) + (y as i32 - 16).pow(2);
+                    (64..=100).contains(&d)
+                };
+                if ink {
+                    let i = (y * 32 + x) * 4;
+                    pixels[i..i + 4].copy_from_slice(if state == "error" {
+                        &[242, 85, 90, 255]
+                    } else {
+                        &[237, 237, 239, 255]
+                    });
+                }
+            }
+        }
+        let _ = tray.set_icon(Some(tauri::image::Image::new_owned(pixels, 32, 32)));
+    }
+}
+#[tauri::command]
+fn open_docs() -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg("https://github.com/Parth-Jadhav-2004/caelum#readme")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
 fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -217,6 +284,7 @@ fn main() {
             backend,
             quit_app,
             open_releases,
+            open_docs,
             restart_app,
             open_key_console,
             frontend_ready
@@ -247,9 +315,17 @@ fn main() {
             use tauri::menu::{Menu, MenuItem};
             let open = MenuItem::with_id(app, "open", "Open Caelum", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "Pause dictation", true, None::<&str>)?;
-            let resume = MenuItem::with_id(app, "resume", "Resume dictation", true, None::<&str>)?;
+            let status = MenuItem::with_id(app, "status", "Connecting…", false, None::<&str>)?;
+            let start = MenuItem::with_id(app, "start", "Start dictation", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Caelum", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &pause, &resume, &quit])?;
+            let menu = Menu::with_items(app, &[&status, &start, &pause, &open, &settings, &quit])?;
+            app.manage(TrayMenu {
+                status,
+                start,
+                pause,
+                paused: AtomicBool::new(false),
+            });
             let icon = tauri::image::Image::new_owned(
                 include_bytes!("../icons/tray.rgba").to_vec(),
                 32,
@@ -267,8 +343,18 @@ fn main() {
                             show(&app);
                             let _ = app.emit("desktop:quit", ());
                         }
-                        "pause" | "resume" => {
-                            let action = event.id.as_ref().to_string();
+                        "settings" => {
+                            show(&app);
+                            let _ = app.emit("desktop:settings", ());
+                        }
+                        "pause" | "start" => {
+                            let action = if event.id.as_ref() == "start" {
+                                "start"
+                            } else if app.state::<TrayMenu>().paused.load(Ordering::SeqCst) {
+                                "resume"
+                            } else {
+                                "pause"
+                            };
                             tauri::async_runtime::spawn(async move {
                                 let result = app
                                     .state::<Desktop>()

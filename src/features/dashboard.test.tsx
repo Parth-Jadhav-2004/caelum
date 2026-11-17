@@ -50,7 +50,7 @@ beforeEach(() => {
 describe("recording controls", () => {
   it("starts and finishes recording through the typed boundary", async () => {
     const user = userEvent.setup();
-    mount(<Dashboard config={config} onMicrophone={vi.fn()} />);
+    mount(<Dashboard config={config} />);
     await user.click(screen.getByRole("button", { name: "Record" }));
     expect(ipc).toHaveBeenCalledWith("control", { action: "start" });
     useApp.setState({
@@ -78,7 +78,7 @@ describe("recording controls", () => {
         pending_audio: true,
       },
     });
-    mount(<Dashboard config={config} onMicrophone={vi.fn()} />);
+    mount(<Dashboard config={config} />);
     expect(screen.getByRole("button", { name: "Record" })).toBeDisabled();
     await userEvent.click(
       screen.getByRole("button", { name: "Retry dictation" }),
@@ -150,8 +150,70 @@ it("keeps native capture on the global shortcut so text targets the original app
       paused: false,
     },
   });
-  mount(<Dashboard config={config} onMicrophone={vi.fn()} />);
+  mount(<Dashboard config={config} />);
   expect(
-    screen.getByRole("button", { name: "Use your recording shortcut" }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Record" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: /dictate anywhere/ }),
+  ).toHaveTextContent(config.app.hotkey);
+});
+
+it("limits Home to three recent dictations and links to the complete history", async () => {
+  vi.mocked(ipc).mockImplementation((async (method: string) =>
+    method === "history"
+      ? Array.from({ length: 5 }, (_, i) => ({
+          id: String(i),
+          created_at: new Date().toISOString(),
+          final_transcript: `Dictation ${i}`,
+          word_count: 2,
+          duration_ms: 1000,
+          refined: 1,
+          copied: 0,
+        }))
+      : method === "summary"
+        ? { daily: {}, activity: {} }
+        : { ok: true }) as typeof ipc);
+  mount(<Dashboard config={config} />);
+  await screen.findByText("Dictation 0");
+  expect(
+    screen
+      .getAllByRole("paragraph")
+      .filter((p) => p.textContent?.startsWith("Dictation")),
+  ).toHaveLength(3);
+  expect(screen.queryByText("Dictation 3")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "See all" }));
+  expect(useApp.getState().page).toBe("history");
+});
+it("shows full history metadata in a separate detail panel", async () => {
+  vi.mocked(ipc).mockImplementation((async (method: string) =>
+    method === "history"
+      ? [
+          {
+            id: "detail",
+            created_at: new Date().toISOString(),
+            final_transcript: "Selectable history text",
+            word_count: 3,
+            duration_ms: 1200,
+            refined: 1,
+            copied: 0,
+          },
+        ]
+      : { ok: true }) as typeof ipc);
+  mount(<History />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Show dictation details" }),
+  );
+  expect(
+    screen.getByRole("complementary", { name: "Dictation details" }),
+  ).toHaveTextContent("3 words");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close dictation details" }),
+  );
+  expect(
+    screen.queryByRole("complementary", { name: "Dictation details" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Show dictation details" }),
+  ).toHaveFocus();
 });

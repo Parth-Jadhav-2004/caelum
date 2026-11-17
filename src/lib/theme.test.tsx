@@ -5,27 +5,27 @@ import { ThemeProvider, useTheme } from "./theme";
 function Current() {
   return <output>{useTheme().theme}</output>;
 }
-it("handles legacy preferences and changes palette independently of appearance", () => {
+it("maps legacy palettes to Caelum while preserving appearance", () => {
   const view = render(
     <ThemeProvider theme="light">
       <Current />
     </ThemeProvider>,
   );
-  expect(document.documentElement.dataset.colorTheme).toBe("t3-code");
+  expect(document.documentElement.dataset.colorTheme).toBe("caelum");
   expect(document.documentElement).not.toHaveClass("dark");
   view.rerender(
     <ThemeProvider theme="light" colorTheme="ocean">
       <Current />
     </ThemeProvider>,
   );
-  expect(document.documentElement.dataset.colorTheme).toBe("ocean");
+  expect(document.documentElement.dataset.colorTheme).toBe("caelum");
   expect(view.getByText("light")).toBeInTheDocument();
   view.rerender(
     <ThemeProvider theme="dark" colorTheme="unrecognized">
       <Current />
     </ThemeProvider>,
   );
-  expect(document.documentElement.dataset.colorTheme).toBe("t3-code");
+  expect(document.documentElement.dataset.colorTheme).toBe("caelum");
   expect(document.documentElement).toHaveClass("dark");
 });
 it("follows system appearance changes and removes its listener", () => {
@@ -51,8 +51,21 @@ it("follows system appearance changes and removes its listener", () => {
     listener();
   });
   expect(view.getByText("dark")).toBeInTheDocument();
-  expect(document.documentElement.dataset.colorTheme).toBe("iris");
+  expect(document.documentElement.dataset.colorTheme).toBe("caelum");
   view.unmount();
   expect(media.removeEventListener).toHaveBeenCalledWith("change", listener);
   spy.mockRestore();
 });
+
+it.each(["caelum-iris", "caelum-ochre"])(
+  "restores saved %s independently of appearance",
+  (accent) => {
+    render(
+      <ThemeProvider theme="dark" colorTheme={accent}>
+        <Current />
+      </ThemeProvider>,
+    );
+    expect(document.documentElement.dataset.colorTheme).toBe(accent);
+    expect(document.documentElement).toHaveClass("dark");
+  },
+);

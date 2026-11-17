@@ -25,7 +25,7 @@ async def test_release_upgrade_preserves_config_history_and_lifetime_totals(tmp_
     before = config.read_bytes()
     settings = load(config)
     assert config.read_bytes() == before
-    assert settings.desktop.color_theme == "t3-code"
+    assert settings.desktop.color_theme == "caelum"
     backend = Backend(config)
     backend.history = History(config, database)
     bootstrap = await backend.dispatch("bootstrap", {})

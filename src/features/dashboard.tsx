@@ -1,4 +1,4 @@
-import { useHistoryPolling } from "@/hooks/use-history-polling";
+import { History } from "./history";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -7,20 +7,13 @@ import {
   Square,
   RotateCcw,
   X,
-  ArrowUpRight,
-  AudioLines,
   ChevronLeft,
   ChevronRight,
-  Pause,
-  Play,
 } from "lucide-react";
 import { useApp } from "@/stores/app";
 import { ipc, type Config } from "@/lib/ipc";
 import { action, Heading } from "@/components/common";
-import { Transcript } from "@/components/transcript";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectTrigger,
@@ -94,207 +87,120 @@ export function DeviceSelect({
     </Select>
   );
 }
-export function Dashboard({
-  config,
-  onMicrophone,
-}: {
-  config: Config;
-  onMicrophone: (value: Config["app"]["microphone"]) => void;
-}) {
-  const status = useApp((s) => s.status),
-    navigate = useApp((s) => s.navigate);
+export function Dashboard({ config }: { config: Config }) {
+  const status = useApp((s) => s.status);
   const [busy, setBusy] = useState(false);
   const recording = ["starting", "listening", "recording"].includes(
     status?.state ?? "",
   );
   const processing = ["processing", "refining"].includes(status?.state ?? "");
-  const historyPolling = useHistoryPolling();
-  const history = useQuery({
-    queryKey: ["history", "recent"],
-    queryFn: () => ipc("history", {}),
-    ...historyPolling,
-  });
   const summary = useQuery({
     queryKey: ["summary"],
     queryFn: () => ipc("summary", {}),
     refetchInterval: 5000,
   });
-  const seconds = Math.floor((status?.feedback?.elapsed_ms ?? 0) / 1000);
-  async function run(operation: () => Promise<unknown>) {
+  async function run(actionName: "start" | "stop" | "cancel" | "retry") {
     setBusy(true);
-    await action(operation);
+    await action(() => ipc("control", { action: actionName }));
     setBusy(false);
+  }
+  const activity = summary.data?.activity ?? {};
+  let streak = 0;
+  const day = new Date();
+  if (!activity[dateKey(day)]) day.setDate(day.getDate() - 1);
+  while (activity[dateKey(day)]) {
+    streak++;
+    day.setDate(day.getDate() - 1);
   }
   return (
     <div className="space-y-8">
-      <Heading
-        title="Dictation"
-        detail="Record with the microphone button or your recording shortcut."
-      />
-      <Card className="overflow-hidden shadow-none">
-        <CardContent className="space-y-7 p-6 sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Badge variant="outline" className="gap-2 py-1.5">
-              <span
-                className={`size-1.5 rounded-full ${recording ? "bg-destructive" : "bg-primary"}`}
-              />
-              <span role="status">{status?.title ?? "Connecting…"}</span>
-            </Badge>
-            <DeviceSelect
-              value={config.app.microphone}
-              onChange={onMicrophone}
-              disabled={recording || processing}
-            />
-          </div>
-          <div className="space-y-4 py-2 text-center">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border bg-secondary/40">
-              <AudioLines className="size-7 text-primary" />
-            </div>
-            <Waveform values={status?.feedback?.history} />
-            <p className="font-mono text-2xl tabular-nums">
-              {recording
-                ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
-                : config.app.hotkey}
-            </p>
-            <p className="mx-auto max-w-md text-sm leading-6 text-muted-foreground">
-              {status?.detail ??
-                "Connecting to your local transcription engine."}
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {status && !status.running ? (
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void run(() => ipc("service.start", {}));
-                }}
-              >
-                <Play />
-                Start service
-              </Button>
-            ) : (
-              <>
-                <Button
-                  disabled={
-                    busy ||
-                    !status ||
-                    processing ||
-                    (status.backend === "hyprland" && !recording) ||
-                    status.pending_audio ||
-                    status.paused
-                  }
-                  onClick={() => {
-                    void run(() =>
-                      ipc("control", { action: recording ? "stop" : "start" }),
-                    );
-                  }}
-                >
-                  {recording ? (
-                    <Square className="size-4" />
-                  ) : (
-                    <Mic className="size-4" />
-                  )}
-                  {recording
-                    ? "Finish recording"
-                    : status?.backend === "hyprland"
-                      ? "Use your recording shortcut"
-                      : "Record"}
-                </Button>
-                {status?.pending_audio && !processing && (
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      void run(() => ipc("control", { action: "retry" }));
-                    }}
-                  >
-                    <RotateCcw />
-                    Retry dictation
-                  </Button>
-                )}
-                {recording || processing || status?.pending_audio ? (
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => {
-                      void run(() => ipc("control", { action: "cancel" }));
-                    }}
-                  >
-                    <X />
-                    {status?.pending_audio ? "Discard recording" : "Cancel"}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    disabled={busy || !status}
-                    onClick={() => {
-                      void run(() =>
-                        ipc("control", {
-                          action: status?.paused ? "resume" : "pause",
-                        }),
-                      );
-                    }}
-                  >
-                    {status?.paused ? <Play /> : <Pause />}
-                    {status?.paused ? "Resume" : "Pause"}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-          <p className="text-center text-xs text-muted-foreground">
-            Audio goes to your provider. Microphone recordings are never saved.
-          </p>
-          {status?.storage_error && (
-            <p role="alert" className="text-sm text-destructive">
-              Dictation worked, but history could not be saved. Check local
-              storage permissions.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Metric
-          label="Words dictated · lifetime"
-          value={(summary.data?.total_words ?? 0).toLocaleString()}
-        />
-        <Metric
-          label="Recording minutes · saved history"
-          value={((summary.data?.duration_ms ?? 0) / 60000).toFixed(1)}
-        />
-      </div>
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Recent dictations</h2>
-          <Button variant="ghost" size="sm" onClick={() => navigate("history")}>
-            View all
-            <ArrowUpRight className="size-4" />
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-title font-medium">
+          {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
+          <kbd>{config.app.hotkey}</kbd> to dictate anywhere
+        </h1>
+        {status?.backend !== "hyprland" && (
+          <Button
+            variant="secondary"
+            disabled={
+              busy ||
+              !status ||
+              processing ||
+              status.pending_audio ||
+              status.paused ||
+              !status.running
+            }
+            onClick={() => void run(recording ? "stop" : "start")}
+          >
+            {recording ? <Square /> : <Mic />}
+            {recording ? "Finish recording" : "Record"}
           </Button>
-        </div>
-        {history.data?.length ? (
-          history.data
-            .slice(0, 5)
-            .map((entry) => <Transcript key={entry.id} entry={entry} />)
-        ) : (
-          <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-            No transcriptions yet. Start a recording to see the result here.
-          </p>
         )}
-      </section>
-      <UsageCalendar activity={summary.data?.activity ?? {}} />
+        {status?.backend === "hyprland" && recording && (
+          <Button variant="secondary" onClick={() => void run("stop")}>
+            Finish recording
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-8 border-b pb-6 text-meta text-muted-foreground tabular-nums">
+        <span>
+          <strong className="mr-2 text-foreground">
+            {(summary.data?.today_words ?? 0).toLocaleString()}
+          </strong>
+          Words today
+        </span>
+        <span>
+          <strong className="mr-2 text-foreground">
+            {(summary.data?.wpm ?? 0).toFixed(0)}
+          </strong>
+          Words/min
+        </span>
+        <span>
+          <strong className="mr-2 text-foreground">{streak}</strong>Day streak
+        </span>
+      </div>
+      {(recording || processing) && (
+        <Waveform values={status?.feedback?.history} />
+      )}
+      {status?.pending_audio && !processing && (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => void run("retry")}
+        >
+          <RotateCcw />
+          Retry dictation
+        </Button>
+      )}
+      {(recording || processing || status?.pending_audio) && (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void run("cancel")}
+        >
+          <X />
+          {status?.pending_audio ? "Discard recording" : "Cancel"}
+        </Button>
+      )}
+      {status?.storage_error && (
+        <p role="alert">History wasn’t saved. Check storage permissions.</p>
+      )}
+      <History compact />
     </div>
   );
 }
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="shadow-none">
-      <CardContent className="space-y-3 pt-5">
+    <section>
+      <div className="space-y-3 py-4">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-3xl font-medium tracking-tight tabular-nums">
+        <p
+          className={`${label === "Total words" ? "text-display" : "text-title"} font-medium tabular-nums`}
+        >
           {value}
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 export function Statistics() {
@@ -306,10 +212,7 @@ export function Statistics() {
   const max = Math.max(1, ...Object.values(data?.daily ?? {}));
   return (
     <div className="space-y-8">
-      <Heading
-        title="Statistics"
-        detail="Your dictation activity. Daily counts reflect retained history; lifetime words survive deletion."
-      />
+      <Heading title="Insights" />
       <div className="grid gap-4 sm:grid-cols-2">
         <Metric
           label="Words today"
@@ -320,16 +223,13 @@ export function Statistics() {
           value={(data?.month_words ?? 0).toLocaleString()}
         />
         <Metric
-          label="Total words · lifetime"
+          label="Total words"
           value={(data?.total_words ?? 0).toLocaleString()}
         />
-        <Metric
-          label="Words / recording minute"
-          value={(data?.wpm ?? 0).toFixed(0)}
-        />
+        <Metric label="Words/min" value={(data?.wpm ?? 0).toFixed(0)} />
       </div>
-      <Card className="shadow-none">
-        <CardContent className="pt-6">
+      <section>
+        <div className="pt-6">
           <h2 className="font-medium">The last seven days</h2>
           <div className="mt-8 flex h-48 items-end gap-3">
             {Object.entries(data?.daily ?? {}).map(([day, words]) => (
@@ -358,8 +258,8 @@ export function Statistics() {
               Your first dictation starts the chart.
             </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
       <UsageCalendar activity={data?.activity ?? {}} />
     </div>
   );
@@ -397,7 +297,7 @@ export function UsageCalendar({
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Daily usage</h2>
+        <h2 className="text-section font-medium">Daily usage</h2>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
@@ -427,7 +327,7 @@ export function UsageCalendar({
           </Button>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p id="calendar-help" className="sr-only">
         Use arrow keys to move by day or week, Home/End for the start/end of the
         week, Enter to select, and Escape to clear the selection.
       </p>
@@ -435,6 +335,7 @@ export function UsageCalendar({
         ref={calendar}
         role="group"
         aria-label="Daily usage calendar"
+        aria-describedby="calendar-help"
         className="grid grid-cols-7 gap-2"
       >
         {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
@@ -495,8 +396,24 @@ export function UsageCalendar({
         })}
       </div>
       <p role="status" className="text-xs text-muted-foreground">
-        {selected ? `${selected}: ${activity[selected] ?? 0} words. ` : ""}Words
-        from saved dictations. Intensity: 0, 1–99, 100–499, 500–999, 1,000+.
+        {selected ? (
+          `${selected}: ${activity[selected] ?? 0} words`
+        ) : (
+          <span className="flex items-center gap-2">
+            <span>Less</span>
+            <span aria-hidden="true" className="flex gap-1">
+              {[
+                "bg-primary/10",
+                "bg-primary/20",
+                "bg-primary/40",
+                "bg-primary/70",
+              ].map((colour) => (
+                <span key={colour} className={`size-3 rounded-sm ${colour}`} />
+              ))}
+            </span>
+            <span>More</span>
+          </span>
+        )}
       </p>
     </section>
   );

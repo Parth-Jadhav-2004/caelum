@@ -361,3 +361,36 @@ async def test_bootstrap_exposes_credential_storage(backend, monkeypatch, tmp_pa
         "storage": "file",
     }
     assert "private-test-key" not in json.dumps(result)
+
+
+async def test_interactive_practice_uses_release_signal_and_existing_insertion(backend, monkeypatch):
+    from caelum.linux import Target
+
+    target = Target("0x123", 42, 0, "monitor")
+    monkeypatch.setattr("caelum.sidecar.os.getppid", lambda: 42)
+    monkeypatch.setattr(backend, "idle", AsyncMock())
+    monkeypatch.setattr("caelum.portable.backend_name", lambda _: "hyprland")
+    monkeypatch.setattr("caelum.linux.target_at_press", AsyncMock(return_value=target))
+    inserted = AsyncMock(return_value=True)
+    monkeypatch.setattr("caelum.linux.insert", inserted)
+    monkeypatch.setattr("caelum.sidecar.practice", AsyncMock(return_value=("Real words", True)))
+    started = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def capture(config, seconds, cancelled, level, finished):
+        loop.call_soon_threadsafe(started.set)
+        assert seconds == 15
+        assert finished.wait(1)
+        assert not cancelled.is_set()
+        return b"test-pcm"
+
+    monkeypatch.setattr("caelum.sidecar.record_sample", capture)
+    task = asyncio.create_task(backend.dispatch("practice", {
+        "consent": True, "interactive": True, "insert": True,
+    }))
+    await started.wait()
+    await backend.dispatch("sample.cancel", {"finish": True})
+    result = await task
+    assert result == {"text": "Real words", "refined": True, "inserted": True}
+    inserted.assert_awaited_once_with("Real words", target)
+    assert "practice" in backend.setup_checks
