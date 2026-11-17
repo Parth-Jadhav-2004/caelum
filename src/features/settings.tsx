@@ -391,7 +391,7 @@ export function Settings({
                       setConnectionChecking(true);
                       void action(() => ipc("providers.check", {}))
                         .then((v) => {
-                          if (v) setConnection("Connected ✓");
+                          if (v) setConnection(v);
                         })
                         .finally(() => setConnectionChecking(false));
                     }}

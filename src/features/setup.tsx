@@ -43,9 +43,16 @@ export function Setup({
   });
   const manageKeys = bootstrap.data?.setup?.complete === true;
   const openSettings = useApp((s) => s.openSettings);
+  const names = [
+    ...new Set([
+      config.stt.key_env,
+      ...(config.cleanup.model ? [config.cleanup.key_env] : []),
+    ]),
+  ];
   const [onboardingStep, setStep] = useState(0),
-    [key, setKey] = useState(""),
-    [name, setName] = useState(config.stt.key_env);
+    [keys, setKeys] = useState<Record<string, string>>({}),
+    [selectedName, setName] = useState(config.stt.key_env);
+  const name = names.includes(selectedName) ? selectedName : config.stt.key_env;
   const step = manageKeys ? 1 : onboardingStep;
   const [revealed, reveal] = useState(false),
     [consent, setConsent] = useState(false),
@@ -186,6 +193,8 @@ export function Setup({
     let disposed = false;
     setBusy(true);
     setMicPassed(false);
+    setPracticePassed(false);
+    setPractice("");
     setNotice("");
     void ipc("microphone.test", {})
       .then(() => {
@@ -246,9 +255,13 @@ export function Setup({
         }
         const result = await ipc("setup.validate", {
           consent,
-          keys: key ? { [name]: key } : {},
+          keys: Object.fromEntries(
+            names
+              .filter((name) => keys[name])
+              .map((name) => [name, keys[name]]),
+          ),
         });
-        setKey("");
+        setKeys({});
         await bootstrap.refetch();
         setKeyStoredInFile(Object.values(result.storage).includes("file"));
         if (manageKeys) openSettings("Transcription");
@@ -275,12 +288,6 @@ export function Setup({
       setBusy(false);
     }
   }
-  const names = [
-    ...new Set([
-      config.stt.key_env,
-      ...(config.cleanup.model ? [config.cleanup.key_env] : []),
-    ]),
-  ];
   const credential = bootstrap.data?.credentials[name];
   return (
     <div className="mx-auto flex min-h-[640px] max-w-[440px] flex-col gap-8 pt-8">
@@ -331,8 +338,10 @@ export function Setup({
                     id="provider-key"
                     type={revealed ? "text" : "password"}
                     autoComplete="off"
-                    value={key}
-                    onChange={(e) => setKey(e.target.value)}
+                    value={keys[name] ?? ""}
+                    onChange={(e) =>
+                      setKeys({ ...keys, [name]: e.target.value })
+                    }
                     placeholder="Paste your key"
                   />
                   <Button
@@ -572,7 +581,7 @@ export function Setup({
           <Button
             variant="ghost"
             onClick={() => {
-              setKey("");
+              setKeys({});
               openSettings("Transcription");
             }}
           >

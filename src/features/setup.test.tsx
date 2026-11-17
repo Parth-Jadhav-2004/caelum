@@ -6,6 +6,7 @@ import { Setup } from "./setup";
 import { ipc } from "@/lib/ipc";
 import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
+import { useState } from "react";
 vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
@@ -29,14 +30,18 @@ beforeEach(() => {
     return { ok: true };
   }) as typeof ipc);
 });
-function mount() {
+function mount(initialConfig = testConfig) {
+  function StatefulSetup() {
+    const [config, setConfig] = useState(initialConfig);
+    return <Setup config={config} commit={async (next) => setConfig(next)} />;
+  }
   return render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <Setup config={testConfig} commit={vi.fn(async () => {})} />
+      <StatefulSetup />
     </QueryClientProvider>,
   );
 }
@@ -59,6 +64,71 @@ it("starts with a time estimate and requires consent before validating a key", a
     keys: { GROQ_API_KEY: "test-only" },
   });
   expect(ipc).not.toHaveBeenCalledWith("credentials.store", expect.anything());
+});
+it("retains both providers' pending keys across selection changes and failed validation", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  let attempts = 0;
+  vi.mocked(ipc).mockImplementation(((method, params) => {
+    if (method === "setup.validate" && attempts++ === 0)
+      return Promise.reject(new Error("Provider unavailable"));
+    return original(method, params);
+  }) as typeof ipc);
+  mount({
+    ...testConfig,
+    cleanup: {
+      ...testConfig.cleanup,
+      model: "cleanup-model",
+      key_env: "CLEANUP_KEY",
+    },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Get started" }));
+  await userEvent.type(screen.getByLabelText("API key"), "speech-key");
+  await userEvent.click(screen.getByRole("combobox", { name: "Key to edit" }));
+  await userEvent.click(screen.getByRole("option", { name: "CLEANUP_KEY" }));
+  expect(screen.getByLabelText("API key")).toHaveValue("");
+  await userEvent.type(screen.getByLabelText("API key"), "cleanup-key");
+  await userEvent.click(screen.getByRole("combobox", { name: "Key to edit" }));
+  await userEvent.click(screen.getByRole("option", { name: "GROQ_API_KEY" }));
+  expect(screen.getByLabelText("API key")).toHaveValue("speech-key");
+  await userEvent.click(screen.getByRole("checkbox"));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("Error: Provider unavailable");
+  expect(screen.getByLabelText("API key")).toHaveValue("speech-key");
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Check your microphone" });
+  expect(ipc).toHaveBeenCalledWith("setup.validate", {
+    consent: true,
+    keys: { GROQ_API_KEY: "speech-key", CLEANUP_KEY: "cleanup-key" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByLabelText("API key")).toHaveValue("");
+});
+
+it("uses a renamed credential and excludes pending keys no longer in the configuration", async () => {
+  mount({
+    ...testConfig,
+    stt: { ...testConfig.stt, base_url: "https://speech.example/v1" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Get started" }));
+  await userEvent.type(screen.getByLabelText("API key"), "obsolete-key");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Use another service" }),
+  );
+  await userEvent.clear(screen.getByLabelText("Key name"));
+  await userEvent.type(screen.getByLabelText("Key name"), "SPEECH_KEY");
+  await userEvent.keyboard("{Escape}");
+  expect(
+    screen.queryByRole("combobox", { name: "Key to edit" }),
+  ).not.toBeInTheDocument();
+  await userEvent.clear(screen.getByLabelText("API key"));
+  await userEvent.type(screen.getByLabelText("API key"), "new-speech-key");
+  await userEvent.click(screen.getByRole("checkbox"));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Check your microphone" });
+  expect(ipc).toHaveBeenCalledWith("setup.validate", {
+    consent: true,
+    keys: { SPEECH_KEY: "new-speech-key" },
+  });
 });
 it("automatically tests the microphone and gates Continue on its result", async () => {
   const original = vi.mocked(ipc).getMockImplementation()!;
@@ -107,6 +177,35 @@ it("completes six steps with one upload consent and real practice results", asyn
     enabled: false,
   });
   expect(ipc).toHaveBeenCalledWith("setup.finish", {});
+});
+it("requires a new practice run after revisiting the service and microphone checks", async () => {
+  mount();
+  await connect();
+  await screen.findByText("We hear you ✓");
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Record practice" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "You’re all set" });
+  await userEvent.click(screen.getByRole("button", { name: "Change Service" }));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("We hear you ✓");
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(screen.getByRole("textbox", { name: "Practice text" })).toHaveValue(
+    "",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Record practice" }),
+  );
+  expect(
+    vi.mocked(ipc).mock.calls.filter(([method]) => method === "practice"),
+  ).toHaveLength(2);
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await userEvent.click(screen.getByRole("button", { name: "Done" }));
+  await waitFor(() => expect(ipc).toHaveBeenCalledWith("setup.finish", {}));
 });
 it("keeps failures on the microphone step and cancels the sample on unmount", async () => {
   const original = vi.mocked(ipc).getMockImplementation()!;

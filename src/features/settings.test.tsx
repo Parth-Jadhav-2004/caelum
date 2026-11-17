@@ -182,12 +182,38 @@ it("resets connection feedback when the checked provider changes", async () => {
   await userEvent.click(
     screen.getByRole("button", { name: "Test connection" }),
   );
-  await screen.findByText("Connected ✓");
+  await screen.findByText("Connected");
   mounted.rerender(
     view({ ...testConfig, stt: { ...testConfig.stt, model: "another-model" } }),
   );
-  expect(screen.queryByText("Connected ✓")).not.toBeInTheDocument();
+  expect(screen.queryByText("Connected")).not.toBeInTheDocument();
 });
+
+it.each([
+  "Transcription: key missing; open Manage keys",
+  "Transcription: model unavailable; choose another model in Advanced",
+  "Transcription: connected (model available)\nRefinement: invalid API key",
+])(
+  "shows the provider check result without claiming success: %s",
+  async (result) => {
+    mount({ description: "Saved", storage: "keyring" });
+    const original = vi.mocked(ipc).getMockImplementation()!;
+    vi.mocked(ipc).mockImplementation(((method, params) =>
+      method === "providers.check"
+        ? Promise.resolve(result)
+        : original(method, params)) as typeof ipc);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Transcription" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Test connection" }),
+    );
+    expect(
+      await screen.findByText(result.replace(/\n/g, " ")),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Connected ✓")).not.toBeInTheDocument();
+  },
+);
 
 it("keeps update checks independent of an in-flight connection check", async () => {
   vi.mocked(ipc).mockImplementation((async (method: string) =>
