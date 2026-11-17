@@ -50,8 +50,11 @@ Transport limits:
 - Malformed frames/version mismatches disconnect the transport and reject all
   pending requests. A persistent UI error and confirmed manual restart are
   available; recovery never silently restarts capture or repeats uploads.
-- Shutdown has one 10s graceful budget for cancellation/shutdown/EOF and waiting,
-  followed by a 2s forced termination/reap budget. A second close is a no-op.
+- Shutdown allows up to 10s for cancellation and daemon shutdown. After a
+  successful acknowledgment, sidecar EOF/exit gets 500ms; without acknowledgment,
+  it gets 2s. Forced termination/reaping has a separate 2s budget. Background
+  update checks do not hold the mutation lock or delay the acknowledgment.
+  Repeated daemon shutdown and native close are no-ops.
   Existing pending-audio confirmation remains at the UI/daemon boundary.
 - Python allows accepted EOF work a short drain period, then signals cancellation
   and cancels remaining tasks. Unchanged idle status is suppressed; live meter

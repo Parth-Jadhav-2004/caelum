@@ -121,6 +121,10 @@ They supersede the earlier remaining-license and single-key-rotation statements.
   abandoned pacman lock was confirmed against process/lock ownership, removed,
   and the signature-verifying privileged installer successfully upgraded it to
   0.4.2. Its obsolete queued update was then cleared through the updater.
+- The patched Arch package (source `57dd53c`) built successfully, passed isolated
+  package/IPC/EOF and native WebKit/Xvfb startup checks, and its Setup screenshot
+  was inspected. It was installed locally as a patched 0.4.2 build; published
+  v0.4.2 assets were not replaced.
 
 Physical recording and tray acceptance for a new release remain separate from
 these automated regression checks; see [acceptance.md](acceptance.md).
