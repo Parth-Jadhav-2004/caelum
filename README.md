@@ -128,9 +128,11 @@ Requests and responses use [shared runtime contracts](docs/ipc.md), bounded
 transport deadlines and explicit error states. Recording/transcription operations
 are never automatically replayed after a transport failure.
 
-Pull requests run fast checks. Native distro packages are built through the
-manual candidate workflow, tested after installation, then promoted without
-rebuilding. See [releasing.md](docs/releasing.md) for candidate verification,
+Pull requests run fast checks. Main-branch updates build native packages and
+publish **Development** prereleases. Maintainers promote a successful candidate
+to **Testing**, then after desktop acceptance and approval to signed **Production**.
+All channels use the same package bytes; production automatic updates only install
+signed stable releases. See [releasing.md](docs/releasing.md) for channel commands, candidate verification,
 resumable publication, immutable tags/assets, signing and recovery procedures.
 
 Caelum is [MIT licensed](LICENSE). Packages include third-party license texts,

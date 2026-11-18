@@ -42,6 +42,7 @@ export interface DesktopConfig {
   theme: string
   color_theme: string
   sidebar_visible: boolean
+  history_forever: boolean
   retention_days: number
   stt_usd_per_hour: number
 }

@@ -4,7 +4,21 @@
 
 Official x86-64 native packages built with a pinned update key check the latest
 **stable** GitHub release when the desktop app opens. The Settings footer can also
-check manually. Disable **Check for updates when Caelum opens** in Advanced settings
+check manually. Manual checks also look for testing releases, including newer
+candidates with the same package version. A testing build gets a separate
+**Download testing build** action opening its GitHub release page for explicit
+package-manager installation. It is never staged as an unsigned automatic update.
+Development prereleases (`-dev.<run>.<attempt>`) are available on GitHub for manual
+installation and never appear as testing candidates or production updates. Testing
+uses `-rc.<candidate-run-id>`; production uses `v<version>`. Manual testing discovery
+checks up to 100 releases so development releases do not hide testing on page one;
+if it reaches that bound without a usable candidate it reports an error instead of claiming no update.
+Use **View releases** to browse the full history. Maintainers promote identical
+packages through the channels; see [releasing.md](releasing.md).
+Official packages record the source commit and source date so the check can
+recognize the installed build and avoid offering older testing builds.
+
+Disable **Check for updates when Caelum opens** in Advanced settings
 to stop automatic network checks; changes save automatically. The background dictation service never checks,
 downloads, or opens authorization dialogs by itself.
 
@@ -75,26 +89,27 @@ tag publishing fails closed rather than producing unsigned updater metadata.
    umask 077
    openssl genpkey -algorithm ED25519 -out /secure/location/caelum-update-private.pem
    openssl pkey -in /secure/location/caelum-update-private.pem -pubout \
-     -out src/caelum/update-public.pem
+     -out python/caelum/update-public.pem
    ```
 
-2. Review and commit **only** `src/caelum/update-public.pem`. It is deliberately
+2. Review and commit **only** `python/caelum/update-public.pem`. It is deliberately
    exempted from the repo's PEM ignore rule and included in native package payloads.
-   Never place a private key anywhere under `src/caelum`, which packaging copies.
-3. Create the GitHub Actions **release** environment with required reviewers and
-   protected tag rules. Store the private PEM in its
+   Never place a private key anywhere under `python/caelum`, which packaging copies.
+3. The GitHub Actions **release** environment is the protected production signing
+   environment. Keep required reviewers and restrict deployments to main only. Store the private PEM in its
    `CAELUM_UPDATE_SIGNING_KEY` environment secret using GitHub's secret UI. Do not
    paste it into chat, logs, build artifacts, or version control. Restrict who can
    alter release tags, workflow code, environment approvals, and secrets.
-4. Bump `pyproject.toml` to a new stable version and keep the Arch recipe's version
-   aligned. Check the diff and release notes; push `v<version>` only when ready.
-5. CI tests Ubuntu 24.04, Ubuntu 26.04, Arch, and Fedora 43, builds and
-   smoke-installs packages, and uploads per-target artifacts. After
-   release-environment approval, it signs a four-target manifest, verifies that
-   the private key matches the committed public key, uploads the packages and
-   signed update metadata to a **draft**, and only then publishes it as the
-   latest stable release. No half-uploaded release is offered to clients.
-   Main-branch and pull-request builds do not publish.
+4. Bump all version manifests together to a new stable version. A main push builds
+   a development prerelease; `publish.yml` with channel `testing` publishes an RC.
+   Test the exact candidate, then select `production` with manual acceptance completed.
+   Tags are created by the publisher; do not push or move a release tag yourself.
+5. CI builds Ubuntu 24.04/26.04, Debian 12, Arch, and Fedora 43 packages and smoke-installs
+   them. Production requires that identical candidate to be published to testing.
+   After release-environment approval, it verifies the testing assets, signs the
+   five-target manifest, checks that the private key matches the committed public
+   key, uploads all files to a **draft**, then publishes it as latest stable.
+   Development/testing jobs never receive the production signing key. PRs never publish.
 
 `scripts/sign_release.py ASSET_DIRECTORY PRIVATE_KEY_PATH` reproduces manifest
 signing locally. The CI secret is written to a temporary mode-600 file and removed

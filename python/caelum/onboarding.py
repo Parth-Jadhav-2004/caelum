@@ -17,8 +17,10 @@ PRIVACY = (
     "In cloud mode, audio is sent to your transcription provider. Local mode uses whisper.cpp "
     "on this computer and disables cloud refinement. In cloud mode, when refinement is on, text is sent "
     "to your refinement provider. Regular dictations save final text in local history when "
-    "Save dictation history is on (disable it in Settings → History & desktop) "
-    "and may use the clipboard. Practice text stays in this setup window unless you copy it. "
+    "Save dictation history is on (disable it in Settings → Privacy & data) "
+    "and may use the clipboard. After consent, practice records up to 15 seconds. On Hyprland, "
+    "the result is inserted into the setup box through the clipboard; clipboard managers may keep it. "
+    "Elsewhere, the result is only shown in setup. "
     "History is not encrypted by Caelum. Exports and clipboard managers keep independent copies. "
     "Groq free usage has provider limits."
 )
@@ -98,12 +100,12 @@ async def check_shortcut(config):
     )
 
 
-def record_sample(config, seconds, cancelled, level=lambda value: None):
+def record_sample(config, seconds, cancelled, level=lambda value: None, finished=None):
     capture = Capture(config.app)
     try:
         capture.start()
         end = time.monotonic() + seconds
-        while time.monotonic() < end:
+        while time.monotonic() < end and not (finished and finished.is_set()):
             if cancelled.is_set():
                 raise RuntimeError("Recording cancelled; sample discarded")
             if capture.error:

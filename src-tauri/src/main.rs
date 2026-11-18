@@ -78,10 +78,7 @@ impl Engine {
                     Ok(Frame::Reply(id, result)) => reader_requests.resolve(id, result),
                     Ok(Frame::Event(event, data)) => {
                         if event == "status" {
-                            if let Some(tray) = app.tray_by_id("caelum") {
-                                let title = data["title"].as_str().unwrap_or("Connecting…");
-                                let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
-                            }
+                            update_tray(&app, &data);
                         }
                         let _ = app.emit(&format!("engine:{event}"), data);
                     }
@@ -89,6 +86,10 @@ impl Engine {
                 }
             };
             reader_requests.fail(failure.clone());
+            update_tray(
+                &app,
+                &json!({"state":"error", "title":"Caelum stopped", "running":false}),
+            );
             let _ = app.emit("engine:disconnected", failure);
         });
         Ok(Self {
@@ -110,20 +111,29 @@ impl Engine {
         }
         result
     }
-    async fn close(&self) {
+    async fn close(&self, shutdown_complete: bool) {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
         }
-        // One overall graceful budget, including writes and requests. Reserve
-        // two seconds for SIGKILL/reaping instead of stacking request timeouts.
+        // A completed shutdown has already stopped/reaped dictation and flushed
+        // history. Read-only network workers can otherwise keep Python alive
+        // until their socket timeout even after the window is ready to quit.
+        let shutdown = tokio::time::timeout(Duration::from_secs(10), async {
+            if !shutdown_complete {
+                let _ = self.call("sample.cancel", json!({})).await;
+                self.call("shutdown", json!({"discard":true})).await?;
+            }
+            Ok::<(), EngineError>(())
+        })
+        .await;
         transport::stop_child(
             &self.child,
-            async {
-                let _ = self.call("sample.cancel", json!({})).await;
-                let _ = self.call("shutdown", json!({"discard":true})).await;
-                self.requests.finish_input().await;
+            self.requests.finish_input(),
+            if matches!(shutdown, Ok(Ok(()))) {
+                Duration::from_millis(500)
+            } else {
+                Duration::from_secs(2)
             },
-            Duration::from_secs(10),
             Duration::from_secs(2),
         )
         .await;
@@ -150,7 +160,8 @@ async fn restart_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    if !discard.unwrap_or(false) && state.engine.requests.alive() {
+    let shutdown_complete = !discard.unwrap_or(false) && state.engine.requests.alive();
+    if shutdown_complete {
         // The daemon atomically checks idle state and stops accepting captures.
         // Confirmed recovery may explicitly discard; ordinary update restarts may not.
         state
@@ -159,7 +170,7 @@ async fn restart_app(
             .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close().await;
+    state.engine.close(shutdown_complete).await;
     app.restart();
 }
 #[tauri::command]
@@ -171,12 +182,28 @@ fn open_key_console() -> Result<(), String> {
         .map_err(|_| "Could not open your browser".into())
 }
 #[tauri::command]
-fn open_releases() -> Result<(), String> {
+fn open_releases(version: Option<String>) -> Result<(), String> {
     std::process::Command::new("xdg-open")
-        .arg("https://github.com/Parth-Jadhav-2004/caelum/releases")
+        .arg(release_url(version.as_deref())?)
         .spawn()
         .map(|_| ())
         .map_err(|_| "Could not open your browser".into())
+}
+fn release_url(version: Option<&str>) -> Result<String, String> {
+    let root = "https://github.com/Parth-Jadhav-2004/caelum/releases";
+    match version {
+        None => Ok(root.into()),
+        Some(value)
+            if value.len() <= 64
+                && value.starts_with(|c: char| c.is_ascii_digit())
+                && value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-') =>
+        {
+            Ok(format!("{root}/tag/v{value}"))
+        }
+        _ => Err("Invalid release version".into()),
+    }
 }
 #[tauri::command]
 async fn quit_app(
@@ -184,16 +211,109 @@ async fn quit_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    if !discard && state.engine.requests.alive() {
+    let shutdown_complete = !discard && state.engine.requests.alive();
+    if shutdown_complete {
         state
             .engine
             .call("shutdown", json!({"discard":false}))
             .await?;
     }
     state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close().await;
+    state.engine.close(shutdown_complete).await;
     app.exit(0);
     Ok(())
+}
+struct TrayMenu {
+    status: tauri::menu::MenuItem<tauri::Wry>,
+    pause: tauri::menu::MenuItem<tauri::Wry>,
+    start: tauri::menu::MenuItem<tauri::Wry>,
+    paused: AtomicBool,
+    last_status: std::sync::Mutex<String>,
+}
+fn update_tray(app: &tauri::AppHandle, data: &Value) {
+    let paused = data["paused"].as_bool().unwrap_or(false);
+    let running = data["running"].as_bool().unwrap_or(false);
+    let state = data["state"].as_str().unwrap_or("hidden");
+    let title = data["title"].as_str().unwrap_or("Ready");
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        // Audio level events do not change the tray. Avoid repeatedly rebuilding
+        // its icon and menu over D-Bus while recording.
+        let signature = json!([
+            running,
+            paused,
+            state,
+            title,
+            data["hotkey"],
+            data["pending_audio"]
+        ])
+        .to_string();
+        if let Ok(mut last) = menu.last_status.lock() {
+            if *last == signature {
+                return;
+            }
+            *last = signature;
+        }
+        menu.paused.store(paused, Ordering::SeqCst);
+        let status_line = data["hotkey"]
+            .as_str()
+            .map(|key| format!("{title} – {key}"))
+            .unwrap_or_else(|| title.to_owned());
+        let _ = menu.status.set_text(status_line);
+        let _ = menu.pause.set_text(if paused {
+            "Resume dictation"
+        } else {
+            "Pause dictation"
+        });
+        let _ = menu.pause.set_enabled(running);
+        let _ = menu.start.set_enabled(
+            running
+                && !paused
+                && !data["pending_audio"].as_bool().unwrap_or(false)
+                && matches!(
+                    state,
+                    "hidden" | "success" | "unrefined" | "copied" | "cancelled" | "no_speech"
+                ),
+        );
+    }
+    if let Some(tray) = app.tray_by_id("caelum") {
+        let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
+        // A monochrome line mark changes shape; colour only signals an error.
+        let mut pixels = include_bytes!("../icons/tray.rgba").to_vec();
+        if state == "error" || paused || matches!(state, "starting" | "listening" | "recording") {
+            pixels.fill(0);
+            for y in 4usize..28 {
+                for x in 4usize..28 {
+                    let ink = if state == "error" {
+                        (14..18).contains(&x) && ((6..19).contains(&y) || (23..26).contains(&y))
+                    } else if paused {
+                        ((9..13).contains(&x) || (19..23).contains(&x)) && (7..25).contains(&y)
+                    } else if matches!(state, "starting" | "listening" | "recording") {
+                        let height = [6, 12, 20, 12, 6][((x - 4) / 5).min(4)];
+                        x % 5 < 2 && y.abs_diff(16) < height / 2
+                    } else {
+                        false
+                    };
+                    if ink {
+                        let i = (y * 32 + x) * 4;
+                        pixels[i..i + 4].copy_from_slice(if state == "error" {
+                            &[242, 85, 90, 255]
+                        } else {
+                            &[237, 237, 239, 255]
+                        });
+                    }
+                }
+            }
+        }
+        let _ = tray.set_icon(Some(tauri::image::Image::new_owned(pixels, 32, 32)));
+    }
+}
+#[tauri::command]
+fn open_docs() -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg("https://github.com/Parth-Jadhav-2004/caelum#readme")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -217,6 +337,7 @@ fn main() {
             backend,
             quit_app,
             open_releases,
+            open_docs,
             restart_app,
             open_key_console,
             frontend_ready
@@ -246,10 +367,19 @@ fn main() {
             });
             use tauri::menu::{Menu, MenuItem};
             let open = MenuItem::with_id(app, "open", "Open Caelum", true, None::<&str>)?;
-            let pause = MenuItem::with_id(app, "pause", "Pause dictation", true, None::<&str>)?;
-            let resume = MenuItem::with_id(app, "resume", "Resume dictation", true, None::<&str>)?;
+            let pause = MenuItem::with_id(app, "pause", "Pause dictation", false, None::<&str>)?;
+            let status = MenuItem::with_id(app, "status", "Connecting…", false, None::<&str>)?;
+            let start = MenuItem::with_id(app, "start", "Start dictation", false, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Caelum", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &pause, &resume, &quit])?;
+            let menu = Menu::with_items(app, &[&status, &start, &pause, &open, &settings, &quit])?;
+            app.manage(TrayMenu {
+                status,
+                start,
+                pause,
+                paused: AtomicBool::new(false),
+                last_status: std::sync::Mutex::new(String::new()),
+            });
             let icon = tauri::image::Image::new_owned(
                 include_bytes!("../icons/tray.rgba").to_vec(),
                 32,
@@ -267,8 +397,18 @@ fn main() {
                             show(&app);
                             let _ = app.emit("desktop:quit", ());
                         }
-                        "pause" | "resume" => {
-                            let action = event.id.as_ref().to_string();
+                        "settings" => {
+                            show(&app);
+                            let _ = app.emit("desktop:settings", ());
+                        }
+                        "pause" | "start" => {
+                            let action = if event.id.as_ref() == "start" {
+                                "start"
+                            } else if app.state::<TrayMenu>().paused.load(Ordering::SeqCst) {
+                                "resume"
+                            } else {
+                                "pause"
+                            };
                             tauri::async_runtime::spawn(async move {
                                 let result = app
                                     .state::<Desktop>()
@@ -338,7 +478,33 @@ fn main() {
         .expect("Failed to initialize Caelum")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                tauri::async_runtime::block_on(app.state::<Desktop>().engine.close());
+                tauri::async_runtime::block_on(app.state::<Desktop>().engine.close(false));
             }
         });
+}
+
+#[cfg(test)]
+mod release_link_tests {
+    use super::release_url;
+
+    #[test]
+    fn release_links_stay_on_the_fixed_repository() {
+        assert_eq!(
+            release_url(Some("0.4.1-rc.2")).unwrap(),
+            "https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.4.1-rc.2"
+        );
+        assert_eq!(
+            release_url(None).unwrap(),
+            "https://github.com/Parth-Jadhav-2004/caelum/releases"
+        );
+        for value in [
+            "",
+            "../other",
+            "https://example.com",
+            "0.4.1?redirect=evil",
+            "0.4.1/../../",
+        ] {
+            assert!(release_url(Some(value)).is_err());
+        }
+    }
 }

@@ -43,7 +43,10 @@ export interface Bootstrap {
   privacy: string;
   setup: { stage: number; complete: boolean };
   autostart: boolean;
-  credentials: Record<string, string>;
+  credentials: Record<
+    string,
+    string | { description: string; storage: string }
+  >;
 }
 export interface Device {
   label: string;
@@ -74,8 +77,11 @@ interface Methods {
   "credentials.store": [{ name: string; value: string }, string];
   "credentials.delete": [{ name: string }, Ack];
   "microphone.test": [Record<string, never>, Ack];
-  practice: [{ consent: boolean }, { text: string; refined: boolean }];
-  "sample.cancel": [Record<string, never>, Ack];
+  practice: [
+    { consent: boolean; interactive?: boolean; insert?: boolean },
+    { text: string; refined: boolean; inserted?: boolean },
+  ];
+  "sample.cancel": [{ finish?: boolean }, Ack];
   "setup.validate": [
     { consent: boolean; keys?: Record<string, string> },
     { storage: Record<string, string> },
@@ -84,6 +90,10 @@ interface Methods {
   "setup.finish": [Record<string, never>, Ack];
   launcher: [{ autostart?: boolean; enabled?: boolean }, string];
   "updates.check": [Record<string, never>, { version: string } | null];
+  "updates.testing": [
+    Record<string, never>,
+    { version: string; installed: boolean } | null,
+  ];
   "updates.stage": [Record<string, never>, string];
   "updates.apply": [Record<string, never>, boolean];
   "updates.discard": [Record<string, never>, Ack];

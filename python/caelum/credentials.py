@@ -122,15 +122,20 @@ def describe(name):
         record = _read().get(name, {})
         storage = record.get("storage")
         if storage == "keyring":
-            return "key saved in desktop keyring"
-        if storage == "file":
-            return "key saved in private file (not encrypted)"
-        if storage == "deleted":
-            return "key missing; open setup to add a key"
-        return (
-            "key present in environment"
-            if os.environ.get(name)
-            else "key missing; open setup to add a key"
-        )
+            description = "key saved in desktop keyring"
+        elif storage == "file":
+            description = "key saved in private file (not encrypted)"
+        elif storage == "deleted":
+            description = "key missing; open setup to add a key"
+        elif os.environ.get(name):
+            storage = "environment"
+            description = "key present in environment"
+        else:
+            storage = "missing"
+            description = "key missing; open setup to add a key"
+        return {"description": description, "storage": storage}
     except RuntimeError:
-        return "saved key unavailable; check credential file permissions"
+        return {
+            "description": "saved key unavailable; check credential file permissions",
+            "storage": "unavailable",
+        }

@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 candidate = importlib.import_module("release_candidate")
 publisher = importlib.import_module("publish_release")
 signer = importlib.import_module("sign_release")
+preview = importlib.import_module("publish_prerelease")
+resolver = importlib.import_module("resolve_candidate")
 
 
 @pytest.fixture
@@ -38,7 +40,9 @@ def release_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(signer, "ROOT", root)
     value = candidate.version()
     (root / "docs").mkdir()
-    (root / f"docs/release-{value}.md").write_text("# Release\n\nVerified user-visible changes.\n")
+    (root / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## {value}\n\nVerified user-visible changes.\n"
+    )
     (root / "python/caelum").mkdir(parents=True)
     key = tmp_path / "private.pem"
     subprocess.run(["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(key)], check=True)
@@ -126,6 +130,198 @@ class GitHub:
         self.publish_count += 1
 
 
+class PrereleaseGitHub(GitHub):
+    def create(self, tag, sha, notes):
+        super().create(tag, sha, notes)
+        self.info["prerelease"] = True
+        self.tag = tag
+
+    def release(self, tag):
+        return self.info if getattr(self, "tag", None) == tag else None
+
+
+def publish_preview(data, github, channel="testing"):
+    assets, identity, _ = data
+    preview.publish(assets, identity["sha"], identity["run_id"], identity["run_attempt"],
+                    channel, github)
+
+
+@pytest.mark.parametrize("channel,tag", [
+    ("development", "v0.4.2-dev.123.1"), ("testing", "v0.4.2-rc.123"),
+])
+def test_channel_tags_are_distinct_and_prereleases_never_use_stable_metadata(
+    release_candidate, channel, tag,
+):
+    assets, identity, _ = release_candidate
+    github = PrereleaseGitHub()
+    expected_tag = tag.replace("0.4.2", identity["version"])
+    assert preview.tag_for(identity, channel) == expected_tag
+    packages = {path.name: path.read_bytes() for path in assets.iterdir()
+                if path.name in candidate.package_names(identity["version"]).values()}
+    publish_preview(release_candidate, github, channel)
+    assert github.info == {"id": 1, "draft": False, "prerelease": True}
+    assert "SHA256SUMS" in github.assets and "candidate.json" in github.assets
+    assert not {"update.json", "update.json.sig", "update-signatures.json"} & github.assets.keys()
+    assert all(github.assets[name] == value for name, value in packages.items())
+
+
+def test_prerelease_resumes_failed_upload_without_replacing_assets(release_candidate):
+    github = PrereleaseGitHub()
+    github.interrupt = True
+    with pytest.raises(RuntimeError, match="Interrupted"):
+        publish_preview(release_candidate, github)
+    assert github.info["draft"]
+    publish_preview(release_candidate, github)
+    uploads = github.upload_count
+    publish_preview(release_candidate, github)
+    assert github.upload_count == uploads and github.publish_count == 1
+    name = next(iter(github.assets))
+    github.assets[name] = b"changed"
+    with pytest.raises(ValueError, match="incomplete|differs"):
+        publish_preview(release_candidate, github)
+    assert github.assets[name] == b"changed"
+
+
+@pytest.mark.parametrize("state", ["missing", "draft", "stable", "changed"])
+def test_production_requires_the_same_published_testing_candidate(release_candidate, state):
+    github = PrereleaseGitHub()
+    if state != "missing":
+        publish_preview(release_candidate, github)
+        if state == "draft":
+            github.info["draft"] = True
+        elif state == "stable":
+            github.info["prerelease"] = False
+        else:
+            github.assets["candidate.json"] = b"wrong candidate"
+    assets, identity, _ = release_candidate
+    with pytest.raises(ValueError, match="testing|incomplete|differs"):
+        preview.verify_testing(assets, identity["sha"], identity["run_id"],
+                               identity["run_attempt"], github)
+
+
+def test_testing_to_production_signs_the_same_packages_without_rebuilding(release_candidate):
+    testing = PrereleaseGitHub()
+    publish_preview(release_candidate, testing)
+    assets, identity, _ = release_candidate
+    preview.verify_testing(assets, identity["sha"], identity["run_id"],
+                           identity["run_attempt"], testing)
+    production = GitHub()
+    promote(release_candidate, production)
+    for name in candidate.package_names(identity["version"]).values():
+        assert testing.assets[name] == production.assets[name]
+    assert "update.json.sig" in production.assets
+    assert "update.json.sig" not in testing.assets
+
+
+def test_development_release_does_not_satisfy_production_testing_gate(release_candidate):
+    github = PrereleaseGitHub()
+    publish_preview(release_candidate, github, "development")
+    assets, identity, _ = release_candidate
+    with pytest.raises(ValueError, match="testing before production"):
+        preview.verify_testing(assets, identity["sha"], identity["run_id"],
+                               identity["run_attempt"], github)
+
+
+def test_testing_rejects_a_version_already_in_production(release_candidate, monkeypatch):
+    github = PrereleaseGitHub()
+    monkeypatch.setattr(github, "latest_version", lambda: (999, 0, 0))
+    with pytest.raises(ValueError, match="above production"):
+        publish_preview(release_candidate, github)
+    assert github.info is None and not github.assets
+
+
+def test_published_testing_rerun_after_production_remains_an_immutable_noop(
+    release_candidate, monkeypatch,
+):
+    github = PrereleaseGitHub()
+    publish_preview(release_candidate, github)
+    uploads = github.upload_count
+    monkeypatch.setattr(github, "latest_version", lambda: (999, 0, 0))
+    publish_preview(release_candidate, github)
+    assert github.upload_count == uploads and github.publish_count == 1
+
+
+def test_rebuilt_attempt_cannot_reuse_previously_tested_candidate(release_candidate):
+    github = PrereleaseGitHub()
+    publish_preview(release_candidate, github)
+    assets, identity, _ = release_candidate
+    identity["run_attempt"] = "2"
+    for path in assets.glob("build-info-*.json"):
+        info = json.loads(path.read_text())
+        info["run_attempt"] = "2"
+        path.write_text(json.dumps(info))
+    (assets / "candidate.json").unlink()
+    (assets / "SHA256SUMS").unlink()
+    candidate.assemble(assets)
+    with pytest.raises(ValueError, match="incomplete|differs"):
+        preview.verify_testing(assets, identity["sha"], identity["run_id"], "2", github)
+
+
+@pytest.mark.parametrize("field,value", [("run_id", "local"), ("run_attempt", "0")])
+def test_prerelease_requires_real_run_identity(field, value):
+    identity = {"version": "0.4.3", "run_id": "123", "run_attempt": "1", field: value}
+    with pytest.raises(ValueError, match="GitHub candidate run"):
+        preview.tag_for(identity, "development")
+
+
+def test_preview_cannot_leak_signed_production_update_metadata(release_candidate):
+    assets, _, _ = release_candidate
+    (assets / "update.json").write_text("production metadata")
+    with pytest.raises(ValueError, match="production update metadata"):
+        publish_preview(release_candidate, PrereleaseGitHub())
+
+
+def test_prerelease_commands_cannot_replace_the_production_latest(monkeypatch, tmp_path):
+    commands = []
+    monkeypatch.setattr(preview.subprocess, "run", lambda command, **_: commands.append(command))
+    github = preview.PrereleaseGitHub()
+    github.create("v0.4.3-rc.123", "a" * 40, tmp_path / "notes")
+    github.publish("v0.4.3-rc.123")
+    assert all("--latest=false" in command and "--prerelease" in command for command in commands)
+    assert all("--clobber" not in command for command in commands)
+
+
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_candidate_resolution_accepts_only_successful_main_builds(event):
+    run = {"workflow_id": 42, "head_repository": {"full_name": "owner/caelum"},
+           "head_branch": "main", "event": event, "status": "completed",
+           "conclusion": "success", "head_sha": "a" * 40, "run_attempt": 1}
+    assert resolver.resolve(run, 42, "owner/caelum", "main") == {"sha": "a" * 40, "attempt": 1}
+
+
+@pytest.mark.parametrize("field,value", [
+    ("workflow_id", 43), ("head_repository", {"full_name": "fork/caelum"}),
+    ("head_branch", "feature"), ("event", "pull_request"),
+    ("status", "in_progress"), ("conclusion", "failure"),
+    ("head_sha", "main"), ("run_attempt", 0), ("run_attempt", True),
+])
+def test_candidate_resolution_rejects_untrusted_or_incomplete_builds(field, value):
+    run = {"workflow_id": 42, "head_repository": {"full_name": "owner/caelum"},
+           "head_branch": "main", "event": "push", "status": "completed",
+           "conclusion": "success", "head_sha": "a" * 40, "run_attempt": 1, field: value}
+    with pytest.raises(ValueError, match="successful candidate"):
+        resolver.resolve(run, 42, "owner/caelum", "main")
+
+
+def test_production_resolution_requires_manual_acceptance(monkeypatch):
+    monkeypatch.setenv("RUN_ID", "123")
+    monkeypatch.setenv("CHANNEL", "production")
+    monkeypatch.setenv("QUALIFIED", "false")
+    with pytest.raises(ValueError, match="manual desktop acceptance"):
+        resolver.main()
+
+
+def test_publication_cannot_use_a_workflow_dispatched_from_an_old_tag(monkeypatch):
+    monkeypatch.setenv("RUN_ID", "123")
+    monkeypatch.setenv("CHANNEL", "development")
+    monkeypatch.setenv("GH_REPO", "owner/caelum")
+    monkeypatch.setenv("GITHUB_REF", "refs/tags/v0.4.0")
+    monkeypatch.setattr(resolver.subprocess, "check_output",
+                        lambda _: json.dumps({"default_branch": "main"}).encode())
+    with pytest.raises(ValueError, match="default branch"):
+        resolver.main()
+
+
 def promote(data, github):
     assets, identity, key = data
     publisher.publish(
@@ -208,3 +404,17 @@ def test_incomplete_remote_asset_keeps_draft_without_replacing_it(release_candid
     with pytest.raises(ValueError, match="incomplete"):
         promote(release_candidate, github)
     assert github.info["draft"] and github.upload_count == 2 and github.publish_count == 0
+
+
+def test_release_notes_selects_only_requested_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher, "ROOT", tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.4.1\n\nNew changes.\n\n### Upgrade\n\nInstructions.\n"
+        "\n## 0.4.0\n\nOlder changes.\n"
+    )
+    notes = publisher.release_notes("0.4.1")
+    assert "New changes." in notes
+    assert "### Upgrade" in notes
+    assert "Older changes." not in notes
+    with pytest.raises(ValueError, match="Reviewed release notes"):
+        publisher.release_notes("0.5.0")

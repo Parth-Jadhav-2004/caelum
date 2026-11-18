@@ -25,7 +25,12 @@ const status = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-  useApp.setState({ page: "home", status, engineError: null });
+  useApp.setState({
+    page: "home",
+    settingsGroup: "General",
+    status,
+    engineError: null,
+  });
   vi.mocked(ipc).mockImplementation((async (method: string) => {
     if (method === "bootstrap")
       return {
@@ -53,11 +58,11 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 it.each<[Page, string]>([
-  ["home", "Dictation"],
-  ["statistics", "Statistics"],
+  ["home", "Hold SUPER + ALT + V to dictate anywhere"],
+  ["statistics", "Insights"],
   ["history", "History"],
   ["settings", "Settings"],
-  ["setup", "Set up your provider"],
+  ["setup", "Manage keys"],
 ])(
   "has no detectable semantic accessibility violations on %s",
   async (page, heading) => {
@@ -69,7 +74,7 @@ it.each<[Page, string]>([
         <App />
       </QueryClientProvider>,
     );
-    await screen.findByRole("heading", { name: "Dictation" });
+    await screen.findByRole("heading", { name: /dictate anywhere/ });
     act(() => useApp.setState({ page }));
     await screen.findByRole("heading", { name: heading });
     const result = await axe.run(document.body, {

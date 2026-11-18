@@ -1,5 +1,28 @@
 # Building and promoting Caelum releases
 
+## Release channels
+
+- **Development:** every successful main-branch candidate publishes
+  `v<version>-dev.<candidate-run-id>.<attempt>` as a GitHub prerelease, never Latest.
+  Use this for early feedback. Website-only pushes and PRs do not publish packages.
+- **Testing:** maintainers select a successful main candidate in `publish.yml`,
+  channel `testing`. It publishes `v<version>-rc.<candidate-run-id>` without
+  rebuilding. These are explicit, manual package-manager installations.
+- **Production:** `publish.yml`, channel `production`, requires the same candidate
+  to exist as a complete published testing release, completed manual acceptance,
+  and approval in the protected `release` environment. It signs metadata and
+  publishes `v<version>` as Latest. Only production enters automatic updates.
+
+Development and testing never receive the production signing key or publish
+stable update metadata. All channels retain immutable packages, source/run/attempt
+provenance, per-package SHA-256 hashes, and resumable draft uploads. Testing
+versions must be higher than the current production version.
+
+Preview package versions are the base version; source SHA and release tag identify
+the exact build. Preview packages currently replace the same native package and
+share its configuration/history paths. They are not side-by-side installations;
+back up user data or use a separate test account/VM before testing upgrades.
+
 ## Checks and candidates
 
 Pull requests and main pushes run `Checks`: Ruff, pytest, privacy scanning,
@@ -10,13 +33,19 @@ Dependabot proposes updates for Actions, npm, Cargo, and uv dependencies.
 Rust caches are separated by target distro, architecture, toolchain and locks.
 PRs and version tags do not build/publish a full release automatically.
 
-`Linux candidate` is a manual workflow. It first runs the checks, then builds
+`Linux candidate` runs on main pushes (except website-only
+changes), or manually through `release.yml`. It first runs the checks, then builds
 Ubuntu 24.04/26.04, Debian 12, Fedora 43, and Arch x86_64 packages in their target
 containers. Each package is installed and checked through the CLI, JSONL IPC,
 an isolated PulseAudio server, and a real WebKit/Xvfb launch. The frontend emits
 an opt-in test marker only after its bootstrap/configuration loaded. A live
 process or screenshot alone is not considered sufficient. Smoke screenshots
 and logs are retained for 14 days, including on failure.
+`Publish development release` starts only after that candidate succeeds. Its
+separate workflow lets a failed publication resume without rebuilding packages
+or changing the candidate's run attempt. The privileged workflow-run handler
+verifies workflow identity, repository, main branch, source SHA and successful
+conclusion before checking out the candidate or granting publication permissions.
 
 The GUI check uses X11/software rendering and, only inside root smoke containers,
 a process-scoped WebKit sandbox override. Normal application launches keep their
@@ -35,10 +64,11 @@ Arch is rolling; its container/native libraries need current rebuild qualificati
 1. Choose a new stable `major.minor.patch` version. Update `pyproject.toml`,
    `package.json`/lockfile, `src-tauri/Cargo.toml`/lockfile, and
    `src-tauri/tauri.conf.json` together. Existing published versions cannot be reused.
-2. Write `docs/release-<version>.md` using [release-template.md](release-template.md).
+2. Add a newest-first `## <version>` entry to [CHANGELOG.md](../CHANGELOG.md) using [release-template.md](release-template.md).
    Lead with actual user-visible changes. Include download/support, upgrade,
    known-limitations, test evidence, and full-changelog links. Remove placeholders.
-3. Merge the release commit to the default branch, then start a candidate:
+3. Merge the release commit to the default branch. Its candidate/development build
+   starts automatically. Inspect it, or start a fresh main candidate manually:
 
    ```sh
    gh workflow run release.yml --ref main
@@ -46,28 +76,37 @@ Arch is rolling; its container/native libraries need current rebuild qualificati
    gh run view <candidate-run-id>
    ```
 
-4. Download and inspect the candidate and its smoke evidence. Complete
+4. Publish the candidate to testing:
+
+   ```sh
+   gh workflow run publish.yml --ref main -f channel=testing \
+     -f candidate_run_id=<candidate-run-id> -f desktop_qualified=false
+   ```
+
+   Install the RC packages and inspect its provenance and smoke evidence. Complete
    [acceptance.md](acceptance.md) on actual supported desktops/providers. Test
    clean installation, upgrade/data preservation, and the signing/update path.
    Record the exact candidate run, SHA, distro/session and outcomes in the release
    environment approval record or a linked qualification issue. If release notes
    or code need changes, commit them and build a new candidate from that commit.
    Do not relabel unchecked platforms qualified.
-5. Promote the successful candidate from the default branch:
+5. Promote the same testing candidate to production from the default branch:
 
    ```sh
-   gh workflow run publish.yml --ref main \
+   gh workflow run publish.yml --ref main -f channel=production \
      -f candidate_run_id=<candidate-run-id> -f desktop_qualified=true
    ```
 
    The checkbox is a maintainer attestation, not an automated hardware test.
    The workflow verifies the run belongs to this repository's candidate workflow,
-   originated on the default branch, and completed successfully. A candidate
+   originated on the default branch as a push/manual build, and completed successfully. A candidate
    older than seven days, from a different run attempt, or with mismatched
    source/locks/checksums is rejected.
-6. The `release` environment holds `CAELUM_UPDATE_SIGNING_KEY` (Ed25519).
+6. The existing `release` environment is production's protected environment and
+   holds `CAELUM_UPDATE_SIGNING_KEY` (Ed25519). The new `development` and `testing`
+   environments allow only main-branch deployments and contain no signing key.
    Promotion checks out the candidate's exact source, downloads its exact bytes,
-   verifies all files, signs the existing update format, and attaches
+   verifies all files against the published RC, signs the existing update format, and attaches
    `SHA256SUMS`, provenance, and update metadata. It does not rebuild packages.
    The private key must match `python/caelum/update-public.pem`.
 7. The publisher creates or reuses a draft, verifies every existing remote asset
@@ -79,29 +118,37 @@ Set required `source` and `native` checks in branch protection, and protect the
 `release` environment with the repository's maintainer review policy. These
 GitHub repository settings are administrative configuration, separate from the
 checked-in workflows. Keep signing access out of candidate and pull-request jobs.
+Restrict all three environments to the main branch. Remove legacy `v*` tag
+deployment permissions from `release`, so an old tag's workflow cannot bypass
+the current testing-to-production gate. Keep the existing reviewers and signing
+secret in `release`; no secret migration is needed.
 
-## Public testing prereleases
+## Reporting preview bugs
 
-When automated candidate checks pass but manual acceptance is incomplete, publish
-only a clearly labeled GitHub prerelease (for example `v0.4.1-rc.1`) at the exact
-candidate SHA. Download `release-candidate`, run `scripts/release_candidate.py verify`
-with its source SHA/run/attempt, and attach those verified packages and provenance
-unchanged, plus `SHA256SUMS`. Use `gh release create --prerelease --latest=false`
-and the reviewed release notes. Do not run stable promotion, attest desktop
-qualification, or attach signed stable updater metadata. Package versions remain
-the candidate version; installing the prerelease is an explicit package-manager
-action. Any later package/code change needs a new candidate and prerelease tag.
+Use the GitHub bug-report form and choose Development, Testing, or Production.
+Include the full release tag, package filename, source SHA, distro/session and
+reproduction steps. The same package version may have multiple development builds;
+the base version alone cannot identify a regression. Never attach keys, audio,
+transcripts or unredacted provider responses. Fixes need a new commit/candidate;
+never replace an existing release asset with repaired bytes.
 
 ## Interrupted releases and recovery
 
-Rerun `Promote Linux candidate` with the same successful run ID. Signing uses the
+Rerun `Promote to testing or production` with the same channel and successful run ID. Signing uses the
 candidate creation time, so update metadata and signatures are deterministic.
 Identical uploaded assets are preserved; no upload uses `--clobber`.
+For a failed development publication, rerun `Publish development release`, or
+dispatch `development.yml` with the original `candidate_run_id`. Do not rebuild a
+successful candidate merely to retry an upload.
 If GitHub leaves a draft asset in an incomplete upload state, inspect it and
 remove only that failed draft upload before retrying. Never delete/replace a
 published stable asset or force a published tag. Ship a new patch instead.
 When a candidate expires, build a fresh candidate with a new version if a draft
 already contains different bytes; do not mutate the old version's assets.
+Candidates must be promoted within seven days; GitHub artifacts/smoke evidence
+are retained for fourteen days. Rerunning a candidate build changes its attempt
+and can change bytes: use a new workflow run before publishing a new RC rather
+than trying to reuse its old `-rc.<run-id>` tag.
 
 On a failed release after tag creation, the tag still identifies the candidate
 commit; its existence does not imply a published release. The updater follows

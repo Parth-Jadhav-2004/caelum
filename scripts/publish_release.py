@@ -123,12 +123,19 @@ def reconcile(github, tag, directory, expected, release):
     return set(names)
 
 
+def release_notes(version):
+    changelog = ROOT / "CHANGELOG.md"
+    text = changelog.read_text() if changelog.is_file() else ""
+    match = re.search(rf"^## {re.escape(version)}\s*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not match or not match[1].strip():
+        raise ValueError(f"Reviewed release notes are required in CHANGELOG.md for {version}")
+    return f"# Caelum {version}\n\n{match[1].strip()}\n"
+
+
 def publish(directory, sha, run_id, run_attempt, private_key, github=None, legacy_private_key=None):
     manifest = verify(directory, sha, run_id, run_attempt)
     tag = "v" + manifest["version"]
-    notes = ROOT / "docs" / f"release-{manifest['version']}.md"
-    if not notes.is_file() or not notes.read_text().strip():
-        raise ValueError(f"Reviewed release notes are required: {notes.name}")
+    notes = release_notes(manifest["version"])
     # Candidate creation time makes signing deterministic across publisher reruns.
     sign(directory, private_key, now=manifest["created"], legacy_private_key=legacy_private_key)
     checksums = directory / "SHA256SUMS"
@@ -145,7 +152,10 @@ def publish(directory, sha, run_id, run_attempt, private_key, github=None, legac
     github.ensure_tag(tag, sha)
     release = github.release(tag)
     if release is None:
-        github.create(tag, sha, notes)
+        with tempfile.TemporaryDirectory() as work:
+            notes_path = Path(work) / "release-notes.md"
+            notes_path.write_text(notes)
+            github.create(tag, sha, notes_path)
         release = github.release(tag)
     if release is None:
         raise ValueError("Draft creation could not be verified")

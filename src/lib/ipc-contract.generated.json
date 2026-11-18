@@ -194,6 +194,9 @@
                   "sidebar_visible": {
                     "type": "boolean"
                   },
+                  "history_forever": {
+                    "type": "boolean"
+                  },
                   "retention_days": {
                     "type": "number"
                   },
@@ -207,6 +210,7 @@
                   "theme",
                   "color_theme",
                   "sidebar_visible",
+                  "history_forever",
                   "retention_days",
                   "stt_usd_per_hour"
                 ],
@@ -246,7 +250,27 @@
           "credentials": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "description": {
+                      "type": "string"
+                    },
+                    "storage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "storage"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           }
         },
@@ -674,6 +698,9 @@
                   "sidebar_visible": {
                     "type": "boolean"
                   },
+                  "history_forever": {
+                    "type": "boolean"
+                  },
                   "retention_days": {
                     "type": "number"
                   },
@@ -882,6 +909,12 @@
         "properties": {
           "consent": {
             "type": "boolean"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "insert": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -897,6 +930,9 @@
           },
           "refined": {
             "type": "boolean"
+          },
+          "inserted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -909,7 +945,11 @@
     "sample.cancel": {
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "finish": {
+            "type": "boolean"
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
@@ -1032,6 +1072,37 @@
             },
             "required": [
               "version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "updates.testing": {
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "installed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "version",
+              "installed"
             ],
             "additionalProperties": false
           },

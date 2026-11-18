@@ -1,4 +1,11 @@
-import { render, screen, waitFor, within, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
@@ -32,6 +39,7 @@ const config = {
 beforeEach(() => {
   useApp.setState({
     page: "home",
+    settingsGroup: "General",
     engineError: null,
     status: {
       running: true,
@@ -51,6 +59,7 @@ beforeEach(() => {
         autostart: false,
       };
     if (method === "status") return useApp.getState().status;
+    if (method === "updates.testing") return null;
     if (method === "history" || method === "devices") return [];
     if (method === "summary") return { daily: {}, activity: {} };
     return { saved: true };
@@ -68,14 +77,14 @@ function mount() {
 }
 it("starts the service after setup without automatically recording", async () => {
   mount();
-  await screen.findByRole("heading", { name: "Dictation" });
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
   await waitFor(() => expect(ipc).toHaveBeenCalledWith("service.start", {}));
   expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
   expect(document.documentElement.dataset.reducedMotion).toBe("true");
 });
 it("collapses the sidebar and persists the preference", async () => {
   mount();
-  await screen.findByRole("heading", { name: "Dictation" });
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
   await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
   await waitFor(() =>
     expect(ipc).toHaveBeenCalledWith("settings.save", {
@@ -88,6 +97,9 @@ it("collapses the sidebar and persists the preference", async () => {
   expect(
     document.querySelector('[data-state="collapsed"]'),
   ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Caelum home" }),
+  ).toBeInTheDocument();
 });
 it("opens first-run setup without starting the service", async () => {
   vi.mocked(ipc).mockImplementation((async (method: string) =>
@@ -95,62 +107,37 @@ it("opens first-run setup without starting the service", async () => {
       ? { config, setup: { complete: false }, credentials: {}, privacy: "" }
       : []) as typeof ipc);
   mount();
-  await screen.findByText("Set up your provider");
+  await screen.findByText("Welcome to Caelum");
   expect(ipc).not.toHaveBeenCalledWith("service.start", {});
 });
-it("changes and saves the palette independently, then restores it on reload", async () => {
-  const view = mount();
-  await screen.findByRole("heading", { name: "Dictation" });
-  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-  const themes = await screen.findByRole("region", { name: "Theme" });
-  expect(
-    within(themes).getByRole("combobox", { name: "Appearance" }),
-  ).toBeInTheDocument();
-  await userEvent.click(
-    within(themes).getByRole("combobox", { name: "Color theme" }),
-  );
-  expect(screen.getAllByRole("option")).toHaveLength(7);
-  await userEvent.click(screen.getByRole("option", { name: "Ocean" }));
-  await waitFor(() =>
-    expect(document.documentElement.dataset.colorTheme).toBe("ocean"),
-  );
-  const saved = {
-    ...config,
-    desktop: { ...config.desktop, color_theme: "ocean" },
-  };
-  await waitFor(() =>
-    expect(ipc).toHaveBeenCalledWith("settings.save", { config: saved }),
-  );
-  expect(document.documentElement).toHaveClass("dark");
-  view.unmount();
-  vi.mocked(ipc).mockImplementation((async (method: string) => {
-    if (method === "bootstrap")
-      return {
-        config: saved,
-        setup: { complete: true },
-        credentials: {},
-        autostart: false,
-      };
-    if (method === "status") return useApp.getState().status;
-    if (method === "history" || method === "devices") return [];
-    if (method === "summary") return { daily: {}, activity: {} };
-    return { saved: true };
-  }) as typeof ipc);
+it("saves appearance while keeping the Caelum identity", async () => {
   mount();
-  await screen.findByRole("combobox", { name: "Color theme" });
-  expect(document.documentElement.dataset.colorTheme).toBe("ocean");
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Appearance" }),
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Appearance" }));
+  await userEvent.click(screen.getByRole("option", { name: "Light" }));
+  await waitFor(() =>
+    expect(ipc).toHaveBeenCalledWith("settings.save", {
+      config: { ...config, desktop: { ...config.desktop, theme: "light" } },
+    }),
+  );
+  expect(document.documentElement).not.toHaveClass("dark");
+  expect(document.documentElement.dataset.colorTheme).toBe("caelum");
 });
 
 it("shows engine failure and requires confirmation before restarting without replay", async () => {
   mount();
-  await screen.findByRole("heading", { name: "Dictation" });
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
   act(() =>
     useApp.setState({
       status: null,
       engineError: "Python engine disconnected.",
     }),
   );
-  expect(screen.getByRole("alert")).toHaveTextContent("Engine unavailable");
+  expect(screen.getByRole("alert")).toHaveTextContent("Caelum stopped.");
   expect(invoke).not.toHaveBeenCalledWith("restart_app", { discard: true });
   await userEvent.click(screen.getByRole("button", { name: "Restart Caelum" }));
   const dialog = await screen.findByRole("alertdialog");
@@ -170,12 +157,13 @@ it("can recover after a failed settings save without replaying the save on resta
       ? Promise.reject(new Error("Engine disconnected"))
       : implementation(method as never, params as never)) as typeof ipc);
   mount();
-  await screen.findByRole("heading", { name: "Dictation" });
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
   await userEvent.click(screen.getByRole("button", { name: "Settings" }));
   await userEvent.click(
-    await screen.findByRole("combobox", { name: "Color theme" }),
+    await screen.findByRole("button", { name: "Appearance" }),
   );
-  await userEvent.click(screen.getByRole("option", { name: "Ocean" }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Appearance" }));
+  await userEvent.click(screen.getByRole("option", { name: "Light" }));
   await waitFor(() =>
     expect(ipc).toHaveBeenCalledWith("settings.save", expect.anything()),
   );
@@ -208,19 +196,227 @@ it("shows stable update results beside the update controls and links to releases
         ? Promise.resolve(false)
         : implementation(method as never, params as never)) as typeof ipc);
   mount();
-  await screen.findByRole("heading", { name: "Dictation" });
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
   await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(await screen.findByRole("button", { name: "System" }));
   await userEvent.click(
     await screen.findByRole("button", { name: "Check updates" }),
   );
-  const result = await screen.findByText(
-    "No newer stable release is available. Prereleases are installed manually.",
-  );
+  const result = await screen.findByText("No newer stable release.", {
+    selector: "p[role=status]",
+  });
   expect(result).toHaveAttribute("role", "status");
-  expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  expect(screen.getByRole("button", { name: "System" })).toHaveAttribute(
+    "aria-current",
+    "page",
   );
   await userEvent.click(screen.getByRole("button", { name: "View releases" }));
   expect(invoke).toHaveBeenCalledWith("open_releases");
+});
+
+it("closes returning-user key management back to Transcription without changing startup", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
+  await userEvent.click(screen.getByRole("button", { name: "Manage keys" }));
+  await screen.findByRole("heading", { name: "Manage keys" });
+  expect(
+    screen.queryByRole("button", { name: "Get started" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(
+    await screen.findByRole("region", { name: "Transcription" }),
+  ).toBeInTheDocument();
+  expect(useApp.getState().page).toBe("settings");
+  expect(ipc).not.toHaveBeenCalledWith("launcher", expect.anything());
+  expect(ipc).not.toHaveBeenCalledWith("setup.finish", expect.anything());
+});
+
+it("returns to Transcription after validating a replacement key", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "setup.validate"
+      ? Promise.resolve({ storage: { GROQ_API_KEY: "keyring" } })
+      : original(method as never, params as never)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
+  await userEvent.click(screen.getByRole("button", { name: "Manage keys" }));
+  await userEvent.type(
+    await screen.findByLabelText("API key"),
+    "replacement-key",
+  );
+  await userEvent.click(screen.getByRole("checkbox"));
+  await userEvent.click(screen.getByRole("button", { name: "Save keys" }));
+  expect(
+    await screen.findByRole("region", { name: "Transcription" }),
+  ).toBeInTheDocument();
+  expect(ipc).toHaveBeenCalledWith("setup.validate", {
+    consent: true,
+    keys: { GROQ_API_KEY: "replacement-key" },
+  });
+  for (const method of [
+    "microphone.test",
+    "shortcut.check",
+    "practice",
+    "launcher",
+    "setup.finish",
+  ]) {
+    expect(vi.mocked(ipc).mock.calls.some(([name]) => name === method)).toBe(
+      false,
+    );
+  }
+});
+
+it("names key management in the palette and hides that entry while managing keys", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.keyboard("{Control>}k{/Control}");
+  const entry = await screen.findByRole("option", { name: "Manage keys" });
+  expect(screen.queryByText("Setup & keys")).not.toBeInTheDocument();
+  await userEvent.click(entry);
+  await screen.findByRole("heading", { name: "Manage keys" });
+  await userEvent.keyboard("{Control>}k{/Control}");
+  expect(
+    screen.queryByRole("option", { name: "Manage keys" }),
+  ).not.toBeInTheDocument();
+});
+
+it("opens key storage review directly in returning-user key management", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "bootstrap"
+      ? Promise.resolve({
+          config,
+          setup: { complete: true },
+          autostart: false,
+          credentials: {
+            GROQ_API_KEY: { description: "Saved", storage: "file" },
+          },
+        })
+      : original(method as never, params as never)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Review key storage" }),
+  );
+  expect(
+    await screen.findByRole("heading", { name: "Manage keys" }),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(
+    await screen.findByRole("region", { name: "Transcription" }),
+  ).toBeInTheDocument();
+  expect(ipc).not.toHaveBeenCalledWith("launcher", expect.anything());
+});
+
+it("omits key management from the palette until onboarding is complete", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "bootstrap"
+      ? Promise.resolve({
+          config,
+          setup: { complete: false },
+          credentials: {},
+          autostart: false,
+          privacy: "",
+        })
+      : original(method as never, params as never)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: "Welcome to Caelum" });
+  await userEvent.keyboard("{Control>}k{/Control}");
+  expect(
+    screen.queryByRole("option", { name: "Manage keys" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("option", { name: "Setup & keys" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("option", { name: "Home" }));
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.keyboard("{Control>}k{/Control}");
+  expect(
+    screen.queryByRole("option", { name: "Manage keys" }),
+  ).not.toBeInTheDocument();
+  expect(ipc).not.toHaveBeenCalledWith("service.start", {});
+});
+
+it("names the sidebar toggle and supports Ctrl+B without repeating on key hold", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  const trigger = screen.getByRole("button", { name: "Toggle Sidebar" });
+  expect(trigger).toHaveAttribute("aria-label", "Toggle Sidebar");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(trigger).toHaveAttribute("aria-controls", "main-navigation");
+  await userEvent.keyboard("{Control>}b{/Control}");
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true, repeat: true });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  const history = within(
+    screen.getByRole("navigation", { name: "Main navigation" }),
+  ).getByRole("button", { name: "History" });
+  expect(history).toHaveAttribute("aria-label", "History");
+  await userEvent.hover(history);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("History");
+  await userEvent.unhover(history);
+  await userEvent.click(trigger);
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
+it("restores the collapsed sidebar from backend settings", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "bootstrap"
+      ? Promise.resolve({
+          config: {
+            ...config,
+            desktop: { ...config.desktop, sidebar_visible: false },
+          },
+          setup: { complete: true },
+          credentials: {},
+        })
+      : original(method, params)) as typeof ipc);
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  expect(
+    screen.getByRole("button", { name: "Toggle Sidebar" }),
+  ).toHaveAttribute("aria-expanded", "false");
+});
+
+it("moves focus into the destination screen and keeps one recording mode control", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  expect(
+    screen.queryByRole("combobox", { name: "Recording mode" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "History" }));
+  expect(screen.getByRole("heading", { name: "History" })).toHaveFocus();
+  expect(document.getElementById("main-content")).toHaveAttribute(
+    "aria-label",
+    "History",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(
+    screen.getAllByRole("combobox", { name: "Recording mode" }),
+  ).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  expect(screen.getByRole("region", { name: "Appearance" })).toHaveFocus();
+});
+
+it("lets shortcut capture consume Ctrl+B without collapsing the sidebar", async () => {
+  mount();
+  await screen.findByRole("heading", { name: /dictate anywhere/ });
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Recording shortcut" }),
+  );
+  await userEvent.keyboard("{Control>}b{/Control}");
+  expect(
+    screen.getByRole("button", { name: "Recording shortcut" }),
+  ).toHaveTextContent("CTRL + B");
+  expect(
+    screen.getByRole("button", { name: "Toggle Sidebar" }),
+  ).toHaveAttribute("aria-expanded", "true");
 });

@@ -80,3 +80,23 @@ def test_new_settings_roundtrip_and_legacy_style(tmp_path):
     path.write_text('[cleanup]\nreasoning_effort = "high"\n')
     assert load(path).cleanup.style == "thorough"
     assert len({cleanup_prompt(style) for style in ("light", "thorough", "email", "casual", "code")}) == 5
+
+
+async def test_local_timeout_reaps_process_and_closes_audio(tmp_path, monkeypatch):
+    config = local_config(tmp_path, "import time\ntime.sleep(60)\n")
+    config.stt.local_timeout_seconds = 0.2
+    original = asyncio.create_subprocess_exec
+    children, audio_fds = [], []
+    async def spawn(*args, **kwargs):
+        audio_fds.extend(kwargs["pass_fds"])
+        child = await original(*args, **kwargs)
+        children.append(child)
+        return child
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(ProviderError, match="Local transcription timed out"):
+        await transcribe(config.stt, b"\x00\x00" * 100)
+    assert children[0].returncode is not None
+    with pytest.raises(ProcessLookupError):
+        os.kill(children[0].pid, 0)
+    with pytest.raises(OSError):
+        os.fstat(audio_fds[0])

@@ -3,20 +3,24 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQueryClient } from "@tanstack/react-query";
+import { useShallow } from "zustand/react/shallow";
 import { ThemeProvider } from "@/lib/theme";
-import { MotionConfig, motion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import {
-  AudioLines,
   Home,
   Clock3,
   ChartNoAxesColumn,
   Settings as SettingsIcon,
-  Command as CommandIcon,
+  BookOpen,
+  Wand2,
+  Pause,
+  Play,
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
@@ -42,25 +46,25 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
+import { version } from "../package.json";
+import { History } from "@/features/history";
+import { CaelumBrand } from "@/components/brand";
+import { Settings, Dictionary } from "@/features/settings";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Dashboard, Statistics } from "@/features/dashboard";
-const History = lazy(() =>
-  import("@/features/history").then((m) => ({ default: m.History })),
-);
-const Settings = lazy(() =>
-  import("@/features/settings").then((m) => ({ default: m.Settings })),
-);
 const Setup = lazy(() =>
   import("@/features/setup").then((m) => ({ default: m.Setup })),
 );
 const pages = [
   { id: "home", title: "Home", icon: Home },
-  { id: "statistics", title: "Statistics", icon: ChartNoAxesColumn },
   { id: "history", title: "History", icon: Clock3 },
+  { id: "dictionary", title: "Dictionary", icon: BookOpen },
+  { id: "statistics", title: "Insights", icon: ChartNoAxesColumn },
   { id: "settings", title: "Settings", icon: SettingsIcon },
 ] as const;
 function FrontendReady() {
@@ -74,13 +78,27 @@ function FrontendReady() {
   return null;
 }
 export default function App() {
+  const settingsGroup = useApp((s) => s.settingsGroup);
   const page = useApp((s) => s.page),
     navigate = useApp((s) => s.navigate),
-    status = useApp((s) => s.status),
+    status = useApp(
+      useShallow((s) =>
+        s.status
+          ? {
+              title: s.status.title,
+              state: s.status.state,
+              running: s.status.running,
+              paused: s.status.paused,
+              pending_audio: s.status.pending_audio,
+            }
+          : null,
+      ),
+    ),
     engineError = useApp((s) => s.engineError);
   const [quitting, setQuitting] = useState(false),
     [restarting, setRestarting] = useState(false),
     [command, setCommand] = useState(false),
+    [updateAvailable, setUpdateAvailable] = useState(false),
     [config, setConfig] = useState<Config | null>(null),
     [saveState, setSaveState] = useState("Saved automatically");
   const onQuit = useCallback(() => setQuitting(true), []);
@@ -89,6 +107,17 @@ export default function App() {
     initialized = useRef(false),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     chain = useRef(Promise.resolve());
+  const content = useRef<HTMLDivElement>(null);
+  const configured = config !== null;
+  useLayoutEffect(() => {
+    if (!configured) return;
+    content.current?.scrollTo?.({ top: 0, behavior: "instant" });
+    // Setup focuses its own step heading once its lazy module has loaded.
+    if (page !== "setup")
+      content.current
+        ?.querySelector<HTMLElement>("h1")
+        ?.focus({ preventScroll: true });
+  }, [page, configured]);
   useEffect(() => {
     if (!bootstrap.data || initialized.current) return;
     initialized.current = true;
@@ -99,15 +128,22 @@ export default function App() {
       if (bootstrap.data.config.desktop.check_updates)
         void ipc("updates.check", {})
           .then((value) => {
-            if (value)
+            if (value) {
+              setUpdateAvailable(true);
               toast.info(`Caelum ${value.version} is available in Settings.`);
+            }
           })
           .catch(() => {});
     }
   }, [bootstrap.data, navigate]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "k" &&
+        !e.repeat &&
+        !e.defaultPrevented
+      ) {
         e.preventDefault();
         setCommand((v) => !v);
       }
@@ -115,14 +151,6 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-  useEffect(() => {
-    document.documentElement.dataset.reducedMotion = String(
-      config?.app.reduced_motion ?? false,
-    );
-    document.documentElement.dataset.highContrast = String(
-      config?.app.high_contrast ?? false,
-    );
-  }, [config?.app.reduced_motion, config?.app.high_contrast]);
   const commit = useCallback(
     async (next: Config) => {
       if (timer.current) clearTimeout(timer.current);
@@ -153,15 +181,16 @@ export default function App() {
     timer.current = setTimeout(() => {
       timer.current = null;
       void action(() => commit(next));
-    }, 450);
+    }, 200);
   }
   if (bootstrap.isError)
     return (
-      <main className="mx-auto max-w-lg space-y-5 p-10">
-        <h1 className="text-xl font-medium">
-          Caelum couldn’t connect to its engine.
-        </h1>
-        <p>{errorText(bootstrap.error)}</p>
+      <main className="mx-auto max-w-lg space-y-5 p-8">
+        <h1 className="text-xl font-medium">Caelum couldn’t start.</h1>
+        <details>
+          <summary>Details</summary>
+          <p>{errorText(bootstrap.error)}</p>
+        </details>
         <Button
           onClick={() => {
             void bootstrap.refetch();
@@ -181,15 +210,33 @@ export default function App() {
     );
   if (!config)
     return (
-      <main className="space-y-6 p-10">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-80 w-full" />
+      <main aria-label="Loading Caelum" aria-busy="true" className="flex h-svh">
+        <div
+          className="hidden w-60 shrink-0 space-y-6 overflow-hidden border-r bg-sidebar px-4 py-6 md:block [[data-sidebar-collapsed=true]_&]:w-12 [[data-sidebar-collapsed=true]_&]:px-2 [[data-setup-complete=false]_&]:hidden"
+          aria-hidden="true"
+        >
+          <Skeleton className="h-10 w-32" />
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} className="h-9" />
+          ))}
+        </div>
+        <div className="min-w-0 flex-1 pt-12">
+          <div className="mx-auto max-w-5xl space-y-8 p-8">
+            <Skeleton className="h-10 w-64 max-w-full" />
+            <Skeleton className="h-40" />
+            <Skeleton className="h-64" />
+          </div>
+        </div>
       </main>
     );
   return (
     <ThemeProvider
       theme={config.desktop.theme}
       colorTheme={config.desktop.color_theme}
+      reducedMotion={config.app.reduced_motion}
+      highContrast={config.app.high_contrast}
+      sidebarVisible={config.desktop.sidebar_visible}
+      setupComplete={bootstrap.data?.setup.complete ?? false}
     >
       <MotionConfig
         reducedMotion={config.app.reduced_motion ? "always" : "user"}
@@ -210,106 +257,161 @@ export default function App() {
             >
               Skip to content
             </a>
-            <Sidebar
-              collapsible="icon"
-              role="navigation"
-              aria-label="Main navigation"
-            >
-              <SidebarHeader className="px-4 py-7">
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      size="lg"
-                      onClick={() => navigate("home")}
-                    >
-                      <AudioLines className="size-7! text-primary" />
-                      <div>
-                        <p className="text-lg font-semibold tracking-tight">
-                          Caelum
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Voice dictation
-                        </p>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarHeader>
-              <SidebarContent className="px-2">
-                <SidebarMenu>
-                  {pages.map(({ id, title, icon: Icon }) => (
-                    <SidebarMenuItem key={id}>
+            {page !== "setup" && (
+              <Sidebar
+                id="main-navigation"
+                collapsible="icon"
+                role="navigation"
+                aria-label="Main navigation"
+              >
+                <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-2">
+                  <SidebarMenu>
+                    <SidebarMenuItem>
                       <SidebarMenuButton
-                        isActive={
-                          page === id || (id === "settings" && page === "setup")
-                        }
-                        aria-current={
-                          page === id || (id === "settings" && page === "setup")
-                            ? "page"
-                            : undefined
-                        }
-                        tooltip={title}
-                        onClick={() => navigate(id)}
-                        className="h-11"
+                        size="lg"
+                        aria-label="Caelum home"
+                        tooltip="Caelum home"
+                        onClick={() => navigate("home")}
                       >
-                        <Icon />
-                        <span>{title}</span>
+                        <CaelumBrand />
                       </SidebarMenuButton>
                     </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarHeader>
+                <SidebarContent className="px-2">
+                  {[pages.slice(0, 3), pages.slice(3)].map((group, i) => (
+                    <SidebarMenu key={i} className={i ? "mt-6" : ""}>
+                      {group.map(({ id, title, icon: Icon }) => (
+                        <SidebarMenuItem key={id}>
+                          <SidebarMenuButton
+                            isActive={page === id}
+                            aria-current={page === id ? "page" : undefined}
+                            tooltip={title}
+                            onClick={() => navigate(id)}
+                            className="h-9"
+                          >
+                            <Icon />
+                            <span className="group-data-[collapsible=icon]:sr-only">
+                              {title}
+                            </span>
+                            {page === id && (
+                              <span className="ml-auto size-1.5 rounded-full bg-accent-brand group-data-[collapsible=icon]:hidden" />
+                            )}
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                      {i === 0 && (
+                        <SidebarMenuItem>
+                          <SidebarMenuButton
+                            disabled
+                            aria-label="Styles, coming later"
+                            className="h-9"
+                          >
+                            <Wand2 />
+                            <span className="group-data-[collapsible=icon]:sr-only">
+                              Styles{" "}
+                              <span className="text-meta text-muted-foreground">
+                                Coming later
+                              </span>
+                            </span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )}
+                    </SidebarMenu>
                   ))}
-                </SidebarMenu>
-              </SidebarContent>
-              <SidebarFooter className="gap-4 border-t p-4">
-                <p className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                  <span className="size-1.5 rounded-full bg-primary" />
-                  {status?.title ?? "Connecting…"}
-                </p>
-                <div className="space-y-2 group-data-[collapsible=icon]:hidden">
-                  <p className="text-xs text-muted-foreground">
-                    {config.app.recording_mode === "hold"
-                      ? "Hold to talk"
-                      : "Press to toggle"}
-                  </p>
-                  <p className="font-mono text-xs">{config.app.hotkey}</p>
-                </div>
-              </SidebarFooter>
-            </Sidebar>
+                </SidebarContent>
+                <SidebarFooter className="gap-4 p-4 group-data-[collapsible=icon]:p-2">
+                  <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        tooltip={`${status?.title ?? "Connecting…"} · ${status?.paused ? "Resume" : "Pause"} dictation`}
+                        disabled={!status?.running}
+                        onClick={() =>
+                          void action(() =>
+                            ipc("control", {
+                              action: status?.paused ? "resume" : "pause",
+                            }),
+                          )
+                        }
+                      >
+                        {status?.paused ? <Play /> : <Pause />}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                  <div className="space-y-3 rounded-lg border border-sidebar-border bg-sidebar-status p-3 group-data-[collapsible=icon]:hidden">
+                    <p
+                      role="status"
+                      className="flex items-center gap-2 text-body"
+                    >
+                      <span
+                        className={`size-1.5 rounded-full ${status?.state === "error" ? "bg-destructive" : status?.paused || !status?.running || (page === "settings" && settingsGroup === "Appearance") ? "bg-foreground" : "bg-accent-brand"}`}
+                      />
+                      {status?.title ?? "Connecting…"}
+                    </p>
+                    {!["home", "settings"].includes(page) && (
+                      <kbd className="inline-block">{config.app.hotkey}</kbd>
+                    )}
+                    <label className="flex items-center justify-between gap-3 text-body">
+                      Pause
+                      <Switch
+                        aria-label="Pause dictation"
+                        disabled={!status?.running}
+                        checked={status?.paused ?? false}
+                        onCheckedChange={(v) =>
+                          void action(() =>
+                            ipc("control", { action: v ? "pause" : "resume" }),
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between text-meta group-data-[collapsible=icon]:hidden">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void action(() => invoke("open_docs"))}
+                    >
+                      Help
+                    </Button>
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      {updateAvailable && (
+                        <span
+                          className="size-1.5 rounded-full bg-foreground"
+                          role="img"
+                          aria-label="Update available"
+                        />
+                      )}
+                      {version}
+                    </span>
+                  </div>
+                </SidebarFooter>
+              </Sidebar>
+            )}
             <SidebarInset>
-              <header className="flex h-16 shrink-0 items-center justify-between border-b px-5">
-                <div className="flex items-center gap-3">
+              {page !== "setup" && (
+                <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
                   <SidebarTrigger />
-                  <span className="text-xs text-muted-foreground">
-                    {pages.find((p) => p.id === page)?.title ?? "Setup"}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  aria-label="Open command menu"
-                  onClick={() => setCommand(true)}
-                >
-                  <CommandIcon className="size-3.5" />
-                  <span className="hidden sm:inline">Quick navigation</span>
-                  <kbd className="text-xs">Ctrl K</kbd>
-                </Button>
-              </header>
+                </header>
+              )}
               <div
+                ref={content}
                 id="main-content"
                 tabIndex={-1}
-                className="min-w-0 flex-1 overflow-auto"
+                aria-label={
+                  page === "setup"
+                    ? "Setup"
+                    : pages.find((p) => p.id === page)?.title
+                }
+                className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
               >
                 {engineError && (
                   <div
                     role="alert"
-                    className="mx-5 mt-5 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm sm:mx-10"
+                    className="mx-8 mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm"
                   >
-                    <div className="space-y-1">
-                      <p className="font-medium">Engine unavailable</p>
-                      <p>{engineError}</p>
-                      <p className="text-muted-foreground">
-                        Requests are not replayed automatically.
-                      </p>
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-medium">Caelum stopped.</p>
+                      <p className="break-words text-meta">{engineError}</p>
                     </div>
                     <Button
                       variant="outline"
@@ -320,37 +422,34 @@ export default function App() {
                   </div>
                 )}
                 <Suspense fallback={<Skeleton className="m-8 h-80" />}>
-                  <motion.div
+                  <div
                     key={page}
-                    initial={{ opacity: 0.5, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.16 }}
-                    className="mx-auto max-w-5xl px-5 py-8 sm:px-10 sm:py-10"
+                    className="screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
                   >
-                    {page === "home" && (
-                      <Dashboard
-                        config={config}
-                        onMicrophone={(value) =>
-                          change({
-                            ...config,
-                            app: { ...config.app, microphone: value },
-                          })
-                        }
-                      />
-                    )}{" "}
+                    {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}
                     {page === "history" && <History />}
+                    {page === "dictionary" && (
+                      <div className="space-y-8">
+                        <h1 tabIndex={-1} className="text-title font-semibold">
+                          Dictionary
+                        </h1>
+                        <Dictionary config={config} change={change} />
+                      </div>
+                    )}
                     {page === "settings" && (
                       <Settings
+                        initialGroup={settingsGroup}
                         config={config}
                         change={change}
                         saveState={saveState}
+                        commit={commit}
                       />
                     )}{" "}
                     {page === "setup" && (
                       <Setup config={config} commit={commit} />
                     )}
-                  </motion.div>
+                  </div>
                   <FrontendReady />
                 </Suspense>
               </div>
@@ -363,7 +462,15 @@ export default function App() {
               <CommandGroup heading="Navigation">
                 {[
                   ...pages,
-                  { id: "setup", title: "Setup & keys", icon: SettingsIcon },
+                  ...(bootstrap.data?.setup.complete && page !== "setup"
+                    ? [
+                        {
+                          id: "setup",
+                          title: "Manage keys",
+                          icon: SettingsIcon,
+                        },
+                      ]
+                    : []),
                 ].map(({ id, title, icon: Icon }) => (
                   <CommandItem
                     key={id}
@@ -420,7 +527,7 @@ export default function App() {
               await invoke("restart_app", { discard: true });
             }}
           />
-          <Toaster richColors closeButton />
+          <Toaster closeButton />
         </TooltipProvider>
       </MotionConfig>
     </ThemeProvider>

@@ -1,9 +1,13 @@
 name: Linux candidate
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'website/**'
   workflow_dispatch:
 permissions:
   contents: read
-# Main/PR pushes run fast checks only. Packaging is an explicit candidate build.
+# Successful main candidates trigger development.yml; PRs never publish.
 concurrency:
   group: candidate-${{ github.sha }}
   cancel-in-progress: false

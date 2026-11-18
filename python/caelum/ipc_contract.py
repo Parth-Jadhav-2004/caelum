@@ -88,7 +88,12 @@ method(
             "privacy": STRING,
             "setup": obj({"stage": NUMBER, "complete": BOOL}),
             "autostart": BOOL,
-            "credentials": STRINGS,
+            "credentials": {
+                "type": "object",
+                "additionalProperties": union(
+                    STRING, obj({"description": STRING, "storage": STRING})
+                ),
+            },
         }
     ),
 )
@@ -151,8 +156,10 @@ method("providers.check", result=STRING)
 method("credentials.store", obj({"name": STRING, "value": STRING}), STRING)
 method("credentials.delete", obj({"name": STRING}))
 method("microphone.test")
-method("practice", obj({"consent": BOOL}), obj({"text": STRING, "refined": BOOL}))
-method("sample.cancel")
+method("practice", obj({"consent": BOOL, "interactive": BOOL, "insert": BOOL},
+                       optional=("interactive", "insert")),
+       obj({"text": STRING, "refined": BOOL, "inserted": BOOL}, optional=("inserted",)))
+method("sample.cancel", obj({"finish": BOOL}, optional=("finish",)))
 method(
     "setup.validate",
     obj({"consent": BOOL, "keys": STRINGS}, optional=("keys",)),
@@ -164,6 +171,7 @@ method(
     "launcher", obj({"autostart": BOOL, "enabled": BOOL}, optional=("autostart", "enabled")), STRING
 )
 method("updates.check", result=union(obj({"version": STRING}), NULL))
+method("updates.testing", result=union(obj({"version": STRING, "installed": BOOL}), NULL))
 method("updates.stage", result=STRING)
 method("updates.apply", result=BOOL)
 method("updates.discard")

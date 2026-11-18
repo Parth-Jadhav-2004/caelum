@@ -149,6 +149,52 @@ async def test_supervised_process_terminates_after_grace_deadline(backend, monke
     assert backend.process is None
 
 
+@pytest.mark.parametrize("discard", [False, True])
+async def test_shutdown_and_eof_do_not_repeat_daemon_teardown(backend, monkeypatch, discard):
+    calls = []
+
+    def request(action):
+        calls.append(action)
+        return {"running": True, "state": "hidden"}
+
+    monkeypatch.setattr("caelum.sidecar.request", request)
+    await backend.dispatch("shutdown", {"discard": discard})
+    await backend.dispatch("shutdown", {"discard": True})
+    await backend.stop()  # sidecar's EOF cleanup
+    assert calls == (["shutdown"] if discard else ["status", "prepare-update"])
+
+
+async def test_slow_update_check_does_not_block_shutdown(tmp_path):
+    # Exercise the real JSONL scheduler, rather than calling dispatch serially.
+    code = (
+        "import time; from caelum import updates; "
+        "updates.check = lambda: time.sleep(2); "
+        "from caelum.sidecar import main; main()"
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", code,
+        env={**os.environ, "XDG_RUNTIME_DIR": str(tmp_path),
+             "CAELUM_CONFIG": str(tmp_path / "settings.toml")},
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        for identifier, method in enumerate(("updates.check", "shutdown"), 1):
+            process.stdin.write(json.dumps({"v": 1, "id": identifier, "method": method}).encode() + b"\n")
+        await process.stdin.drain()
+
+        async def first_reply():
+            while line := await process.stdout.readline():
+                frame = json.loads(line)
+                if "id" in frame:
+                    return frame
+
+        reply = await asyncio.wait_for(first_reply(), 1)
+        assert reply == {"v": 1, "id": 2, "result": {"ok": True}}
+    finally:
+        await asyncio.wait_for(process.communicate(), 5)
+
+
 async def test_configuration_contract_matches_python_dataclasses():
     import importlib.util
     from pathlib import Path
@@ -347,3 +393,50 @@ async def test_live_partial_settings_patch_preserves_existing_hidden_values(tmp_
     assert reply["result"] == {"saved": True}
     assert load(path).desktop.color_theme == "ocean"
     assert load(path).stt.vocabulary == config.stt.vocabulary
+
+
+async def test_bootstrap_exposes_credential_storage(backend, monkeypatch, tmp_path):
+    from caelum import credentials
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(credentials, "_secret", lambda *args: None)
+    credentials.store("GROQ_API_KEY", "private-test-key")
+    result = await backend.dispatch("bootstrap", {})
+    assert result["credentials"]["GROQ_API_KEY"] == {
+        "description": "key saved in private file (not encrypted)",
+        "storage": "file",
+    }
+    assert "private-test-key" not in json.dumps(result)
+
+
+async def test_interactive_practice_uses_release_signal_and_existing_insertion(backend, monkeypatch):
+    from caelum.linux import Target
+
+    target = Target("0x123", 42, 0, "monitor")
+    monkeypatch.setattr("caelum.sidecar.os.getppid", lambda: 42)
+    monkeypatch.setattr(backend, "idle", AsyncMock())
+    monkeypatch.setattr("caelum.portable.backend_name", lambda _: "hyprland")
+    monkeypatch.setattr("caelum.linux.target_at_press", AsyncMock(return_value=target))
+    inserted = AsyncMock(return_value=True)
+    monkeypatch.setattr("caelum.linux.insert", inserted)
+    monkeypatch.setattr("caelum.sidecar.practice", AsyncMock(return_value=("Real words", True)))
+    started = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def capture(config, seconds, cancelled, level, finished):
+        loop.call_soon_threadsafe(started.set)
+        assert seconds == 15
+        assert finished.wait(1)
+        assert not cancelled.is_set()
+        return b"test-pcm"
+
+    monkeypatch.setattr("caelum.sidecar.record_sample", capture)
+    task = asyncio.create_task(backend.dispatch("practice", {
+        "consent": True, "interactive": True, "insert": True,
+    }))
+    await started.wait()
+    await backend.dispatch("sample.cancel", {"finish": True})
+    result = await task
+    assert result == {"text": "Real words", "refined": True, "inserted": True}
+    inserted.assert_awaited_once_with("Real words", target)
+    assert "practice" in backend.setup_checks

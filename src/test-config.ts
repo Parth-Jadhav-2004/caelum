@@ -44,6 +44,7 @@ export const testConfig: Config = {
     color_theme: "t3-code",
     sidebar_visible: true,
     retention_days: 30,
+    history_forever: false,
     stt_usd_per_hour: 0.0,
   },
 };
