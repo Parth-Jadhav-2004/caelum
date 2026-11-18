@@ -17,9 +17,10 @@ def normalize(text):
     ).strip()
 
 
-def validate_cleanup(raw, result):
-    raw, result = normalize(raw), normalize(result)
-    if not result or "\x00" in result:
+def validate_cleanup(raw, result, *, preserve_whitespace=False):
+    if not preserve_whitespace:
+        raw, result = normalize(raw), normalize(result)
+    if not result.strip() or "\x00" in result:
         return raw, False
     a, b = re.findall(r"\w+", raw.casefold()), re.findall(r"\w+", result.casefold())
     if not a or not 0.65 <= len(b) / len(a) <= 1.35:
