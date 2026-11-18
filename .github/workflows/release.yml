@@ -27,7 +27,7 @@ jobs:
           - {target: ubuntu-24.04, image: 'ubuntu:24.04'}
           - {target: ubuntu-26.04, image: 'ubuntu:26.04'}
           - {target: debian-12, image: 'debian:12'}
-          - {target: arch, image: 'archlinux:latest'}
+          - {target: arch, image: 'archlinux:latest@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899'}
           - {target: fedora-43, image: 'fedora:43'}
     steps:
       - name: Install build and native smoke dependencies
