@@ -94,11 +94,12 @@ describe("recording controls", () => {
       [...container.querySelectorAll("span")].map((e) => e.style.height),
     ).toEqual(["4px", "27px", "50px"]);
   });
-  it("preserves a disconnected microphone preference", () => {
+  it("only marks a configured microphone missing after discovery finishes", async () => {
     mount(<DeviceSelect value="missing" onChange={vi.fn()} />);
-    expect(
-      screen.getByRole("combobox", { name: "Microphone" }),
-    ).toHaveTextContent("configured, not detected");
+    const trigger = screen.getByRole("combobox", { name: "Microphone" });
+    expect(trigger).not.toHaveTextContent("not detected");
+    await screen.findByText("missing (configured, not detected)", { selector: "[data-slot=select-value]" });
+    expect(trigger).toHaveTextContent("configured, not detected");
   });
 });
 it("captures modified shortcuts and permits Escape cancellation", async () => {
