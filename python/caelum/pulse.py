@@ -64,7 +64,19 @@ def resolve(selection):
     if selection is None:
         if not devices:
             raise RuntimeError("No microphones detected; connect an input device and retry")
-        return {"name": None}
+        # parec's implicit default can be a playback monitor or a previously
+        # restored per-application route. Open only a verified capture input.
+        try:
+            default = subprocess.run(
+                ["pactl", "get-default-source"], capture_output=True,
+                text=True, check=True, timeout=2,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError("Cannot read the default microphone; choose an input in Settings") from exc
+        for device in devices:
+            if device["name"] == default:
+                return device
+        raise RuntimeError("System default is not an available microphone; choose an input in Settings")
     name = selection.removeprefix("pulse:")
     matches = [device for device in devices if device["name"] == name]
     if not matches and not named:
