@@ -1,13 +1,19 @@
-name: Promote Linux candidate
+name: Promote to testing or production
 on:
   workflow_dispatch:
     inputs:
+      channel:
+        description: Publish a testing prerelease or promote tested packages to production
+        required: true
+        type: choice
+        options: [testing, production]
+        default: testing
       candidate_run_id:
         description: Successful Linux candidate workflow run ID (from main)
         required: true
         type: string
       desktop_qualified:
-        description: Manual docs/acceptance.md checks completed for this candidate
+        description: Required for production — manual docs/acceptance.md checks completed
         required: true
         type: boolean
         default: false
@@ -15,7 +21,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: stable-publication
+  group: publication-${{ inputs.channel }}
   cancel-in-progress: false
 jobs:
   resolve:
@@ -26,6 +32,9 @@ jobs:
       attempt: ${{ steps.candidate.outputs.attempt }}
       run_id: ${{ steps.candidate.outputs.run_id }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Verify the successful candidate's origin
         id: candidate
         env:
@@ -33,27 +42,39 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN_ID: ${{ inputs.candidate_run_id }}
           QUALIFIED: ${{ inputs.desktop_qualified }}
-        run: |
-          python3 - <<'PY'
-          import json, os, re, subprocess
-          run_id = os.environ['RUN_ID']
-          if not re.fullmatch(r'[0-9]+', run_id) or os.environ['QUALIFIED'] != 'true':
-              raise SystemExit('A numeric candidate run ID and completed manual acceptance are required')
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path]))
-          repository = os.environ['GH_REPO']
-          run = api(f'repos/{repository}/actions/runs/{run_id}')
-          workflow = api(f'repos/{repository}/actions/workflows/release.yml')
-          default = api(f'repos/{repository}')['default_branch']
-          if (run['workflow_id'] != workflow['id'] or run['head_repository']['full_name'] != repository
-              or run['head_branch'] != default or run['event'] != 'workflow_dispatch'
-              or run['status'] != 'completed' or run['conclusion'] != 'success'
-              or not re.fullmatch(r'[a-f0-9]{40}', run['head_sha'])):
-              raise SystemExit('Select a completed successful candidate built from the default branch')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f"sha={run['head_sha']}\nattempt={run['run_attempt']}\nrun_id={run_id}\n")
-          PY
+          CHANNEL: ${{ inputs.channel }}
+        run: python3 scripts/resolve_candidate.py
+  testing:
+    name: Publish testing prerelease
+    if: inputs.channel == 'testing'
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: testing
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate
+          path: release-assets
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.resolve.outputs.run_id }}
+      - name: Publish the exact verified candidate as a testing prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.resolve.outputs.sha }}
+          CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
+          CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
+        run: python3 scripts/publish_prerelease.py testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT"
   publish:
+    name: Publish signed production release
+    if: inputs.channel == 'production'
     needs: resolve
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -62,16 +83,23 @@ jobs:
       contents: write
       actions: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-candidate
           path: release-assets
           github-token: ${{ github.token }}
           run-id: ${{ needs.resolve.outputs.run_id }}
+      - name: Require identical packages already published to testing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.resolve.outputs.sha }}
+          CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
+          CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
+        run: python3 scripts/publish_prerelease.py verify-testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT"
       - name: Verify candidate, sign metadata, and resume or publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}

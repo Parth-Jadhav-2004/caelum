@@ -4,6 +4,7 @@ import json
 import math
 import os
 import sys
+import threading
 import time
 from collections import deque
 
@@ -23,22 +24,58 @@ STATES = {
 }
 LABELS = {
     "starting": "Starting…",
-    "processing": "Processing…",
-    "refining": "Refining…",
-    "success": "Done",
-    "unrefined": "Done · unrefined",
-    "error": "Retry or cancel",
+    "processing": "Transcribing",
+    "refining": "Transcribing",
+    "success": "Inserted",
+    "unrefined": "Inserted",
+    "error": "Try again",
     "no_speech": "No speech",
-    "copied": "Copied · paste manually",
+    "copied": "Copied: paste with Ctrl V",
     "cancelled": "Cancelled",
 }
 ERRORS = {
     "microphone": "Microphone unavailable",
     "network": "Connection lost",
-    "insert": "Could not insert",
+    "insert": "Insert failed",
     "capture": "Capture interrupted",
     "hud": "Feedback unavailable",
 }
+
+
+def presentation(kind):
+    """Pure state layout shared by the renderer and transition handling."""
+    if kind not in STATES:
+        raise ValueError("Unknown pill state")
+    capture = kind in ("listening", "recording")
+    return {
+        "visible": kind != "hidden",
+        "capture": capture,
+        "width": 140 if capture else 320 if kind == "error" else 264 if kind == "copied" else 184,
+        "dwell": {"success": 0.6, "unrefined": 0.6, "error": 5,
+                  "no_speech": 0.8, "copied": 2, "cancelled": 0.0}.get(kind),
+        "actions": ("cancel", "stop") if capture else ("retry", "cancel") if kind == "error" else (),
+    }
+
+
+class PillFade:
+    """An interruptible fade; repeated status messages never restart it."""
+
+    def __init__(self, reduced_motion=False):
+        self.duration = 0 if reduced_motion else 0.16
+        self.started = 0.0
+        self.initial = 0.0
+        self.target = 0.0
+
+    def opacity(self, now):
+        progress = min(1.0, max(0.0, (now - self.started) / self.duration)) if self.duration else 1.0
+        return self.initial + (self.target - self.initial) * progress
+
+    def move(self, visible, now):
+        target = float(visible)
+        if target != self.target:
+            self.initial = self.opacity(now)
+            self.started = now
+            self.target = target
 
 
 def run(reduced_motion=False, high_contrast=False):
@@ -63,7 +100,7 @@ def run(reduced_motion=False, high_contrast=False):
     win = Gtk.Window()
     win.set_decorated(False)
     win.set_resizable(False)
-    win.set_default_size(280, 96)
+    win.set_default_size(336, 52)
     win.set_focusable(False)
     Layer.init_for_window(win)
     Layer.set_namespace(win, "caelum-recording-pill")
@@ -71,16 +108,55 @@ def run(reduced_motion=False, high_contrast=False):
     Layer.set_keyboard_mode(win, Layer.KeyboardMode.NONE)
     Layer.set_exclusive_zone(win, 0)
     Layer.set_anchor(win, Layer.Edge.BOTTOM, True)
-    Layer.set_margin(win, Layer.Edge.BOTTOM, 8)  # 16 px gutter + 8 = 24 body clearance
+    Layer.set_margin(win, Layer.Edge.BOTTOM, 16)  # capsule starts 8px inside: 24px clearance
     css = Gtk.CssProvider()
     css.load_from_data(b"window { background: transparent; box-shadow: none; }")
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, 800)
     area = Gtk.DrawingArea()
-    area.set_content_width(280)
-    area.set_content_height(96)
+    area.set_content_width(336)
+    area.set_content_height(52)
     area.set_focusable(False)
-    win.set_child(area)
+    overlay = Gtk.Overlay()
+    overlay.set_child(area)
+    controls = Gtk.Box(spacing=64)
+    controls.set_halign(Gtk.Align.CENTER)
+    controls.set_valign(Gtk.Align.CENTER)
+
+    def command(action):
+        def send():
+            from .cli import control
+            try:
+                control(action)
+            except (OSError, RuntimeError, ValueError):
+                pass  # authoritative service status reports failures
+        threading.Thread(target=send, daemon=True).start()
+
+    for label, name, action in (("×", "Cancel recording", "cancel"), ("✓", "Finish recording", "stop")):
+        button = Gtk.Button(label=label)
+        button.set_tooltip_text(name)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [name])
+        button.set_size_request(32, 32)
+        button.set_focusable(False)
+        button.connect("clicked", lambda _, a=action: command(a))
+        controls.append(button)
+    overlay.add_overlay(controls)
+    error_controls = Gtk.Box(spacing=4)
+    error_controls.set_size_request(300, 32)
+    error_controls.set_halign(Gtk.Align.CENTER)
+    error_controls.set_valign(Gtk.Align.CENTER)
+    spacer = Gtk.Box()
+    spacer.set_hexpand(True)
+    error_controls.append(spacer)
+    for label, name, action in (("Retry", "Retry dictation", "retry"), ("Esc", "Cancel dictation", "cancel")):
+        button = Gtk.Button(label=label)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [name])
+        button.set_focusable(False)
+        button.connect("clicked", lambda _, a=action: command(a))
+        error_controls.append(button)
+    overlay.add_overlay(error_controls)
+    win.set_child(overlay)
     win.connect("realize", lambda w: w.get_surface().set_input_region(cairo.Region()))
+    css.load_from_data(b"window { background: transparent; box-shadow: none; } button { background: transparent; color: #ededef; border: none; border-radius: 16px; padding: 0; min-width: 32px; min-height: 32px; box-shadow: none; } button:hover { background: #26262b; }")
     state = {
         "state": "hidden",
         "session_id": "",
@@ -91,9 +167,9 @@ def run(reduced_motion=False, high_contrast=False):
         "error_code": "",
     }
     tick = 0
-    transition = time.monotonic()
+    fade = PillFade(reduced_motion)
+    display_state = dict(state)
     dismiss_at = None
-    dismiss_started = None
     input_buffer = bytearray()
     retired_sessions = deque(maxlen=128)
 
@@ -118,29 +194,22 @@ def run(reduced_motion=False, high_contrast=False):
 
     def draw(widget, cr, width, height):
         now = time.monotonic()
-        elapsed = now - transition
-        alpha = min(1, elapsed / (0.08 if reduced_motion else 0.18))
-        offset = 0 if reduced_motion else 6 * (1 - alpha) ** 3
-        if dismiss_started is not None:
-            progress = min(1, (now - dismiss_started) / (0.08 if reduced_motion else 0.16))
-            alpha *= 1 - progress
-            offset += 0 if reduced_motion else progress * 4
+        alpha = fade.opacity(now)
         cr.push_group()
-        x, y = (width - 232) / 2, 32 + offset
-        for spread in range(12, 0, -2):
-            rounded(cr, x - spread, y + 6 - spread / 2, 232 + 2 * spread, 48 + spread, 24 + spread)
-            cr.set_source_rgba(0, 0, 0, 0.018)
-            cr.fill()
-        rounded(cr, x, y, 232, 48, 24)
-        cr.set_source_rgba(0, 0, 0, 1 if high_contrast else 0.96)
+        kind = display_state["state"]
+        layout = presentation(kind)
+        capture, capsule_width = layout["capture"], layout["width"]
+        x, y = (width - capsule_width) / 2, 8
+        rounded(cr, x, y, capsule_width, 36, 18)
+        cr.set_source_rgb(0.094, 0.094, 0.106)  # #18181b
         cr.fill_preserve()
-        cr.set_source_rgba(0.18, 0.18, 0.18, 1)
+        cr.set_source_rgb(*( (0.6, 0.6, 0.65) if high_contrast else (0.149, 0.149, 0.169)))
         cr.set_line_width(1)
         cr.stroke()
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        kind = state["state"]
+        kind = display_state["state"]
         capture = kind in ("listening", "recording")
-        accent, white, error = (0.847, 0.847, 0.847), (0.906, 0.906, 0.906), (0.953, 0.706, 0.667)
+        accent, white, error = (0.847, 0.847, 0.847), (0.929, 0.929, 0.937), (0.949, 0.333, 0.353)
         cr.set_source_rgb(
             *(
                 accent
@@ -150,39 +219,31 @@ def run(reduced_motion=False, high_contrast=False):
                 else white
             )
         )
-        cx, cy = (x + 24 if capture else x + 39), y + 24
+        cx, cy = (x + 24 if capture else x + 39), y + 18
         cr.set_line_width(1.6)
         if capture:
-            cr.arc(cx, cy, 4, 0, math.tau)
-            cr.fill() if kind == "recording" else cr.stroke()
-            for i in range(17):
-                level = 0 if reduced_motion else state["history"][i]
-                envelope = 0.4 + 0.6 * math.sin(math.pi * (i + 0.5) / 17)
+            for i in range(13):
+                level = 0 if reduced_motion else display_state["history"][i + 2]
+                envelope = 0.4 + 0.6 * math.sin(math.pi * (i + 0.5) / 13)
                 bar = 3 + 21 * level * envelope
-                bx = x + 65 + i * 5.5
-                cr.set_line_width(2.5)
-                cr.move_to(bx, cy - bar / 2 + 1.25)
-                cr.line_to(bx, cy + bar / 2 - 1.25)
+                bx = x + 40 + i * 5
+                cr.set_line_width(2)
+                cr.move_to(bx, cy - bar / 2 + 1)
+                cr.line_to(bx, cy + bar / 2 - 1)
                 cr.stroke()
-            seconds = int(state["elapsed_ms"]) // 1000
-            label = f"{seconds // 60:02}:{seconds % 60:02}"
-            cr.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-            cr.set_font_size(13)
-            cr.move_to(x + 176, cy + 4.5)
-            cr.show_text(label)
         else:
             label = (
-                ERRORS.get(state.get("error_code"), LABELS.get(kind, ""))
+                ERRORS.get(display_state.get("error_code"), LABELS.get(kind, ""))
                 if kind == "error"
                 else LABELS.get(kind, "")
             )
-            cr.select_font_face("Adwaita Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.select_font_face("Inter", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(13)
             label_width = cr.text_extents(label).width
             if label_width > 180:
                 cr.set_font_size(12)
                 label_width = cr.text_extents(label).width
-            cx = x + (232 - (24 + label_width)) / 2 + 7
+            cx = x + 20 if kind == "error" else x + (capsule_width - (24 + label_width)) / 2 + 7
             if kind in ("processing", "starting"):
                 angle = 0 if reduced_motion else (now % 1.2) / 1.2 * math.tau
                 cr.arc(cx, cy, 6, angle, angle + math.pi * 1.45)
@@ -218,21 +279,27 @@ def run(reduced_motion=False, high_contrast=False):
         cr.paint_with_alpha(alpha)
 
     def frame():
-        nonlocal tick, dismiss_started
+        nonlocal tick
         now = time.monotonic()
-        if dismiss_at is not None and now >= dismiss_at and dismiss_started is None:
-            dismiss_started = now
-        if dismiss_started is not None and now - dismiss_started >= (
-            0.08 if reduced_motion else 0.16
-        ):
-            win.set_visible(False)
-            tick = 0
-            return False
+        if dismiss_at is not None and now >= dismiss_at:
+            fade.move(False, now)
+        alpha = fade.opacity(now)
+        controls.set_opacity(alpha)
+        error_controls.set_opacity(alpha)
+        if not fade.target:
+            controls.set_sensitive(False)
+            error_controls.set_sensitive(False)
+            if win.get_realized():
+                win.get_surface().set_input_region(cairo.Region())
+            if alpha <= 0:
+                win.set_visible(False)
+                tick = 0
+                return False
         area.queue_draw()
         return True
 
     def receive(message):
-        nonlocal tick, transition, dismiss_at, dismiss_started
+        nonlocal tick, dismiss_at
         if set(message) - {
             "session_id",
             "sequence",
@@ -283,21 +350,12 @@ def run(reduced_motion=False, high_contrast=False):
         state.update(message)
         if state["state"] == "hidden":
             if win.get_visible():
-                dismiss_started = time.monotonic()
+                fade.move(False, time.monotonic())
             return
         if previous != state["state"] or new_session:
             if new_session or not win.get_visible():
-                transition = time.monotonic()
                 Layer.set_monitor(win, monitor(message.get("output", "")))
-            dismiss_started = None
-            dwell = {
-                "success": 0.65,
-                "unrefined": 0.65,
-                "error": 5,
-                "no_speech": 0.8,
-                "copied": 2,
-                "cancelled": 0.0,
-            }.get(state["state"])
+            dwell = presentation(state["state"])["dwell"]
             dismiss_at = time.monotonic() + dwell if dwell is not None else None
             name = (
                 "Microphone active"
@@ -307,9 +365,22 @@ def run(reduced_motion=False, high_contrast=False):
             area.update_property([Gtk.AccessibleProperty.LABEL], [name])
             if hasattr(area, "announce") and previous not in ("listening", "recording"):
                 area.announce(name, Gtk.AccessibleAnnouncementPriority.MEDIUM)
+        display_state.update(state)
+        if previous != state["state"] or new_session:
+            fade.move(True, time.monotonic())
+        controls.set_sensitive(bool(fade.target))
+        error_controls.set_sensitive(bool(fade.target))
+        controls.set_opacity(fade.opacity(time.monotonic()))
+        error_controls.set_opacity(fade.opacity(time.monotonic()))
+        controls.set_visible(state["state"] in ("listening", "recording"))
+        error_controls.set_visible(state["state"] == "error")
+        kind = state["state"]
+        capsule_width = presentation(kind)["width"]
+        if win.get_realized():
+            win.get_surface().set_input_region(cairo.Region(cairo.RectangleInt((336 - capsule_width) // 2, 8, capsule_width, 36)))
         win.set_visible(True)  # no present(), activation, or keyboard focus
         if not tick:
-            tick = GLib.timeout_add(33, frame)
+            tick = GLib.timeout_add(16, frame)
 
     def stdin_ready(fd, condition):
         if condition & GLib.IO_HUP:

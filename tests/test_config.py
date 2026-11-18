@@ -54,13 +54,13 @@ def test_legacy_appearance_loads_with_default_palette(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text('[desktop]\ntheme="light"\n[app]\nhotkey="CTRL + SUPER"\n')
     config = load(path)
-    assert config.desktop.color_theme == "t3-code"
+    assert config.desktop.color_theme == "caelum"
     assert config.desktop.theme == "light"
     assert config.app.hotkey == "CTRL + SUPER"
 
 
 @pytest.mark.parametrize(
-    "palette", ["t3-code", "t3-chat", "grove", "ocean", "ember", "iris", "caelum"]
+    "palette", ["t3-code", "t3-chat", "grove", "ocean", "ember", "iris", "caelum", "caelum-iris", "caelum-ochre"]
 )
 @pytest.mark.parametrize("appearance", ["system", "dark", "light"])
 def test_palette_roundtrip_preserves_appearance_and_settings(tmp_path, palette, appearance):

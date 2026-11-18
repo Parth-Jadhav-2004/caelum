@@ -36,9 +36,11 @@ class Backend:
         self.emit = emit
         self.cancelled = threading.Event()
         self.sample_lock = asyncio.Lock()
+        self.sample_finished = threading.Event()
         self.mutation_lock = asyncio.Lock()
         self.update = None
         self.setup_checks = set()
+        self.shutdown_complete = False
 
     async def status(self):
         try:
@@ -83,9 +85,12 @@ class Backend:
         await self.stop()
         raise RuntimeError("Service startup timed out; run caelum doctor")
 
-    async def stop(self):
-        with suppress(OSError, RuntimeError):
-            await asyncio.to_thread(request, "shutdown")
+    async def stop(self, *, request_shutdown=True):
+        if self.shutdown_complete:
+            return
+        if request_shutdown:
+            with suppress(OSError, RuntimeError):
+                await asyncio.to_thread(request, "shutdown")
         if self.process and self.process.returncode is None:
             try:
                 await asyncio.wait_for(self.process.wait(), 8)
@@ -104,7 +109,9 @@ class Backend:
         # A shortcut can begin recording after the sidecar's status snapshot.
         with suppress(FileNotFoundError, ConnectionRefusedError):
             await asyncio.to_thread(request, "prepare-update")
-        await self.stop()
+        # prepare-update already stops the daemon. A second command can connect
+        # to its closing socket and wait for the full socket timeout.
+        await self.stop(request_shutdown=False)
 
     async def dispatch(self, method, params):
         config = load(self.path)
@@ -255,6 +262,10 @@ class Backend:
             self.setup_checks.add("shortcut")
             return result
         elif method in {"microphone.test", "practice"}:
+            interactive = method == "practice" and params.get("interactive") is True
+            if self.sample_lock.locked():
+                raise RuntimeError("A microphone test is already running")
+            self.sample_finished.clear()
             await self.idle()
             if self.sample_lock.locked():
                 raise RuntimeError("A microphone test is already running")
@@ -262,22 +273,42 @@ class Backend:
                 self.cancelled.clear()
                 if method == "practice" and params.get("consent") is not True:
                     raise ValueError("Explicit audio upload consent is required")
+                target = None
+                if method == "practice" and params.get("insert") is True:
+                    from .portable import backend_name
+                    if backend_name(config) == "hyprland":
+                        from .linux import target_at_press
+                        target = await target_at_press()
+                        # Setup only inserts into the desktop window that owns this sidecar.
+                        # If focus changed before capture began, return text to the UI instead.
+                        if target.pid != os.getppid():
+                            target = None
                 pcm = await asyncio.to_thread(
                     record_sample,
                     config,
-                    5 if method == "practice" else 3,
+                    15 if interactive else 5 if method == "practice" else 3,
                     self.cancelled,
                     lambda level: self.emit("microphone", {"level": level}),
+                    **({"finished": self.sample_finished} if interactive else {}),
                 )
                 if not pcm:
                     raise RuntimeError("No speech detected. Try again")
                 if method == "practice":
                     text, refined = await practice(config, pcm, self.cancelled)
                     self.setup_checks.add("practice")
-                    return {"text": text, "refined": refined}
+                    result = {"text": text, "refined": refined}
+                    if self.cancelled.is_set():
+                        raise RuntimeError("Practice cancelled; sample discarded")
+                    if params.get("insert") is True:
+                        from .linux import insert
+                        result["inserted"] = await insert(text, target) if target else False
+                    return result
                 self.setup_checks.add("microphone")
         elif method == "sample.cancel":
-            self.cancelled.set()
+            if params.get("finish") is True:
+                self.sample_finished.set()
+            else:
+                self.cancelled.set()
         elif method == "setup.finish":
             if self.setup_checks != {"provider", "microphone", "shortcut", "practice"}:
                 raise ValueError("Validate providers, microphone, shortcut, and practice first")
@@ -296,6 +327,10 @@ class Backend:
 
             self.update = await asyncio.to_thread(check)
             return {"version": self.update["version"]} if self.update else None
+        elif method == "updates.testing":
+            from .updates import check_testing
+
+            return await asyncio.to_thread(check_testing)
         elif method == "updates.stage":
             from .updates import stage
 
@@ -313,14 +348,18 @@ class Backend:
 
             await asyncio.to_thread(discard_pending)
         elif method == "updates.pending":
-            from .updates import cache_dir
+            from .updates import pending_update
 
-            return (cache_dir() / "pending").is_dir()
+            return await asyncio.to_thread(pending_update)
         elif method == "shutdown":
+            if self.shutdown_complete:
+                return {"ok": True}
+            self.cancelled.set()
             if params.get("discard"):
                 await self.stop()
             else:
                 await self.stop_idle()
+            self.shutdown_complete = True
         else:
             raise ValueError("Unknown method")
         return {"ok": True}
@@ -358,6 +397,8 @@ async def run():
                 "microphone.test",
                 "practice",
                 "sample.cancel",
+                "updates.check",
+                "updates.testing",
             }:
                 result = await backend.dispatch(method, params)
             else:

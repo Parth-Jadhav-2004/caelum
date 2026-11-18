@@ -27,7 +27,7 @@ def test_fallback_replace_delete_and_environment_tombstone(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "old-environment-key")
     assert credentials.get("GROQ_API_KEY") is None
     assert "replacement" not in path.read_text()
-    assert "key missing" in credentials.describe("GROQ_API_KEY")
+    assert "key missing" in credentials.describe("GROQ_API_KEY")["description"]
 
 
 def test_keyring_never_writes_secret_to_metadata(monkeypatch):
@@ -88,3 +88,13 @@ async def test_saved_key_is_used_by_provider_without_environment(monkeypatch):
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         assert (await Providers(Config(), client).stt(b"\0" * 100)).text == "hello"
+
+
+@pytest.mark.parametrize("storage", ["file", "keyring"])
+def test_describes_storage_without_secrets(storage, monkeypatch):
+    if storage == "keyring":
+        monkeypatch.setattr(credentials, "_secret", Mock(return_value=SimpleNamespace(returncode=0)))
+    credentials.store("GROQ_API_KEY", "private-test-key")
+    description = credentials.describe("GROQ_API_KEY")
+    assert description["storage"] == storage
+    assert "private-test-key" not in json.dumps(description)

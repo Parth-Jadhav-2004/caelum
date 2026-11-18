@@ -12,21 +12,33 @@
     ]
   },
   "sources": {
-    "tokens": [],
+    "tokens": [
+      "src/index.css"
+    ],
     "components": [],
     "assets": [
-      "assets"
+      "website/mark.svg",
+      "public/caelum.svg",
+      "src-tauri/icons"
     ],
-    "instructions": []
+    "instructions": [
+      "DESIGN.md"
+    ]
   },
   "design": {
     "colorMode": "dark-first",
     "colors": {},
     "typography": {},
     "spacing": {},
-    "radius": {},
+    "radius": {
+      "surface": "10px"
+    },
     "shadows": {},
-    "motion": {},
+    "motion": {
+      "fade": "160ms",
+      "sidebar": "200ms",
+      "reducedMotion": "system and explicit preference"
+    },
     "density": "comfortable"
   },
   "components": {

@@ -47,6 +47,8 @@ class History:
 
     def prune(self, connection):
         preferences = load(self.config_path).desktop
+        if preferences.history_forever:
+            return
         cutoff = datetime.now(timezone.utc) - timedelta(days=preferences.retention_days)
         connection.execute("DELETE FROM dictations WHERE created_at < ?", (cutoff.isoformat(),))
 

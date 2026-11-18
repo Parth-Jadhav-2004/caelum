@@ -11,6 +11,7 @@ import stat
 import subprocess
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 REPOSITORY = "Parth-Jadhav-2004/caelum"
@@ -25,6 +26,8 @@ TARGETS = {
     "fedora-43": ("fedora", "43", ".rpm"),
 }
 SAFE_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
+INSTALL_FAILED = "The package manager could not install Caelum. Check your package manager, then retry."
+INSTALL_BUSY = "The package database is locked. Finish other package operations, then retry."
 
 
 def version_tuple(value):
@@ -297,6 +300,117 @@ def check():
     return {"version": manifest["version"], "raw": raw, "signature": signature}
 
 
+def testing_source(release, version):
+    """Read the source commit date; publication time cannot order installed builds."""
+    source = release.get("target_commitish")
+    with network_client(30) as client:
+        if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
+            provenance = json.loads(fetch(
+                client, f"{RELEASES}/download/{release['tag_name']}/candidate.json", 65536,
+            ))
+            source = provenance["sha"]
+            if (
+                provenance.get("schema") != 1 or provenance.get("version") != version
+                or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)
+            ):
+                raise ValueError("Invalid testing source provenance")
+        commit = json.loads(fetch(
+            client, f"https://api.github.com/repos/{REPOSITORY}/git/commits/{source}", 65536,
+        ))
+    date = datetime.fromisoformat(commit["committer"]["date"].replace("Z", "+00:00"))
+    if commit.get("sha") != source or date.tzinfo is None:
+        raise ValueError("Invalid testing source commit")
+    return source, date.timestamp()
+
+
+def check_testing():
+    """Discover testing releases for manual installation; never stage unsigned bytes."""
+    info = installed()
+    if not info or not compatible(info):
+        raise RuntimeError("Use your package manager for updates to this installation")
+    import httpx
+
+    try:
+        with network_client(30) as client:
+            api = f"https://api.github.com/repos/{REPOSITORY}/releases"
+            # Frequent development builds can push stable/testing out of page one.
+            # Read latest stable separately; never infer it from a truncated list.
+            try:
+                latest = json.loads(fetch(client, api + "/latest", 128 * 1024))
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 404:
+                    raise
+                latest = None
+            if latest is not None and (
+                not isinstance(latest, dict) or latest.get("draft") is not False
+                or latest.get("prerelease") is not False
+                or not isinstance(latest.get("tag_name"), str)
+                or not re.fullmatch(r"v\d+\.\d+\.\d+", latest["tag_name"])
+            ):
+                raise ValueError("Invalid latest stable release")
+            releases = []
+            truncated = False
+            for page in range(1, 6):
+                batch = json.loads(fetch(
+                    client, api + f"?per_page=20&page={page}", 512 * 1024,
+                ))
+                if not isinstance(batch, list) or len(batch) > 20:
+                    raise ValueError("Invalid release list")
+                releases.extend(batch)
+                if len(batch) < 20:
+                    break
+            else:
+                truncated = True
+        stable = (0, 0, 0)
+        if latest:
+            stable = version_tuple(latest["tag_name"][1:])
+        candidates = []
+        for release in releases:
+            if not isinstance(release, dict) or release.get("draft") is not False:
+                continue
+            tag = release.get("tag_name", "")
+            if not isinstance(tag, str):
+                continue
+            if release.get("prerelease") is False and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+                stable = max(stable, version_tuple(tag[1:]))
+            elif release.get("prerelease") is True:
+                match = re.fullmatch(r"v(\d+\.\d+\.\d+)-rc\.([1-9]\d*)", tag)
+                if match:
+                    candidates.append((version_tuple(match[1]), int(match[2]), release))
+        for version, _, release in sorted(candidates, key=lambda item: item[:2], reverse=True):
+            if version < version_tuple(info["version"]) or version <= stable:
+                continue
+            source = release.get("target_commitish")
+            same_build = bool(info.get("source") and info["source"] == source)
+            base_version = ".".join(map(str, version))
+            installed_date = info.get("source_date")
+            if (
+                not same_build and base_version == info["version"]
+                and type(installed_date) is int and installed_date > 0
+            ):
+                source, source_date = testing_source(release, base_version)
+                same_build = bool(info.get("source") and info["source"] == source)
+                if not same_build and source_date <= installed_date:
+                    continue
+            target = info["target"]
+            name = (
+                f"caelum-{base_version}-1-x86_64.pkg.tar.zst" if target == "arch"
+                else f"caelum-{base_version}-1.fedora43.x86_64.rpm" if target == "fedora-43"
+                else f"caelum_{base_version}-1_{target}_amd64.deb"
+            )
+            if not any(
+                isinstance(asset, dict) and asset.get("name") == name
+                for asset in release.get("assets", [])
+            ):
+                continue
+            return {"version": release["tag_name"][1:], "installed": same_build}
+        if truncated:
+            raise ValueError("Release history exceeds bounded testing discovery; view GitHub releases")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
+        raise RuntimeError("Could not check testing releases. Try again.") from error
+    return None
+
+
 def stage(update):
     info = installed()
     if not info or not compatible(info):
@@ -384,7 +498,39 @@ def install_verified(pending):
             ".rpm": ["/usr/bin/dnf", "install", "-y", "--", str(package)],
             ".pkg.tar.zst": ["/usr/bin/pacman", "-U", "--noconfirm", "--", str(package)],
         }[suffix]
-        subprocess.run(command, check=True, env=SAFE_ENV, cwd="/")
+        try:
+            subprocess.run(
+                command, check=True, env=SAFE_ENV, cwd="/",
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError as error:
+            output = (error.stdout or "") + (error.stderr or "")
+            raise RuntimeError(
+                INSTALL_BUSY if "unable to lock database" in output else INSTALL_FAILED
+            ) from error
+
+
+def pending_update():
+    """Keep downloads removable; only clear authenticated obsolete updates."""
+    info = installed()
+    pending = cache_dir() / "pending"
+    if not pending.is_dir():
+        return False
+    if not info:
+        return True
+    try:
+        manifest, _ = verify_manifest(
+            read_regular(pending / "update.json", 65536),
+            read_regular(pending / "update.json.sig", 4096), info,
+        )
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        # Pending status also controls Discard. Invalid/expired metadata must
+        # remain discoverable; apply_pending still performs full verification.
+        return True
+    if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
+        discard_pending()
+        return False
+    return True
 
 
 def apply_pending():
@@ -403,16 +549,20 @@ def apply_pending():
         discard_pending()
         return False
     verify_package(pending / asset["name"], asset)
-    subprocess.run(
-        [
-            "/usr/bin/pkexec",
-            "/usr/bin/python3",
-            "-I",
-            str(BASE / "updates.py"),
-            str(pending),
-        ],
-        check=True,
-    )
+    try:
+        # stdout belongs exclusively to the sidecar JSON protocol. Inheriting it
+        # lets pacman progress break the connection during its own transaction.
+        subprocess.run(
+            ["/usr/bin/pkexec", "/usr/bin/python3", "-I",
+             str(BASE / "updates.py"), str(pending)],
+            check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        if error.returncode in (126, 127):
+            message = "Administrator authorization was cancelled or unavailable. Try again."
+        else:
+            message = INSTALL_BUSY if INSTALL_BUSY in (error.stderr or "") else INSTALL_FAILED
+        raise RuntimeError(message) from error
     shutil.rmtree(pending)
     return True
 
@@ -430,7 +580,9 @@ if __name__ == "__main__":
         if len(sys.argv) != 2:
             raise ValueError("Expected a staged update directory")
         install_verified(Path(sys.argv[1]).resolve(strict=True))
-    except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError):
+    except RuntimeError as error:
+        sys.exit(str(error))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         sys.exit(
             "Caelum update failed verification or installation; the pending update was retained."
         )

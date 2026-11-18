@@ -1,9 +1,13 @@
 name: Linux candidate
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'website/**'
   workflow_dispatch:
 permissions:
   contents: read
-# Main/PR pushes run fast checks only. Packaging is an explicit candidate build.
+# Successful main candidates trigger development.yml; PRs never publish.
 concurrency:
   group: candidate-${{ github.sha }}
   cancel-in-progress: false
@@ -40,14 +44,14 @@ jobs:
           # The checked-in toolchain is selected after checkout, not floating stable.
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           version: "0.13.1"
@@ -88,7 +92,7 @@ jobs:
         run: python3 scripts/smoke_desktop.py / --screenshot dist/native-smoke.png
       - name: Record build provenance
         run: python3 scripts/release_candidate.py record dist '${{ matrix.target }}'
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: smoke-${{ matrix.target }}
@@ -96,7 +100,7 @@ jobs:
             dist/native-smoke.png
             dist/native-smoke.log
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: caelum-${{ matrix.target }}
           path: |
@@ -111,16 +115,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: caelum-*
           path: release-assets
           merge-multiple: true
       - run: python3 scripts/release_candidate.py assemble release-assets
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate
           path: release-assets/*
