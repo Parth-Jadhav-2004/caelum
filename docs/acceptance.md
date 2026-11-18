@@ -78,3 +78,11 @@ launch that waits for real React/bootstrap readiness, plus per-target provenance
 The automated gate does not replace the physical/session checklist above. Record
 the candidate run/SHA and manual results before attesting qualification in the
 promotion workflow. Published tags/assets cannot be replaced by that workflow.
+
+### Portable first paste — record once per real session
+
+Use a disposable account on Ubuntu GNOME Wayland, KDE Plasma Wayland, and one X11 desktop. Start from the public RC release, check SHA256SUMS and package version, and write down candidate run/attempt/SHA, package hash, distro, desktop/session version, audio device, tester/date and outcome. Deny the portal shortcut first, then grant it if supported. Choose Record → Finish recording → Copy from history → paste into an editor; with history disabled, paste directly and verify no new history row. Repeat for both engines. Local: provision the model, disconnect networking, and complete practice without keys. Online: tester explicitly consents and uses their own key; test cleanup off/on. Never attach credentials, audio or private transcripts.
+
+Before recording, agree on the synthetic phrase **“Start Caelum test number forty two and finish here.”** Require both boundary words, the name and number (digits or words), no missing content, and no invented words on silence. Report counts/pass/fail rather than retaining private speech. Repeat on a built-in and USB/Bluetooth mic, unplug/reconnect, switch away from a wrong input and retry. Complete the lifecycle list above, keyboard-only, screen reader and 200% scaling. Hyprland needs its own hold/release, HUD and original-window paste test before showing it in launch media.
+
+For upgrades, seed disposable stable 0.4.2 settings and history, snapshot the VM, exercise signature/hash rejection and a correctly signed staged update through polkit, restart and verify preserved settings/history. Rehearse restoring the snapshot. Use a controlled staging trust setup for rehearsal, never the production signing secret on a test machine, and record which trust path was tested. A manual RC package install is not a signed updater test. Leave main gated if an authorized signed rehearsal is unavailable.

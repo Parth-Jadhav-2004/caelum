@@ -339,7 +339,10 @@ export function Settings({
           )}
           {group === "Transcription" && (
             <>
-              <Row title="Transcription engine">
+              <Row
+                title="Transcription engine"
+                detail="Online sends speech and vocabulary to your provider. Optional cleanup sends the transcript to your cleanup provider. On this computer uses a downloaded model."
+              >
                 <Choice
                   label="Transcription engine"
                   value={config.stt.engine}
@@ -410,7 +413,7 @@ export function Settings({
                   </Row>
                   <Row
                     title="If the model is missing or won’t load"
-                    detail="Unclear speech is never sent Online."
+                    detail="Use Online sends speech and vocabulary to your provider if the model fails to load. Unclear speech alone never triggers an upload."
                   >
                     <Choice
                       label="Local model fallback"

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#121214" />
     <meta
       name="description"
-      content="Push-to-talk dictation for your Linux desktop. Free and open source. Bring your own provider key; Groq is the default."
+      content="Dictate on Linux. Record, finish, then copy the transcript into your app. Free and open source."
     />
     <title>Caelum — Speak. Keep your flow.</title>
     <link rel="canonical" href="https://parth-jadhav-2004.github.io/caelum/" />
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Caelum — Speak. Keep your flow." />
     <meta
       property="og:description"
-      content="Push-to-talk dictation for Linux desktops. Free, open source, and powered by your provider key."
+      content="Record on your Linux desktop, then copy the transcript into your app."
     />
     <meta
       property="og:url"
@@ -35,7 +35,7 @@
     <meta name="twitter:title" content="Caelum — Speak. Keep your flow." />
     <meta
       name="twitter:description"
-      content="Push-to-talk dictation for your Linux desktop. Bring your own provider key."
+      content="Dictate on Linux. Record, finish, copy and paste."
     />
     <meta
       name="twitter:image"
@@ -487,7 +487,7 @@
         <div class="privacy-copy">
           <ul>
             <li>
-              <strong>Audio goes to your transcription provider.</strong>
+              <strong>Online mode sends speech and custom vocabulary to your provider.</strong>
               <p>
                 Optional cleanup sends the transcript to your cleanup provider.
                 Their data and pricing policies apply.
@@ -519,8 +519,7 @@
             >
             <h2>Ready when you are.</h2>
             <p>
-              Free and open source. No Caelum subscription.<br />Bring a Groq
-              API key to get started; you pay only your chosen provider.
+              Free and open source. No Caelum subscription.<br />Online mode uses your own provider account; provider charges may apply.
             </p>
             <p class="download-note">
               Linux x86-64 packages. No ARM package.<br />Check for signed
@@ -607,15 +606,13 @@
           <details>
             <summary>Does Caelum work offline?</summary>
             <p>
-              Stable v0.4.2 uses your configured provider over the
-              network for transcription and optional cleanup. Local transcript
-              history does not mean on-device transcription. Development adds an On this computer mode: download a compatible model once, then dictate offline without a provider key. Preview builds are listed separately on the <a href="https://github.com/Parth-Jadhav-2004/caelum/releases">releases page</a>.
+              Version 0.4.2 requires a network connection for transcription. Starting with the 0.5.0 candidate, choose On this computer and download a compatible model once. You can then dictate offline without a provider key. The stable download selector shows the published version. Preview builds are listed separately on the <a href="https://github.com/Parth-Jadhav-2004/caelum/releases">releases page</a>.
             </p>
           </details>
           <details>
             <summary>Do I need my own API keys?</summary>
             <p>
-              For stable v0.4.2, yes. Bring your own Groq API key for the default setup, or
+              Only Online mode requires credentials. Bring your own Groq API key for that setup, or
               configure a custom provider. Groq uses whisper-large-v3-turbo for
               transcription and optional openai/gpt-oss-20b for cleanup. Caelum
               is free under the MIT license; usage charges come only from your
