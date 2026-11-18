@@ -211,3 +211,43 @@ def test_forever_history_retains_old_entries_until_changed(storage):
     config.desktop.history_forever = False
     save(config, path)
     assert history.read() == []
+
+
+@pytest.mark.parametrize("hourly_rate", [0, 3.6])
+def test_local_history_records_model_and_zero_cloud_cost_without_changing_preferences(
+    storage, hourly_rate,
+):
+    config, path, history = storage
+    config.stt.engine = "local"
+    config.stt.local_model_path = "/private/models/ggml-base.en.bin"
+    config.stt.model = "saved-cloud-model"
+    config.cleanup.model = "saved-cloud-cleanup"
+    set_rate(storage, hourly_rate)
+    snapshot = load(path)
+    record(storage)
+    row = history.read()[0]
+    assert row["stt_model"] == "ggml-base.en.bin"
+    assert row["cleanup_model"] == ""
+    assert row["refined"] == 0
+    assert row["estimated_stt_usd"] == 0
+    assert row["hourly_rate"] == 0
+    assert history.summary()["unpriced_sessions"] == 0
+    assert config == snapshot == load(path)
+
+
+def test_mixed_local_and_cloud_history_charges_only_cloud_sessions(storage):
+    config, path, history = storage
+    set_rate(storage, 3.6)
+    record(storage, "cloud")
+    config.stt.engine = "local"
+    config.stt.local_model_path = "/models/ggml-base.bin"
+    save(config, path)
+    record(storage, "local")
+    rows = {row["id"]: row for row in history.read()}
+    assert rows["cloud"]["stt_model"] == config.stt.model
+    assert rows["cloud"]["hourly_rate"] == 3.6
+    assert rows["cloud"]["estimated_stt_usd"] == pytest.approx(0.06)
+    assert rows["local"]["estimated_stt_usd"] == 0
+    summary = history.summary()
+    assert summary["estimated_stt_usd"] == pytest.approx(0.06)
+    assert summary["sessions"] == 2
