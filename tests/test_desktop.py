@@ -100,6 +100,8 @@ def test_provider_presets_preserve_other_preferences():
         ({"state": "hidden"}, "Ready", "begin"),
         ({"state": "hidden", "paused": True}, "Paused", "Resume"),
         ({"state": "recording"}, "Recording", "Release"),
+        ({"state": "recording", "backend": "portable"}, "Recording", "Finish recording"),
+        ({"state": "recording", "recording_mode": "toggle"}, "Recording", "Press"),
         ({"state": "refining"}, "Processing", "Refining"),
         ({"state": "processing"}, "Processing", "Transcribing"),
         ({"state": "unrefined"}, "Done · unrefined", "Raw transcription"),

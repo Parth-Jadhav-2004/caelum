@@ -157,7 +157,7 @@ async def connection_status(config):
                 )
             except ProviderError as error:
                 results.append(
-                    f"{title}: key missing; open Settings → provider status → Manage keys"
+                    f"{title}: key missing; open Settings → Transcription → Manage keys"
                     if error.kind == "missing_key"
                     else f"{title}: {error}"
                 )
@@ -187,8 +187,8 @@ def service_presentation(status):
     if state == "error":
         if status.get("pending_audio"):
             guidance = {
-                "invalid_key": "Replace the key in Settings → provider status → Manage keys, then retry.",
-                "missing_key": "Add the key in Settings → provider status → Manage keys, then retry.",
+                "invalid_key": "Replace the key in Settings → Transcription → Manage keys, then retry.",
+                "missing_key": "Add the key in Settings → Transcription → Manage keys, then retry.",
                 "quota": "Check provider usage or billing before retrying.",
                 "rate_limit": "Wait for the provider rate limit to reset, then retry.",
                 "offline": "Check your network connection, then retry.",
@@ -216,7 +216,12 @@ def service_presentation(status):
         ),
         "starting": ("Starting microphone", "Preparing to record."),
         "listening": ("Recording", "Listening for speech. No interim text is shown."),
-        "recording": ("Recording", "Release your shortcut or finish recording to process."),
+        "recording": (
+            "Recording",
+            "Choose Finish recording to transcribe." if status.get("backend") == "portable"
+            else "Press your shortcut again to finish." if status.get("recording_mode") == "toggle"
+            else "Release your shortcut to transcribe.",
+        ),
         "processing": ("Processing", "Transcribing your recording."),
         "loading": ("Getting ready…", "Your speech model is loading."),
         "missing_model": ("Speech model not downloaded", "Open Caelum to download a speech model."),

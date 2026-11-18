@@ -412,10 +412,12 @@ export function Setup({
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-body text-muted-foreground">
-                    Speak instead of typing, in any app.
+                    Record your voice, finish, then copy the transcript.
                   </p>
                   <p className="text-meta text-muted-foreground">
-                    About two minutes
+                    {mode === "local"
+                      ? "Download a model once. No API key needed."
+                      : "Use your provider key, or choose On this computer to dictate offline."}
                   </p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

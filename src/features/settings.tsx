@@ -610,7 +610,7 @@ export function Settings({
                 <summary>How your data is handled</summary>
                 <p className="mt-4 whitespace-pre-wrap">
                   {bootstrap.data?.privacy ??
-                    "Audio goes to your selected service. Microphone recordings are never saved. History is text only, stored on this device without encryption."}
+                    "Online sends speech and vocabulary to your provider. On this computer keeps speech local unless you enable online fallback. Optional online cleanup sends text. History is stored locally without encryption."}
                 </p>
               </details>
             </>

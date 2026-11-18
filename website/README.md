@@ -48,26 +48,8 @@ failure prevents publication rather than inventing download links.
 
 The design follows [`DESIGN.md`](../DESIGN.md): near-black canvas, a 240px desktop
 sidebar, neutral recording capsule, soft rows, and no gradients, glow, or surface
-shadows. The previews recreate the app and are explicitly labeled sample content;
-they are not screenshots or live microphone capture. Inter Variable is self-hosted
-in `fonts/`, with its SIL Open Font License in `fonts/OFL.txt` and system fallbacks.
-No third-party resources load when visiting the page. The 1200×630 `og.png` uses
-the same recreated UI with a sample-content caption.
-
-The demo shows Recording → Processing → Saved with final text only. It pauses
-when offscreen or in a background tab. Reduced motion shows a completed transcript
-without autoplay; playback can still be started explicitly. Escape ends the demo.
-The product tour uses keyboard-accessible tabs; navigation, skip links, visible
-focus, and native FAQ disclosures are preserved.
-
-The earlier website-refresh branch was validated in headless Chromium at 320, 375, 390, 600, 768, 1280, and 1440 CSS pixels:
-no horizontal overflow across all five tour panels, no WCAG A/AA violations from
-axe, no JavaScript errors, and no third-party resource requests. Interaction checks
-cover menu dismissal/focus, tour arrows/Home/End, all five package commands,
-compatibility disclosure, reduced motion, demo start/cancel, manifest failure,
-and JavaScript-disabled download fallback. The 21st review reports no errors;
-its color-token notices refer to the intentional DESIGN.md palette.
+shadows. The hero shows the installed Ubuntu 24.04 package from [candidate run 44309773651](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), artifact `smoke-ubuntu-24.04/native-smoke.png`, cropped to the 1100×780 window. This is real setup in WebKit/Xvfb, not a GNOME session or a recording. The social card uses that screenshot. The portable walkthrough uses native keyboard-operable disclosures with sample text; the product tour uses illustrative data. Neither records audio or touches the clipboard. Inter Variable is self-hosted under the SIL Open Font License in `fonts/`.
 
 ## Publication and qualification
 
-The selector and no-JavaScript link lead to published stable packages. Keep testing releases separately labeled. Product copy distinguishes 0.4.2’s online-only transcription from the 0.5.0 candidate’s local and online modes. Never infer stable availability from a branch or draft. Pages deploys from main under [the protected promotion process](../docs/releasing.md). Verify the deployment and every download after promotion. Historical UI checks above are not desktop qualification of a new candidate.
+The selector and no-JavaScript link lead to published stable packages. Keep testing releases separately labeled. Product copy distinguishes 0.4.2’s online-only transcription from the 0.5.0 candidate’s local and online modes. Never infer stable availability from a branch or draft. Pages deploys from main under [the protected promotion process](../docs/releasing.md). Verify the deployment and every download after promotion. Site checks are not desktop qualification.

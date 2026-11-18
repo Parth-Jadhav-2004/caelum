@@ -1131,3 +1131,10 @@ a:hover {
     transition: none !important;
   }
 }
+
+.release-shot, .walkthrough { max-width: 800px; margin: 2.5rem auto; }
+.release-shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; }
+.release-shot figcaption, .walkthrough p { margin: .75rem 0; color: var(--muted); }
+.walkthrough { text-align: left; }
+.walkthrough details { border-bottom: 1px solid var(--line); padding: .85rem 0; }
+.walkthrough summary { cursor: pointer; }

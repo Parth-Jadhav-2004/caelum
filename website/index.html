@@ -8,11 +8,11 @@
       name="description"
       content="Dictate on Linux. Record, finish, then copy the transcript into your app. Free and open source."
     />
-    <title>Caelum — Speak. Keep your flow.</title>
+    <title>Caelum — Dictate on your Linux desktop.</title>
     <link rel="canonical" href="https://parth-jadhav-2004.github.io/caelum/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Caelum" />
-    <meta property="og:title" content="Caelum — Speak. Keep your flow." />
+    <meta property="og:title" content="Caelum — Dictate on your Linux desktop." />
     <meta
       property="og:description"
       content="Record on your Linux desktop, then copy the transcript into your app."
@@ -29,10 +29,10 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Caelum desktop interface with Home, History, Dictionary, Insights, and Settings; illustrative sample content."
+      content="Caelum 0.5.0 candidate setup screen and the words Record, finish, copy and paste."
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Caelum — Speak. Keep your flow." />
+    <meta name="twitter:title" content="Caelum — Dictate on your Linux desktop." />
     <meta
       name="twitter:description"
       content="Dictate on Linux. Record, finish, copy and paste."
@@ -43,7 +43,7 @@
     />
     <meta
       name="twitter:image:alt"
-      content="Caelum desktop interface with illustrative sample content."
+      content="Caelum 0.5.0 candidate setup screen and the words Record, finish, copy and paste."
     />
     <link rel="icon" href="./mark.svg" type="image/svg+xml" />
     <link
@@ -91,168 +91,27 @@
           ><span data-release-label>Caelum · Stable release</span
           ><span aria-hidden="true">↗</span></a
         >
-        <h1>Speak. Keep your flow.</h1>
+        <h1>Dictate on your Linux desktop.</h1>
         <p class="hero-description">
           Record your voice. Finish recording. Copy your words into any app.
         </p>
         <div class="hero-actions">
           <a class="button primary" href="#download"
             ><span aria-hidden="true">↓</span> Download for Linux</a
-          ><button class="button secondary" id="hero-demo">
-            <span aria-hidden="true">▷</span> See it in action
-          </button>
+          ><a class="button secondary" href="#demo">Try the walkthrough</a>
         </div>
-        <p class="hero-note">
-          Free and open source for Linux desktops.
-        </p>
-        <div class="demo-stage" id="demo" data-phase="done">
-          <div class="app-preview hero-preview">
-            <div class="app-chrome">
-              <span>Caelum</span
-              ><span aria-hidden="true">− &nbsp; □ &nbsp; ×</span>
-            </div>
-            <div class="app-layout">
-              <aside class="app-sidebar" aria-label="Sample app navigation">
-                <span class="brand mini"
-                  ><img
-                    src="./mark.svg"
-                    width="24"
-                    height="24"
-                    alt=""
-                  />caelum</span
-                >
-                <div class="sample-navigation">
-                  <span class="side-item selected"
-                    ><span aria-hidden="true"
-                      ><svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path
-                          d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"
-                        /></svg></span
-                    >Home</span
-                  ><span class="side-item"
-                    ><span aria-hidden="true"
-                      ><svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M12 7v5l3 2" /></svg></span
-                    >History</span
-                  ><span class="side-item"
-                    ><span aria-hidden="true"
-                      ><svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path
-                          d="M4 19V5a2 2 0 0 1 2-2h14v18H6a2 2 0 0 1 0-4h14M8 7h8m-8 4h6"
-                        /></svg></span
-                    >Dictionary</span
-                  ><span class="side-item"
-                    ><span aria-hidden="true"
-                      ><svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M5 20v-5m7 5V9m7 11V4" /></svg></span
-                    >Insights</span
-                  ><span class="side-item"
-                    ><span aria-hidden="true"
-                      ><svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path
-                          d="m9 3-.7 2.4-2 .9L4 5.7 2 9l1.6 1.8v2.4L2 15l2 3.3 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.3-1.6-1.8v-2.4L22 9l-2-3.3-2.3.6-2-.9L15 3Z"
-                        />
-                        <circle cx="12" cy="12" r="3" /></svg></span
-                    >Settings</span
-                  >
-                </div>
-                <span class="service-state"
-                  ><span class="status-dot"></span
-                  ><span id="engine-status">Ready</span></span
-                >
-              </aside>
-              <div class="app-content home-content">
-                <div class="app-toolbar">
-                  <span aria-hidden="true">◧</span><span>Home</span
-                  ><span class="toolbar-end">Super + Alt + V</span>
-                </div>
-                <div class="dictation-surface">
-                  <h2>
-                    Hold <span class="shortcut-inline">Super + Alt + V</span> to
-                    dictate anywhere
-                  </h2>
-                  <div class="today-totals">
-                    <span><strong>248</strong> Words today</span
-                    ><span><strong>142</strong> Words/min</span
-                    ><span><strong>3</strong> Day streak</span>
-                  </div>
-                  <p id="engine-detail">
-                    Hold your shortcut to start recording.
-                  </p>
-                  <span class="sample-microphone"
-                    >Microphone <span>System default</span></span
-                  >
-                </div>
-                <div class="recent-heading">
-                  <h3>Recent dictations</h3>
-                  <span>Today</span>
-                </div>
-                <div class="history-item demo-result">
-                  <p id="demo-text">
-                    Let’s make something that feels natural to use.
-                  </p>
-                  <span>10:42<span id="demo-word-count"> · 9 words</span></span>
-                </div>
-                <div class="history-item">
-                  <p>I’ll send the updated notes over this afternoon.</p>
-                  <span>09:18 · 8 words</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="pill-space">
-            <div class="recording-pill" id="recording-pill" hidden>
-              <div class="waveform" aria-hidden="true"></div>
-              <span id="pill-status">Recording</span><kbd>Esc</kbd>
-            </div>
-            <span class="demo-idle" id="demo-idle"
-              >Hold <kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> to
-              begin</span
-            >
-          </div>
-          <div class="demo-caption">
-            <span>Illustrative Hyprland demo · Sample content · No mic access</span
-            ><button id="replay-demo" aria-label="Pause dictation demo">
-              Pause demo
-            </button>
-          </div>
-        </div>
+        <figure class="release-shot">
+          <img src="./media/setup-0.5.0.png" width="1100" height="780" alt="Caelum setup with the Transcribe with selector on the Welcome and models step" />
+          <figcaption>0.5.0 candidate · Ubuntu 24.04 package in an automated X11 session. Desktop qualification is ongoing.</figcaption>
+        </figure>
+        <section class="walkthrough" id="demo" aria-labelledby="demo-title">
+          <h2 id="demo-title">From Record to first paste</h2>
+          <p>Illustrated walkthrough · Sample text, no microphone or clipboard access.</p>
+          <details open><summary>1. Record</summary><p>On Home, choose Record. Say “Meet me at noon.”</p></details>
+          <details><summary>2. Finish recording</summary><p>Choose Finish recording. Wait for the final transcript.</p></details>
+          <details><summary>3. Copy</summary><p>With history on, open the result and copy its text. With history off, the portable workflow copies it directly.</p></details>
+          <details><summary>4. Paste into your editor</summary><p>Switch to a document and paste. Example result: “Meet me at noon.”</p></details>
+        </section>
       </section>
       <section class="workflow wrap section" id="how-it-works">
         <div class="section-heading">
@@ -450,7 +309,7 @@
               <div class="app-content" id="tour-content">
                 <h3>Home</h3>
                 <p>
-                  Hold Super + Alt + V to dictate anywhere. Recent dictations
+                  Record, finish, then copy your transcript. Recent dictations
                   and today’s totals stay within reach.
                 </p>
               </div>
@@ -458,13 +317,12 @@
           </div>
           <p class="tour-disclaimer">
             Interface recreation with sample content. Collapse the app sidebar
-            with Ctrl+B. Caelum stays available in your tray.
+            with Ctrl+B. Tray availability depends on your desktop.
           </p>
           <div class="setup-note">
             <h3>Set up once. Then just speak.</h3>
             <p>
-              Provider → Microphone → Shortcut → Practice. The mic test stays on
-              your computer. Practice uploads only after your explicit consent.
+              Speech → Microphone → Shortcut → Practice. The microphone test stays on your computer. Online practice uploads only after consent. In the 0.5.0 candidate, local practice uses the downloaded model without a key or upload.
             </p>
           </div>
         </div>

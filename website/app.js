@@ -35,131 +35,13 @@ window
   .matchMedia("(min-width: 601px)")
   .addEventListener("change", () => closeMenu());
 
-const heights = [6, 12, 18, 10, 20, 14, 8, 17, 12];
-document.querySelectorAll(".waveform").forEach((wave) => {
-  heights.forEach((height, index) => {
-    const bar = document.createElement("i");
-    bar.style.setProperty("--h", `${height}px`);
-    bar.style.setProperty("--delay", `${index * -0.09}s`);
-    wave.append(bar);
-  });
-});
-const pill = document.querySelector("#recording-pill");
-const pillStatus = document.querySelector("#pill-status");
-const demoText = document.querySelector("#demo-text");
-const demoWordCount = document.querySelector("#demo-word-count");
-const replay = document.querySelector("#replay-demo");
-const heroDemo = document.querySelector("#hero-demo");
-const demoStage = document.querySelector("#demo");
-const engineStatus = document.querySelector("#engine-status");
-const engineDetail = document.querySelector("#engine-detail");
-const resultText = "Let’s make something that feels natural to use.";
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const cycleDuration = 9000;
-let elapsed = reducedMotion.matches ? 6000 : 0;
-let lastFrame = null;
-let frame = null;
-let inView = false;
-let paused = reducedMotion.matches;
-function renderDemo(time) {
-  const recording = time < 2400;
-  const processing = time >= 2400 && time < 3600;
-  const state = recording ? "Recording" : processing ? "Processing" : "Saved";
-  demoStage.dataset.phase = recording
-    ? "recording"
-    : processing
-      ? "processing"
-      : "done";
-  pill.hidden = !(recording || processing);
-  document.querySelector("#demo-idle").hidden = !pill.hidden;
-  pill.classList.toggle("playing", recording);
-  pillStatus.textContent = state;
-  engineStatus.textContent = state;
-  engineDetail.textContent = recording
-    ? "Listening for speech. No interim text is shown."
-    : processing
-      ? "Transcribing your recording."
-      : "Saved";
-  demoWordCount.hidden = recording || processing;
-  // The app shows final text, never simulated interim transcription.
-  demoText.textContent =
-    recording || processing
-      ? "Your completed dictation will appear here."
-      : resultText;
-}
-function updateControl() {
-  replay.textContent = paused ? "Resume demo" : "Pause demo";
-  replay.setAttribute(
-    "aria-label",
-    paused ? "Resume dictation demo" : "Pause dictation demo",
-  );
-  demoStage.classList.toggle(
-    "demo-paused",
-    paused || !inView || document.hidden,
-  );
-}
-function tick(timestamp) {
-  if (lastFrame !== null) elapsed += Math.min(timestamp - lastFrame, 100);
-  lastFrame = timestamp;
-  if (elapsed >= cycleDuration) elapsed %= cycleDuration;
-  renderDemo(elapsed);
-  frame = requestAnimationFrame(tick);
-}
-function syncPlayback() {
-  if (frame !== null) cancelAnimationFrame(frame);
-  frame = null;
-  lastFrame = null;
-  updateControl();
-  if (!paused && inView && !document.hidden)
-    frame = requestAnimationFrame(tick);
-}
-replay.addEventListener("click", () => {
-  paused = !paused;
-  syncPlayback();
-});
-heroDemo.addEventListener("click", () => {
-  demoStage.scrollIntoView({
-    behavior: reducedMotion.matches ? "instant" : "smooth",
-    block: "center",
-  });
-  paused = false;
-  elapsed = 0;
-  renderDemo(elapsed);
-  syncPlayback();
-});
-new IntersectionObserver(
-  (entries) => {
-    inView = entries[0].isIntersecting;
-    syncPlayback();
-  },
-  { threshold: 0.15 },
-).observe(demoStage);
-document.addEventListener("visibilitychange", syncPlayback);
-reducedMotion.addEventListener("change", () => {
-  paused = reducedMotion.matches;
-  if (paused) {
-    elapsed = 6000;
-    renderDemo(elapsed);
-  }
-  syncPlayback();
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !pill.hidden) {
-    paused = true;
-    elapsed = 6000;
-    renderDemo(elapsed);
-    syncPlayback();
-  }
-});
-// Autoplay stays silent to assistive technology and never accesses the microphone.
-renderDemo(elapsed);
-updateControl();
 
 const tourContent = document.querySelector("#tour-content");
 const tourPanel = document.querySelector("#tour-panel");
 const tourTabs = [...document.querySelectorAll("[data-tab]")];
 const panels = {
-  home: '<h3>Home</h3><p class="app-subtitle">Hold Super + Alt + V to dictate anywhere.</p><div class="today-totals"><span><strong>248</strong> Words today</span><span><strong>142</strong> Words/min</span><span><strong>3</strong> Day streak</span></div><div class="recent-heading"><h4>Recent dictations</h4><span>Today</span></div><div class="history-item"><p>Let’s make something that feels natural to use.</p><span>10:42 · 9 words</span></div><div class="history-item"><p>I’ll send the updated notes over this afternoon.</p><span>09:18 · 8 words</span></div>',
+  home: '<h3>Home</h3><p class="app-subtitle">Record, finish, then copy your transcript.</p><div class="today-totals"><span><strong>248</strong> Words today</span><span><strong>142</strong> Words/min</span><span><strong>3</strong> Day streak</span></div><div class="recent-heading"><h4>Recent dictations</h4><span>Today</span></div><div class="history-item"><p>Let’s make something that feels natural to use.</p><span>10:42 · 9 words</span></div><div class="history-item"><p>I’ll send the updated notes over this afternoon.</p><span>09:18 · 8 words</span></div>',
   history:
     '<h3>History</h3><p class="app-subtitle">Search, revisit, and copy your saved dictations.</p><div class="sample-search">Search dictations</div><div class="history-item"><p>Let’s make something that feels natural to use.</p><span>Today, 10:42 · 9 words</span></div><div class="history-item"><p>A reminder to slow down and follow the interesting idea.</p><span>Today, 09:18 · 10 words</span></div><div class="history-item"><p>I’ll send the updated notes over this afternoon.</p><span>Yesterday, 16:35 · 8 words</span></div><p class="sample-muted">History on · Keep for 30 days</p>',
   dictionary:

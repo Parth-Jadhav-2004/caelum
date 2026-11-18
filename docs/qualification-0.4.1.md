@@ -1,5 +1,7 @@
 # Caelum 0.4.1 qualification — 14 November 2026
 
+Historical evidence for 0.4.1 only. Track the current candidate in [qualification issue #26](https://github.com/Parth-Jadhav-2004/caelum/issues/26).
+
 ## Implemented and checked
 
 - MIT licensing approved by the owner. Own license, pinned third-party notices,

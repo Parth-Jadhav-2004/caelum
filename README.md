@@ -4,19 +4,39 @@ Record your voice, finish, then copy the transcript into the app you’re using.
 
 **[Download stable](https://github.com/Parth-Jadhav-2004/caelum/releases/latest)** · **[Testing and development releases](https://github.com/Parth-Jadhav-2004/caelum/releases)** · [Linux troubleshooting](docs/linux.md)
 
+**[0.5.0 development download (prerelease)](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0-dev.44309773651.1)** · [Desktop test checklist](https://github.com/Parth-Jadhav-2004/caelum/issues/26)
+
 Stable **0.4.2** uses your API provider. The **0.5.0 candidate** adds an equally supported **On this computer** setup path; it is not a stable download. Models download separately; select one matching your memory, language and license in setup. Local speech needs no cloud key, upload consent or network after provisioning. Online uses your own provider key and may incur charges. Optional cleanup sends text to the configured cleanup provider. [Privacy and storage](docs/privacy.md).
 
-Packages target **x86-64 Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch**. Download only the matching package and its `SHA256SUMS`. In the download directory run `sudo apt install ./<filename>.deb`, `sudo dnf install ./<filename>.rpm`, or `sudo pacman -U ./<filename>.pkg.tar.zst`, substituting the actual filename. Architecture and distribution support do not certify a desktop session.
+Packages target **x86-64 Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch**. Download only the matching package and its `SHA256SUMS`. Architecture and distribution support do not certify a desktop session.
 
 Open Caelum, choose your speech mode, test the microphone, and complete practice. On portable desktops use **Record → Finish recording**. With history on, copy the result from History; with history off, paste directly from the clipboard. Paste into an editor to confirm delivery. A denied or unavailable global shortcut does not prevent the on-screen workflow. Hyprland adds native shortcuts, overlay and insertion. [Desktop qualification](docs/acceptance.md) is separate from package smoke tests.
 
+![Setup in the 0.5.0 candidate: choose a transcription mode](website/media/setup-0.5.0.png)
+
+*Actual Ubuntu 24.04 candidate package in [automated X11 smoke](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), not a GNOME/KDE qualification.*
+
+**Stable 0.4.2 installation** — run just the command for your downloaded package:
+
+```sh
+sudo apt install ./caelum_0.4.2-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.4.2-1_ubuntu-26.04_amd64.deb
+sudo apt install ./caelum_0.4.2-1_debian-12_amd64.deb
+sudo dnf install ./caelum-0.4.2-1.fedora43.x86_64.rpm
+sudo pacman -U ./caelum-0.4.2-1-x86_64.pkg.tar.zst
+```
+
+For an RC, use the package filename on its own release page. [Microphone, shortcut, tray, blank window and uninstall help](docs/linux.md#first-run-help).
+
 ## Development
+
+To try the native app on a clean checkout with a fresh profile, follow [Try dev on Linux](docs/try-dev.md).
 
 Requires Node 24+, Rust stable, uv, Python 3.11+, PortAudio, WebKitGTK 4.1,
 a C/C++ toolchain, pkg-config, and libayatana-appindicator/libappindicator.
 
 ```sh
-uv sync --locked --extra dev --python /usr/bin/python3
+uv sync --locked --extra dev --extra local --python /usr/bin/python3
 npm ci
 npm run tauri dev
 ```
