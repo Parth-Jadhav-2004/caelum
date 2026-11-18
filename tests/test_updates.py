@@ -302,6 +302,8 @@ def test_privileged_install_reverifies_and_uses_root_owned_snapshot(release, mon
         assert snapshot.read_bytes() == release.payload
         assert kwargs["env"] == updates.SAFE_ENV
         assert kwargs["cwd"] == "/"
+        assert kwargs["capture_output"]
+        assert kwargs["stdin"] == subprocess.DEVNULL
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "run", execute)
@@ -350,7 +352,7 @@ def test_cancelled_authorization_keeps_pending_update(release, monkeypatch):
         raise subprocess.CalledProcessError(126, command)
 
     monkeypatch.setattr(subprocess, "run", cancelled)
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(RuntimeError, match="authorization"):
         updates.apply_pending()
     assert pending.is_dir()
 
@@ -363,6 +365,8 @@ def test_successful_apply_removes_pending(release, monkeypatch):
         if command[0] == "/usr/bin/openssl":
             return original_run(command, **kwargs)
         assert command[0] == "/usr/bin/pkexec"
+        assert kwargs["capture_output"]
+        assert kwargs["stdin"] == subprocess.DEVNULL
 
     monkeypatch.setattr(subprocess, "run", execute)
     assert updates.apply_pending()
@@ -389,6 +393,82 @@ def test_external_upgrade_clears_obsolete_pending_update(release, monkeypatch):
     release.info["version"] = "0.3.0"
     assert not updates.apply_pending()
     assert not pending.exists()
+
+
+def test_pending_status_clears_an_already_installed_package(release):
+    pending = staged(release)
+    assert updates.pending_update()
+    release.info["version"] = "0.3.0"
+    assert not updates.pending_update()
+    assert not pending.exists()
+
+
+@pytest.mark.parametrize("invalid", ["expired", "signature", "missing_metadata"])
+def test_invalid_queued_update_remains_discardable(release, monkeypatch, invalid):
+    pending = staged(release)
+    if invalid == "expired":
+        monkeypatch.setattr(updates.time, "time", lambda: release.manifest["expires"])
+    elif invalid == "signature":
+        (pending / "update.json.sig").write_bytes(b"invalid signature")
+    else:
+        (pending / "update.json").unlink()
+    original_run = subprocess.run
+
+    def no_authorization(command, **kwargs):
+        assert command[0] == "/usr/bin/openssl", "Invalid downloads must not request installation"
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", no_authorization)
+    assert updates.pending_update() is True
+    assert pending.is_dir()
+    with pytest.raises((ValueError, OSError)):
+        updates.apply_pending()
+    assert pending.is_dir()
+    updates.discard_pending()
+    assert not pending.exists()
+    assert updates.pending_update() is False
+
+
+def test_queued_update_remains_discardable_without_install_metadata(release, monkeypatch):
+    pending = staged(release)
+    monkeypatch.setattr(updates, "installed", lambda: None)
+    assert updates.pending_update() is True
+    updates.discard_pending()
+    assert not pending.exists()
+
+
+def test_installer_output_cannot_enter_sidecar_protocol(release, monkeypatch, capfd):
+    import sys
+
+    staged(release)
+    original_run = subprocess.run
+
+    def noisy_installer(command, **kwargs):
+        if command[0] == "/usr/bin/pkexec":
+            command = [sys.executable, "-c", "print('loading packages...')"]
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", noisy_installer)
+    assert updates.apply_pending()
+    assert capfd.readouterr().out == ""
+
+
+def test_package_database_lock_reports_a_useful_error(release, monkeypatch):
+    pending = staged(release)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    original_run = subprocess.run
+
+    def locked(command, **kwargs):
+        if command[0] == "/usr/bin/openssl":
+            return original_run(command, **kwargs)
+        raise subprocess.CalledProcessError(
+            1, command, stderr="error: failed to init transaction (unable to lock database)"
+        )
+
+    monkeypatch.setattr(subprocess, "run", locked)
+    with pytest.raises(RuntimeError, match="package database is locked"):
+        updates.install_verified(pending)
+    assert pending.is_dir()
 
 
 @pytest.mark.parametrize(
@@ -428,9 +508,20 @@ def test_restart_stops_daemon_before_installing(release, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
     calls = []
     monkeypatch.setattr("caelum.desktop_services.request", lambda action: calls.append(action))
-    monkeypatch.setattr(updates, "apply_pending", lambda: calls.append("install"))
+    def install():
+        calls.append("install")
+        return True
+
+    monkeypatch.setattr(updates, "apply_pending", install)
     assert install_queued_update()
     assert calls == ["prepare-update", "install"]
+
+
+def test_no_install_does_not_request_restart(release, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setattr("caelum.desktop_services.request", lambda _: {})
+    monkeypatch.setattr(updates, "apply_pending", lambda: False)
+    assert install_queued_update() is False
 
 
 def test_restart_leaves_active_dictation_untouched(release, monkeypatch):

@@ -40,6 +40,7 @@ class Backend:
         self.mutation_lock = asyncio.Lock()
         self.update = None
         self.setup_checks = set()
+        self.shutdown_complete = False
 
     async def status(self):
         try:
@@ -84,9 +85,12 @@ class Backend:
         await self.stop()
         raise RuntimeError("Service startup timed out; run caelum doctor")
 
-    async def stop(self):
-        with suppress(OSError, RuntimeError):
-            await asyncio.to_thread(request, "shutdown")
+    async def stop(self, *, request_shutdown=True):
+        if self.shutdown_complete:
+            return
+        if request_shutdown:
+            with suppress(OSError, RuntimeError):
+                await asyncio.to_thread(request, "shutdown")
         if self.process and self.process.returncode is None:
             try:
                 await asyncio.wait_for(self.process.wait(), 8)
@@ -105,7 +109,9 @@ class Backend:
         # A shortcut can begin recording after the sidecar's status snapshot.
         with suppress(FileNotFoundError, ConnectionRefusedError):
             await asyncio.to_thread(request, "prepare-update")
-        await self.stop()
+        # prepare-update already stops the daemon. A second command can connect
+        # to its closing socket and wait for the full socket timeout.
+        await self.stop(request_shutdown=False)
 
     async def dispatch(self, method, params):
         config = load(self.path)
@@ -342,14 +348,18 @@ class Backend:
 
             await asyncio.to_thread(discard_pending)
         elif method == "updates.pending":
-            from .updates import cache_dir
+            from .updates import pending_update
 
-            return (cache_dir() / "pending").is_dir()
+            return await asyncio.to_thread(pending_update)
         elif method == "shutdown":
+            if self.shutdown_complete:
+                return {"ok": True}
+            self.cancelled.set()
             if params.get("discard"):
                 await self.stop()
             else:
                 await self.stop_idle()
+            self.shutdown_complete = True
         else:
             raise ValueError("Unknown method")
         return {"ok": True}
@@ -387,6 +397,7 @@ async def run():
                 "microphone.test",
                 "practice",
                 "sample.cancel",
+                "updates.check",
                 "updates.testing",
             }:
                 result = await backend.dispatch(method, params)

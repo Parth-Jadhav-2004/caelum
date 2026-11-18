@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi } from "vitest";
@@ -313,4 +313,78 @@ it("reports a failed testing check while keeping a signed stable update availabl
   expect(screen.getByRole("status")).toHaveTextContent(
     "Testing releases could not be checked",
   );
+});
+
+it.each([true, false])(
+  "restarts only when an update was installed (%s)",
+  async (applied) => {
+    vi.mocked(invoke).mockClear();
+    mount({ description: "Saved", storage: "keyring" });
+    let queued = true;
+    const original = vi.mocked(ipc).getMockImplementation()!;
+    vi.mocked(ipc).mockImplementation(((method, params) => {
+      if (method === "updates.pending") return Promise.resolve(queued);
+      if (method === "updates.apply") {
+        queued = false;
+        return Promise.resolve(applied);
+      }
+      return original(method, params);
+    }) as typeof ipc);
+    await userEvent.click(screen.getByRole("button", { name: "System" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Update & restart" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Update & restart",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    if (applied) expect(invoke).toHaveBeenCalledWith("restart_app");
+    else {
+      expect(invoke).not.toHaveBeenCalledWith("restart_app");
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "already up to date",
+      );
+    }
+  },
+);
+
+it("retains a queued update after failure and shows its installation error", async () => {
+  mount({ description: "Saved", storage: "keyring" });
+  let queued = false;
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) => {
+    if (method === "updates.pending") return Promise.resolve(queued);
+    if (method === "updates.check")
+      return Promise.resolve({ version: "0.4.3" });
+    if (method === "updates.stage") {
+      queued = true;
+      return Promise.resolve("0.4.3");
+    }
+    if (method === "updates.apply")
+      return Promise.reject("The package database is locked.");
+    return original(method, params);
+  }) as typeof ipc);
+  await userEvent.click(screen.getByRole("button", { name: "System" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Check updates" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Update & restart" }),
+  );
+  const confirm = within(screen.getByRole("alertdialog")).getByRole("button", {
+    name: "Update & restart",
+  });
+  await userEvent.click(confirm);
+  expect(
+    await screen.findByText("The package database is locked."),
+  ).toBeVisible();
+  await waitFor(() => expect(confirm).toBeEnabled());
+  await userEvent.click(confirm);
+  expect(
+    vi.mocked(ipc).mock.calls.filter(([method]) => method === "updates.stage"),
+  ).toHaveLength(1);
 });
