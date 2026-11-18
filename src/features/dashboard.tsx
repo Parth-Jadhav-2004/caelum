@@ -52,17 +52,20 @@ export function DeviceSelect({
   onChange: (value: Config["app"]["microphone"]) => void;
   disabled?: boolean;
 }) {
-  const { data = [] } = useQuery({
+  const { data, isSuccess } = useQuery({
     queryKey: ["devices"],
     queryFn: () => ipc("devices", {}),
     refetchInterval: 15000,
   });
   const devices = [
     { label: "System default", value: null },
-    ...data.filter((d) => d.value !== null),
+    ...(data ?? []).filter((d) => d.value !== null),
   ];
   if (value !== null && !devices.some((d) => d.value === value))
-    devices.push({ label: `${value} (configured, not detected)`, value });
+    devices.push({
+      label: isSuccess ? `${value} (configured, not detected)` : String(value),
+      value,
+    });
   return (
     <Select
       value={JSON.stringify(value)}
