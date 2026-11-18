@@ -4,10 +4,28 @@ body:
   - type: markdown
     attributes:
       value: Do not include API keys, audio, transcripts, or unredacted logs. See SECURITY.md for sensitive issues.
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Release channel
+      options:
+        - Production (stable)
+        - Testing (release candidate)
+        - Development
+        - Source checkout / unsure
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
       label: Caelum version and package filename
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: GitHub release tag or source commit
+      description: For development/testing, paste the full release tag (including dev/rc suffix) or source SHA from the release page. Package version alone cannot distinguish preview builds.
     validations:
       required: true
   - type: input
