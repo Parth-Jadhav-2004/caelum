@@ -1,7 +1,8 @@
 // Simple screenshot capture using playwright
 import { chromium } from 'playwright';
 import path from 'path';
-import fs from 'fs';
+import { log, error } from 'node:console';
+import process from 'node:process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,12 +39,15 @@ async function captureScreenshots() {
       type: 'png'
     });
     
-    console.log(`Captured: ${output}`);
+    log(`Captured: ${output}`);
     await page.close();
   }
   
   await browser.close();
-  console.log('All screenshots captured successfully!');
+  log('All screenshots captured successfully!');
 }
 
-captureScreenshots().catch(console.error);
+captureScreenshots().catch((cause) => {
+  error(cause);
+  process.exitCode = 1;
+});
