@@ -1,0 +1,42 @@
+{
+  "version": "0.4.2",
+  "releaseUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.4.2",
+  "checksumsUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/download/v0.4.2/SHA256SUMS",
+  "packages": [
+    {
+      "id": "ubuntu-2404",
+      "name": "Ubuntu 24.04",
+      "manager": "apt",
+      "file": "caelum_0.4.2-1_ubuntu-24.04_amd64.deb",
+      "size": 22350176
+    },
+    {
+      "id": "ubuntu-2604",
+      "name": "Ubuntu 26.04",
+      "manager": "apt",
+      "file": "caelum_0.4.2-1_ubuntu-26.04_amd64.deb",
+      "size": 22346448
+    },
+    {
+      "id": "debian-12",
+      "name": "Debian 12",
+      "manager": "apt",
+      "file": "caelum_0.4.2-1_debian-12_amd64.deb",
+      "size": 22495242
+    },
+    {
+      "id": "arch",
+      "name": "Arch Linux",
+      "manager": "pacman",
+      "file": "caelum-0.4.2-1-x86_64.pkg.tar.zst",
+      "size": 15997672
+    },
+    {
+      "id": "fedora",
+      "name": "Fedora 43",
+      "manager": "dnf",
+      "file": "caelum-0.4.2-1.fedora43.x86_64.rpm",
+      "size": 16319086
+    }
+  ]
+}

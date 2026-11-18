@@ -9,7 +9,7 @@ on:
         options: [testing, production]
         default: testing
       candidate_run_id:
-        description: Successful Linux candidate workflow run ID (from main)
+        description: Successful Linux candidate workflow run ID (from dev)
         required: true
         type: string
       desktop_qualified:

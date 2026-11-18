@@ -38,8 +38,10 @@ async def test_release_upgrade_preserves_config_history_and_lifetime_totals(tmp_
     assert load(config).stt == settings.stt
     assert load(config).app == settings.app
     with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT * FROM dictations").fetchall() == original
-        assert connection.execute("PRAGMA table_info(dictations)").fetchall() == schema
+        rows = connection.execute("SELECT * FROM dictations").fetchall()
+        assert [row[:-2] for row in rows] == original
+        assert all(row[-2:] == ("online", "auto") for row in rows)
+        assert connection.execute("PRAGMA table_info(dictations)").fetchall()[:-2] == schema
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 

@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 it.each<[Page, string]>([
-  ["home", "Hold SUPER + ALT + V to dictate anywhere"],
+  ["home", "Record, finish, then copy your transcript"],
   ["statistics", "Insights"],
   ["history", "History"],
   ["settings", "Settings"],
@@ -74,7 +74,7 @@ it.each<[Page, string]>([
         <App />
       </QueryClientProvider>,
     );
-    await screen.findByRole("heading", { name: /dictate anywhere/ });
+    await screen.findByRole("heading", { name: /Record, finish/ });
     act(() => useApp.setState({ page }));
     await screen.findByRole("heading", { name: heading });
     const result = await axe.run(document.body, {

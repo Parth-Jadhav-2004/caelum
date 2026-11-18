@@ -66,6 +66,10 @@
     {
       "date": "2026-11-13",
       "decision": "User requested T3 Code themes: six pinned upstream palettes plus original Caelum mint; independent appearance selector, compact 8px radii and functional copy."
+    },
+    {
+      "date": "2026-11-17",
+      "decision": "Preserve main 8890b43 desktop redesign. Local model controls live within existing Settings rows and welcome flow; use shared primitives, text-body/text-meta, neutral recording feedback and red only for failures."
     }
   ],
   "evidence": [

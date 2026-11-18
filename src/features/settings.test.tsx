@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Settings } from "./settings";
 import { ipc } from "@/lib/ipc";
+import { testModels } from "@/test-models";
 import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
 vi.mock("@tauri-apps/api/core", () => ({
@@ -392,9 +393,10 @@ it("retains a queued update after failure and shows its installation error", asy
 
 it("preserves cloud preferences while editing offline transcription settings", async () => {
   const change = vi.fn();
+  vi.mocked(ipc).mockImplementation((async (method: string) => method === "models.list" ? testModels : {}) as typeof ipc);
   const config = {
     ...testConfig,
-    stt: { ...testConfig.stt, engine: "local", local_binary: "/usr/bin/whisper-cli", local_model_path: "/models/base.bin" },
+    stt: { ...testConfig.stt, engine: "local", local_model: "parakeet-110m" },
     cleanup: { ...testConfig.cleanup, model: "cloud-cleanup", style: "code" },
   };
   render(
@@ -404,13 +406,11 @@ it("preserves cloud preferences while editing offline transcription settings", a
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  expect(screen.getByLabelText("Local executable")).toHaveValue("/usr/bin/whisper-cli");
-  expect(screen.getByLabelText("Local model file")).toHaveValue("/models/base.bin");
-  expect(screen.getByRole("combobox", { name: "Text cleanup" })).toBeDisabled();
-  await userEvent.click(screen.getByRole("combobox", { name: "Transcription provider" }));
-  await userEvent.click(screen.getByRole("option", { name: "Groq" }));
+  expect(screen.queryByRole("combobox", { name: "Text cleanup" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("combobox", { name: "Transcription engine" }));
+  await userEvent.click(screen.getByRole("option", { name: "Online" }));
   expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
-    stt: expect.objectContaining({ engine: "cloud", local_model_path: "/models/base.bin" }),
+    stt: expect.objectContaining({ engine: "online", local_model: "parakeet-110m" }),
     cleanup: config.cleanup,
   }));
 });

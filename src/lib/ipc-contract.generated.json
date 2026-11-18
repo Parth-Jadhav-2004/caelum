@@ -86,11 +86,20 @@
                   "engine": {
                     "type": "string"
                   },
-                  "local_binary": {
+                  "local_model": {
                     "type": "string"
                   },
-                  "local_model_path": {
+                  "local_threads": {
+                    "type": "number"
+                  },
+                  "fallback": {
                     "type": "string"
+                  },
+                  "local_device": {
+                    "type": "string"
+                  },
+                  "local_idle_seconds": {
+                    "type": "number"
                   },
                   "local_timeout_seconds": {
                     "type": "number"
@@ -125,8 +134,11 @@
                 },
                 "required": [
                   "engine",
-                  "local_binary",
-                  "local_model_path",
+                  "local_model",
+                  "local_threads",
+                  "fallback",
+                  "local_device",
+                  "local_idle_seconds",
                   "local_timeout_seconds",
                   "base_url",
                   "model",
@@ -145,6 +157,12 @@
                 "properties": {
                   "style": {
                     "type": "string"
+                  },
+                  "replacements": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   },
                   "base_url": {
                     "type": "string"
@@ -167,6 +185,7 @@
                 },
                 "required": [
                   "style",
+                  "replacements",
                   "base_url",
                   "key_env",
                   "model",
@@ -318,6 +337,46 @@
           },
           "backend": {
             "type": "string"
+          },
+          "engine": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "online",
+                  "local"
+                ]
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "ready",
+                  "loading",
+                  "error",
+                  "missing",
+                  "unloaded"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "model",
+              "state",
+              "message"
+            ],
+            "additionalProperties": false
           },
           "feedback": {
             "type": "object",
@@ -612,11 +671,20 @@
                   "engine": {
                     "type": "string"
                   },
-                  "local_binary": {
+                  "local_model": {
                     "type": "string"
                   },
-                  "local_model_path": {
+                  "local_threads": {
+                    "type": "number"
+                  },
+                  "fallback": {
                     "type": "string"
+                  },
+                  "local_device": {
+                    "type": "string"
+                  },
+                  "local_idle_seconds": {
+                    "type": "number"
                   },
                   "local_timeout_seconds": {
                     "type": "number"
@@ -657,6 +725,12 @@
                 "properties": {
                   "style": {
                     "type": "string"
+                  },
+                  "replacements": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   },
                   "base_url": {
                     "type": "string"
@@ -1017,6 +1091,65 @@
     "setup.finish": {
       "params": {
         "type": "object",
+        "properties": {
+          "skip_practice": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "setup.stage": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "setup.skip": {
+      "params": {
+        "type": "object",
         "properties": {},
         "required": [],
         "additionalProperties": false
@@ -1192,6 +1325,459 @@
         ],
         "additionalProperties": false
       }
+    },
+    "models.list": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "hardware": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true
+          },
+          "recommended": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason_code": {
+                "type": "string"
+              },
+              "reason_text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "reason_code",
+              "reason_text"
+            ],
+            "additionalProperties": false
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "tier": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "blurb": {
+                  "type": "string"
+                },
+                "languages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "auto_language": {
+                  "type": "boolean"
+                },
+                "download_bytes": {
+                  "type": "number"
+                },
+                "disk_bytes": {
+                  "type": "number"
+                },
+                "licence": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "attribution": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "attribution"
+                  ],
+                  "additionalProperties": false
+                },
+                "wer": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                },
+                "state": {
+                  "enum": [
+                    "not_installed",
+                    "queued",
+                    "downloading",
+                    "stalled",
+                    "paused",
+                    "verifying",
+                    "installing",
+                    "installed",
+                    "failed",
+                    "cancelled",
+                    "ready"
+                  ]
+                },
+                "received_bytes": {
+                  "type": "number"
+                },
+                "total_bytes": {
+                  "type": "number"
+                },
+                "bytes_per_sec": {
+                  "type": "number"
+                },
+                "eta_seconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "in_use": {
+                  "type": "boolean"
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "disabled_reason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requires_extra": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stored_in": {
+                  "type": "string"
+                },
+                "decode_ms": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "tier",
+                "label",
+                "blurb",
+                "languages",
+                "auto_language",
+                "download_bytes",
+                "disk_bytes",
+                "licence",
+                "wer",
+                "state",
+                "received_bytes",
+                "total_bytes",
+                "bytes_per_sec",
+                "eta_seconds",
+                "error",
+                "in_use",
+                "visible",
+                "disabled_reason",
+                "requires_extra",
+                "stored_in",
+                "decode_ms"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "pending_use": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "storage_bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "hardware",
+          "recommended",
+          "models",
+          "pending_use",
+          "storage_bytes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.download": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.pause": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.resume": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.cancel": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.remove": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "freed_bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "freed_bytes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.verify": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "bad_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "bad_files"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.use": {
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "when_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "status": {
@@ -1220,6 +1806,46 @@
       },
       "backend": {
         "type": "string"
+      },
+      "engine": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "online",
+              "local"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "loading",
+              "error",
+              "missing",
+              "unloaded"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "model",
+          "state",
+          "message"
+        ],
+        "additionalProperties": false
       },
       "feedback": {
         "type": "object",
@@ -1255,6 +1881,79 @@
       "title",
       "detail",
       "paused"
+    ],
+    "additionalProperties": true
+  },
+  "model_progress": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "queued",
+          "downloading",
+          "stalled",
+          "paused",
+          "verifying",
+          "installing",
+          "ready",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "received_bytes": {
+        "type": "number"
+      },
+      "total_bytes": {
+        "type": "number"
+      },
+      "bytes_per_sec": {
+        "type": "number"
+      },
+      "eta_seconds": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "state",
+      "received_bytes",
+      "total_bytes",
+      "bytes_per_sec",
+      "eta_seconds",
+      "error"
     ],
     "additionalProperties": true
   }

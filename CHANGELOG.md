@@ -2,6 +2,12 @@
 
 Release notes, newest first.
 
+## 0.5.0
+
+Choose **Online** with your own provider key or **On this computer** with a separately downloaded model in setup and settings. Local practice does not send speech or vocabulary to a provider. Online sends speech and vocabulary; optional cleanup sends text. Model licenses and hardware requirements vary. Portable desktops use Record, Finish and copy; native Hyprland integration is optional.
+
+This candidate targets the same five x86-64 packages as 0.4.2. Previews share stable profile paths: back up settings and history or use a disposable account. Previews are manually installed, not signed stable updates. See [acceptance](docs/acceptance.md) and [release promotion](docs/releasing.md) for hardware, lifecycle and signed-upgrade gates. [Changes since stable](https://github.com/Parth-Jadhav-2004/caelum/compare/v0.4.2...dev).
+
 ## 0.4.2
 
 - **Automatic updates.** A new stable version enables signed in-app upgrades from 0.4.0 and the 0.4.1 testing packages. Manual checks also show testing releases with a separate package-manager download action, rather than calling the whole app up to date when only the stable feed was checked.

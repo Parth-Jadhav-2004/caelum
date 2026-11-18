@@ -10,14 +10,15 @@ from pathlib import Path
 from .config import validate
 
 
-def request(action):
+def request(action, *, config=None, progress=None):
     root = os.environ.get("XDG_RUNTIME_DIR")
     if not root:
         raise RuntimeError("Open Caelum inside your desktop session")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(2)
+        client.settimeout(310 if config is not None else 2)
         client.connect(str(Path(root) / "caelum/control.sock"))
-        client.sendall(json.dumps({"action": action}).encode() + b"\n")
+        client.sendall(json.dumps({"action": action, **({"config": config} if config is not None else {}),
+                                 **({"progress": progress} if progress is not None else {})}).encode() + b"\n")
         result = json.loads(client.makefile("r").readline(65536))
         if "error" in result:
             raise RuntimeError(result["error"])
@@ -137,7 +138,7 @@ async def connection_status(config):
             if title == "Transcription" and config.stt.engine == "local":
                 try:
                     await provider.models(settings)
-                    results.append("Transcription: local executable and model found (offline)")
+                    results.append("Transcription: speech model found (offline)")
                 except ProviderError as error:
                     results.append(f"Transcription: {error}")
                 continue
@@ -161,7 +162,7 @@ async def connection_status(config):
                     else f"{title}: {error}"
                 )
     finally:
-        await provider.client.aclose()
+        await provider.aclose()
     return "\n".join(results)
 
 
@@ -171,6 +172,18 @@ def service_presentation(status):
     if status.get("paused"):
         return "Paused", "Resume to use the recording shortcut."
     state = status.get("state", "hidden")
+    engine = status.get("engine")
+    if state in ("hidden", "success", "unrefined", "no_speech", "model_ready") and engine:
+        if engine["state"] == "loading":
+            return "Getting ready…", "Your speech model is loading."
+        if engine["state"] == "unloaded":
+            return "Model resting", "The model will load when you next dictate."
+        if engine["state"] in ("error", "missing"):
+            return "Speech model needs attention", engine["message"] or "Open Settings to download a model."
+        if state == "hidden":
+            return ("Ready · On this computer" if engine["kind"] == "local" else "Ready · Online",
+                    "Audio stays on this computer." if engine["kind"] == "local" else
+                    "Audio is sent to your provider.")
     if state == "error":
         if status.get("pending_audio"):
             guidance = {
@@ -181,12 +194,18 @@ def service_presentation(status):
                 "offline": "Check your network connection, then retry.",
                 "timeout": "The provider timed out. Retry when the connection is stable.",
                 "model": "Choose an available model in Settings.",
+                "local_setup": "Speech model needs attention. Open Settings and check files.",
             }.get(status.get("error_kind"), "Retry or cancel before the recording expires.")
             return "Awaiting retry", guidance + " Pending audio stays in memory only."
         if status.get("error_kind") in ("microphone", "capture"):
             return "Microphone unavailable", "Open Settings to choose a microphone and test input."
         return "Recording failed", "Check Settings and try recording again."
     labels = {
+        "model_downloading": ("Downloading speech model", "The download continues in the background."),
+        "model_stalled": ("Download stalled", "Waiting for the connection. Open Settings for details."),
+        "model_loading": ("Loading speech model", "Getting the local model ready."),
+        "model_ready": ("Model ready", "Local dictation is ready."),
+        "model_failed": ("Model failed", "Open Settings to retry. Your previous model is unchanged."),
         "hidden": (
             "Ready",
             "Use Record or your approved desktop shortcut to begin."
@@ -199,6 +218,10 @@ def service_presentation(status):
         "listening": ("Recording", "Listening for speech. No interim text is shown."),
         "recording": ("Recording", "Release your shortcut or finish recording to process."),
         "processing": ("Processing", "Transcribing your recording."),
+        "loading": ("Getting ready…", "Your speech model is loading."),
+        "missing_model": ("Speech model not downloaded", "Open Caelum to download a speech model."),
+        "success_fallback_online": ("Done · used Online", "This dictation used your online provider."),
+        "success_fallback_local": ("Done · used this computer", "This dictation stayed on this computer."),
         "refining": ("Processing", "Refining punctuation and formatting."),
         "success": ("Done", "Refined text was sent to the original application."),
         "unrefined": (
@@ -213,4 +236,6 @@ def service_presentation(status):
     metrics = status.get("metrics") or []
     if state in ("saved", "copied") and metrics and not metrics[-1].get("cleanup_refined", False):
         detail += " Raw transcription; refinement was skipped or unavailable."
+    if state in ("saved", "copied") and metrics and metrics[-1].get("fallback"):
+        title = "Done · used Online" if metrics[-1]["fallback"] == "online" else "Done · used this computer"
     return title, detail

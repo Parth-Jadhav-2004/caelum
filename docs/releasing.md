@@ -1,127 +1,14 @@
 # Building and promoting Caelum releases
 
-## Release channels
+## Release channels: dev → testing → main
 
-- **Development:** every successful main-branch candidate publishes
-  `v<version>-dev.<candidate-run-id>.<attempt>` as a GitHub prerelease, never Latest.
-  Use this for early feedback. Website-only pushes and PRs do not publish packages.
-- **Testing:** maintainers select a successful main candidate in `publish.yml`,
-  channel `testing`. It publishes `v<version>-rc.<candidate-run-id>` without
-  rebuilding. These are explicit, manual package-manager installations.
-- **Production:** `publish.yml`, channel `production`, requires the same candidate
-  to exist as a complete published testing release, completed manual acceptance,
-  and approval in the protected `release` environment. It signs metadata and
-  publishes `v<version>` as Latest. Only production enters automatic updates.
+1. Commit a unique base version to `dev` (Python, npm, Rust, Tauri, locks and Arch recipe), with reviewed CHANGELOG notes. `Checks` runs on PRs and all three branches; `Linux candidate` builds on dev only. A push changing only website files needs a manual `gh workflow run release.yml --ref dev` if it is to be packaged. Each of five native packages must install, pass IPC, simulated audio and native WebKit bootstrap; inspect the smoke artifacts. These checks do not qualify physical desktops.
+2. Optional manual development publication: `gh workflow run development.yml --ref dev -f candidate_run_id=RUN`. All preview installs share stable profile paths and replace the installed package. Back up settings/history or use a disposable account. Dev tags use `vVERSION-dev.RUN.ATTEMPT`.
+3. Open a **dev → testing** PR only after the successful dev build; require source, native and promotion-route checks. Use a merge commit to retain the source SHA. The accepted tree must match the candidate exactly. Then `gh workflow run publish.yml --ref testing -f channel=testing -f candidate_run_id=RUN -f desktop_qualified=false`. This publishes `vVERSION-rc.RUN` without rebuilding. Verify all assets anonymously against SHA256SUMS. Rerunning the same dispatch resumes/verifies existing bytes.
+4. On that RC, complete [manual acceptance](acceptance.md), including GNOME Wayland, Plasma Wayland, X11, physical capture with both engines, lifecycle and staged signed upgrade/recovery. Record SHA, run/attempt, package hash, environment, tester and outcomes. Failed checks require a new dev candidate. Do not open the **testing → main** promotion until this evidence is accepted. Require independent review of the qualification evidence. Merge only the tested tree.
+5. After merge, dispatch `gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id=RUN -f desktop_qualified=true`. The protected `release` environment requires maintainer approval; only this environment holds signing keys. Verification binds the successful dev build to the promotion tree and rehashes all published testing assets before signing. Production alone becomes Latest and enters stable updates. Pages deploys from main and regenerates the stable inventory.
 
-Development and testing never receive the production signing key or publish
-stable update metadata. All channels retain immutable packages, source/run/attempt
-provenance, per-package SHA-256 hashes, and resumable draft uploads. Testing
-versions must be higher than the current production version.
-
-Preview package versions are the base version; source SHA and release tag identify
-the exact build. Preview packages currently replace the same native package and
-share its configuration/history paths. They are not side-by-side installations;
-back up user data or use a separate test account/VM before testing upgrades.
-
-## Checks and candidates
-
-Pull requests and main pushes run `Checks`: Ruff, pytest, privacy scanning,
-ESLint, component tests, strict TypeScript/Vite, generated-contract checks,
-workflow linting, Rust formatting, Clippy, and Rust tests. Toolchains are declared
-in `.node-version` and `rust-toolchain.toml`; CI pins uv and every external Action.
-Dependabot proposes updates for Actions, npm, Cargo, and uv dependencies.
-Rust caches are separated by target distro, architecture, toolchain and locks.
-PRs and version tags do not build/publish a full release automatically.
-
-`Linux candidate` runs on main pushes (except website-only
-changes), or manually through `release.yml`. It first runs the checks, then builds
-Ubuntu 24.04/26.04, Debian 12, Fedora 43, and Arch x86_64 packages in their target
-containers. Each package is installed and checked through the CLI, JSONL IPC,
-an isolated PulseAudio server, and a real WebKit/Xvfb launch. The frontend emits
-an opt-in test marker only after its bootstrap/configuration loaded. A live
-process or screenshot alone is not considered sufficient. Smoke screenshots
-and logs are retained for 14 days, including on failure.
-`Publish development release` starts only after that candidate succeeds. Its
-separate workflow lets a failed publication resume without rebuilding packages
-or changing the candidate's run attempt. The privileged workflow-run handler
-verifies workflow identity, repository, main branch, source SHA and successful
-conclusion before checking out the candidate or granting publication permissions.
-
-The GUI check uses X11/software rendering and, only inside root smoke containers,
-a process-scoped WebKit sandbox override. Normal application launches keep their
-usual sandbox and graphics configuration. This does not qualify Wayland,
-layer-shell placement, hardware, screen readers, or provider credentials.
-
-The assembled `release-candidate` artifact contains exactly five packages,
-per-target build provenance, and a checksum manifest tied to the workflow run,
-attempt, source SHA, version, and lockfile hashes. Candidates are unsigned and
-are never placed in the stable update feed. Python wheels are vendored, but the
-host's Python minor version and native libraries remain package requirements.
-Arch is rolling; its container/native libraries need current rebuild qualification.
-
-## Release procedure
-
-1. Choose a new stable `major.minor.patch` version. Update `pyproject.toml`,
-   `package.json`/lockfile, `src-tauri/Cargo.toml`/lockfile, and
-   `src-tauri/tauri.conf.json` together. Existing published versions cannot be reused.
-2. Add a newest-first `## <version>` entry to [CHANGELOG.md](../CHANGELOG.md) using [release-template.md](release-template.md).
-   Lead with actual user-visible changes. Include download/support, upgrade,
-   known-limitations, test evidence, and full-changelog links. Remove placeholders.
-3. Merge the release commit to the default branch. Its candidate/development build
-   starts automatically. Inspect it, or start a fresh main candidate manually:
-
-   ```sh
-   gh workflow run release.yml --ref main
-   gh run list --workflow release.yml
-   gh run view <candidate-run-id>
-   ```
-
-4. Publish the candidate to testing:
-
-   ```sh
-   gh workflow run publish.yml --ref main -f channel=testing \
-     -f candidate_run_id=<candidate-run-id> -f desktop_qualified=false
-   ```
-
-   Install the RC packages and inspect its provenance and smoke evidence. Complete
-   [acceptance.md](acceptance.md) on actual supported desktops/providers. Test
-   clean installation, upgrade/data preservation, and the signing/update path.
-   Record the exact candidate run, SHA, distro/session and outcomes in the release
-   environment approval record or a linked qualification issue. If release notes
-   or code need changes, commit them and build a new candidate from that commit.
-   Do not relabel unchecked platforms qualified.
-5. Promote the same testing candidate to production from the default branch:
-
-   ```sh
-   gh workflow run publish.yml --ref main -f channel=production \
-     -f candidate_run_id=<candidate-run-id> -f desktop_qualified=true
-   ```
-
-   The checkbox is a maintainer attestation, not an automated hardware test.
-   The workflow verifies the run belongs to this repository's candidate workflow,
-   originated on the default branch as a push/manual build, and completed successfully. A candidate
-   older than seven days, from a different run attempt, or with mismatched
-   source/locks/checksums is rejected.
-6. The existing `release` environment is production's protected environment and
-   holds `CAELUM_UPDATE_SIGNING_KEY` (Ed25519). The new `development` and `testing`
-   environments allow only main-branch deployments and contain no signing key.
-   Promotion checks out the candidate's exact source, downloads its exact bytes,
-   verifies all files against the published RC, signs the existing update format, and attaches
-   `SHA256SUMS`, provenance, and update metadata. It does not rebuild packages.
-   The private key must match `python/caelum/update-public.pem`.
-7. The publisher creates or reuses a draft, verifies every existing remote asset
-   by downloading and hashing it, uploads only missing files, verifies the final
-   set, and then publishes. A matching published release is a no-op. Different
-   assets, unexpected uploads, tag movement, and stable-version rollback fail.
-
-Set required `source` and `native` checks in branch protection, and protect the
-`release` environment with the repository's maintainer review policy. These
-GitHub repository settings are administrative configuration, separate from the
-checked-in workflows. Keep signing access out of candidate and pull-request jobs.
-Restrict all three environments to the main branch. Remove legacy `v*` tag
-deployment permissions from `release`, so an old tag's workflow cannot bypass
-the current testing-to-production gate. Keep the existing reviewers and signing
-secret in `release`; no secret migration is needed.
+Restrict development, testing and release environments to their respective **dev**, **testing** and **main** branch (no tags). Protect testing/main from direct pushes including administrator bypass, force pushes and deletions. Require `source`, `native`, `promotion-route` on both; require main PR approval. Do not authorize a production deployment to rehearse an upgrade. Artifacts and smoke logs last 14 days, but candidate eligibility expires after seven days. If the gate expires, build and qualify a fresh dev run.
 
 ## Reporting preview bugs
 

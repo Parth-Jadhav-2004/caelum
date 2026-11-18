@@ -28,6 +28,52 @@ def pills(data):
     ]
 
 
+@pytest.mark.skipif(os.environ.get("CAELUM_TEST_MODELS") != "1",
+                    reason="Requires the verified 110M model and public fixtures")
+async def test_native_local_110m_smoke_without_uploads():
+    from pathlib import Path
+
+    import httpx
+    from caelum.audio import read_wav
+    from caelum.config import Config
+    from caelum.local_stt import LocalEngine
+    from caelum.providers import Providers
+
+    root = os.environ.get("CAELUM_TEST_MODELS_DIR")
+    manifest = os.environ.get("CAELUM_MODEL_FIXTURES")
+    assert root and manifest
+    manifest = Path(manifest)
+    fixture = json.loads(manifest.read_text())[0]
+    pcm = read_wav(manifest.parent / fixture["audio"])
+
+    def forbidden(_):
+        pytest.fail("Local dictation attempted an HTTP request")
+
+    config = Config()
+    config.stt.engine, config.stt.local_model = "local", "parakeet-110m"
+    config.cleanup.model = "must-not-refine-online"
+    client = httpx.AsyncClient(transport=httpx.MockTransport(forbidden))
+    provider = Providers(config, client=client)
+    provider.local_engine = LocalEngine(root=root, language="en")
+    hud = HUD(config.app)
+    try:
+        await hud.start()
+        await hud.emit({"session_id": "local-smoke", "sequence": 1, "state": "processing",
+                        "elapsed_ms": 0, "level": 0, "history": [0] * 17, "output": "",
+                        "error_code": ""})
+        result = await provider.stt(pcm)
+        assert result.text
+        assert (await provider.cleanup(result.text))[1] is False
+        assert provider.metrics["engine"] == "local"
+        assert provider.metrics["uploaded_audio_bytes"] == provider.metrics["http_calls"] == 0
+        await hud.emit({"session_id": "local-smoke", "sequence": 2, "state": "success",
+                        "elapsed_ms": 0, "level": 0, "history": [0] * 17, "output": "",
+                        "error_code": ""})
+    finally:
+        await provider.aclose()
+        await hud.close()
+
+
 async def test_native_pill_protocol_geometry_focus_and_dismiss(monkeypatch, tmp_path):
     original = asyncio.create_subprocess_exec
     protocol_log = (tmp_path / "protocol.log").open("wb")

@@ -1,18 +1,20 @@
 name: Linux candidate
 on:
   push:
-    branches: [main]
+    branches: [dev]
     paths-ignore:
       - 'website/**'
   workflow_dispatch:
 permissions:
   contents: read
-# Successful main candidates trigger development.yml; PRs never publish.
+  actions: read
+# Build only on dev; publish these exact bytes without rebuilding on testing or main.
 concurrency:
   group: candidate-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   checks:
+    if: github.ref == 'refs/heads/dev'
     uses: ./.github/workflows/ci.yml
   package:
     name: Package ${{ matrix.target }}

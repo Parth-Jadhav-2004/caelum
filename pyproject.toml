@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caelum-dictation"
-version = "0.4.2"
+version = "0.5.0"
 description = "Private-by-default dictation for Linux desktops"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=1", "ruff>=0.12"]
+local = ["sherpa-onnx>=2.0.1,<3"]
+whisper = ["faster-whisper>=1.2,<2", "sherpa-onnx>=2.0.1,<3"]
 
 [project.scripts]
 caelum = "caelum.cli:main"
@@ -38,3 +40,7 @@ select = ["E4", "E7", "E9", "F", "I", "B"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "config.example.toml" = "caelum/config.example.toml"
+"python/caelum/model_catalog.json" = "caelum/model_catalog.json"
+
+"python/caelum/data/silero_vad.onnx" = "caelum/data/silero_vad.onnx"
+"python/caelum/data/Silero-LICENSE.txt" = "caelum/data/Silero-LICENSE.txt"

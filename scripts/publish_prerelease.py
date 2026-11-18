@@ -29,11 +29,16 @@ def tag_for(manifest, channel):
 class PrereleaseGitHub(GitHub):
     def create(self, tag, sha, notes):
         channel = "Development" if "-dev." in tag else "Testing"
-        subprocess.run([
-            "gh", "release", "create", tag, "--draft", "--prerelease", "--latest=false",
-            "--verify-tag", "--target", sha, "--title", f"Caelum {tag} · {channel}",
-            "--notes-file", str(notes),
-        ], check=True)
+        # The releases list need not reflect a newly created draft yet. Use the
+        # create response (including its immutable ID) instead of listing again.
+        result = self.api("repos/{owner}/{repo}/releases", {
+            "tag_name": tag, "target_commitish": sha, "draft": True,
+            "prerelease": True, "make_latest": "false",
+            "name": f"Caelum {tag} · {channel}", "body": notes.read_text(),
+        })
+        if result.get("tag_name") != tag or result.get("draft") is not True:
+            raise ValueError("GitHub did not return the requested draft")
+        return result
 
     def publish(self, tag):
         subprocess.run([
@@ -91,8 +96,7 @@ def publish(directory, sha, run_id, run_attempt, channel, github=None):
         with tempfile.TemporaryDirectory() as work:
             notes = Path(work) / "release-notes.md"
             notes.write_text(notes_for(manifest, channel))
-            github.create(tag, sha, notes)
-        release = github.release(tag)
+            release = github.create(tag, sha, notes)
     if release is None or release.get("prerelease") is not True:
         raise ValueError("Expected a verified GitHub prerelease")
     present = reconcile(github, tag, directory, expected, release)
@@ -101,7 +105,7 @@ def publish(directory, sha, run_id, run_attempt, channel, github=None):
         return
     for name in sorted(set(expected) - present):
         github.upload(tag, directory / name)
-    if reconcile(github, tag, directory, expected, github.release(tag)) != set(expected):
+    if reconcile(github, tag, directory, expected, release) != set(expected):
         raise ValueError("Prerelease is incomplete; keeping draft")
     github.publish(tag)
 

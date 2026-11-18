@@ -1,13 +1,14 @@
 # Caelum
 
-A Linux-first voice dictation application: Tauri 2, React, TypeScript, shadcn/ui,
-Tailwind CSS, Lucide, Motion, Zustand, and TanStack Query around the existing
-Python capture and transcription engine. Dark first, with light/system appearance.
+Record your voice, finish, then copy the transcript into the app you’re using.
 
-Cloud mode sends audio to the configured transcription provider (Groq by default). Optional
-cleanup sends text to its configured provider. Final transcripts can be stored in
-local SQLite; microphone recordings are never stored. Local history is not encrypted.
-Clipboard managers and exports retain independent copies.
+**[Download stable](https://github.com/Parth-Jadhav-2004/caelum/releases/latest)** · **[Testing and development releases](https://github.com/Parth-Jadhav-2004/caelum/releases)** · [Linux troubleshooting](docs/linux.md)
+
+Stable **0.4.2** uses your API provider. The **0.5.0 candidate** adds an equally supported **On this computer** setup path; it is not a stable download. Models download separately; select one matching your memory, language and license in setup. Local speech needs no cloud key, upload consent or network after provisioning. Online uses your own provider key and may incur charges. Optional cleanup sends text to the configured cleanup provider. [Privacy and storage](docs/privacy.md).
+
+Packages target **x86-64 Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch**. Download only the matching package and its `SHA256SUMS`. In the download directory run `sudo apt install ./<filename>.deb`, `sudo dnf install ./<filename>.rpm`, or `sudo pacman -U ./<filename>.pkg.tar.zst`, substituting the actual filename. Architecture and distribution support do not certify a desktop session.
+
+Open Caelum, choose your speech mode, test the microphone, and complete practice. On portable desktops use **Record → Finish recording**. With history on, copy the result from History; with history off, paste directly from the clipboard. Paste into an editor to confirm delivery. A denied or unavailable global shortcut does not prevent the on-screen workflow. Hyprland adds native shortcuts, overlay and insertion. [Desktop qualification](docs/acceptance.md) is separate from package smoke tests.
 
 ## Development
 
@@ -25,9 +26,11 @@ modules available (`uv venv --system-site-packages --python /usr/bin/python3
 --allow-existing`) and install GTK4 and gtk4-layer-shell. The main window does
 not import PyGObject. Tauri's Linux WebView uses GTK3/WebKitGTK internally.
 
-The first run opens Provider → Microphone → Shortcut → Practice. Provider checks
-validate model access without uploading audio. The mic test is local. Practice
-requires explicit upload consent. Keys use Secret Service when available, otherwise
+The first run opens Speech → Microphone → Shortcut → Practice. Choose **On this
+computer** for downloaded models or **Online** for an API provider. Downloads
+continue during setup and while the window is hidden to the tray. The mic test
+is local. Only Online practice requires upload consent; local practice never
+falls back to an upload. Keys use Secret Service when available, otherwise
 an owner-only file with an explicit unencrypted-storage disclosure.
 
 ```sh
@@ -128,8 +131,7 @@ Requests and responses use [shared runtime contracts](docs/ipc.md), bounded
 transport deadlines and explicit error states. Recording/transcription operations
 are never automatically replayed after a transport failure.
 
-Pull requests run fast checks. Main-branch updates build native packages and
-publish **Development** prereleases. Maintainers promote a successful candidate
+Pull requests run fast checks. Dev-branch updates build native packages. Maintainers can publish **Development** prereleases. Maintainers promote a successful candidate
 to **Testing**, then after desktop acceptance and approval to signed **Production**.
 All channels use the same package bytes; production automatic updates only install
 signed stable releases. See [releasing.md](docs/releasing.md) for channel commands, candidate verification,
@@ -144,17 +146,111 @@ uses `.python-version` (3.14); native packages use their target system Python.
 
 ## Vocabulary, offline transcription, and cleanup styles
 
-Settings → General includes custom vocabulary (up to 4000 characters), shared by
-cloud and local recognition. Names and technical terms act as recognition hints.
+Dictionary includes custom vocabulary (up to 4000 characters), shared by
+Online and local recognition. Names and technical terms act as recognition hints.
 Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
 existing conservative validation and fall back to raw text on failure.
 
-For offline dictation, install whisper.cpp separately and download a compatible
-GGML model. In Settings select **Local · offline**, enter the `whisper-cli`
-executable and full model path, save, then use **Check**. No API key is required.
-Model downloads are explicit and are not performed by Caelum. CPU inference speed
-and memory depend on the model and hardware; use a smaller model or increase the
-local timeout on slower machines. Local mode processes whole recordings, keeps
-WAV audio in an anonymous Linux memory file, and terminates inference on cancel.
-It never falls back to cloud transcription and disables cloud cleanup, preserving
-its preferences for later. Update checks remain controlled separately.
+### On this computer
+
+Settings → Transcription offers **On this computer | Online**. The local
+picker shows Parakeet, Small and quick, Most accurate (on ≥8 GB machines), and
+Any language, with five alternatives under **Show all models**. Hardware and
+language guide the recommendation; Hindi and other Indian languages are pointed
+to Online for now. Downloads are resumable, verified against pinned SHA-256
+values, and never start without your action.
+
+Local dictations do not upload audio or refinement text. Fallback is **off by
+default**. “Use Online instead” explicitly authorizes uploading a dictation only
+if a local model is missing or cannot load. Unclear speech is never uploaded. “When you’re offline” can opt into a downloaded model
+when Online fails with a connection, timeout, or quota error. The HUD and history
+record the engine actually used. Update checks remain controlled separately.
+
+Existing configs without an engine remain Online. The old `cloud` spelling
+migrates to `online`. Retired executable/GGML-path options are ignored on upgrade;
+choose a catalog model in Settings.
+
+Python/source installations need the `local` extra. Native packages vendor it
+by default; weights are **never bundled**.
+
+```sh
+uv sync --locked --extra dev --extra local --extra whisper
+.venv/bin/caelum models list
+.venv/bin/caelum models download parakeet-v3
+.venv/bin/python scripts/download-local-fixtures.py /tmp/opencode/caelum-local-fixtures
+.venv/bin/caelum benchmark /tmp/opencode/caelum-local-fixtures/manifest.json \
+  --engine local --model parakeet-v3 --threads 4 --repeat 3 \
+  --output /tmp/opencode/benchmark-results-parakeet-v3.json
+```
+
+`local` installs sherpa-onnx for Parakeet, Cohere, Canary and Moonshine. `whisper` is optional and
+installs faster-whisper for `whisper-turbo`. With pip, use
+`pip install 'caelum-dictation[local,whisper]'` from a version containing this preview.
+Speech models are never included in the wheel or downloaded by runtime initialization.
+The small MIT-licensed Silero voice detector is bundled for offline silence detection.
+They live under `$XDG_DATA_HOME/caelum/models` (normally
+`~/.local/share/caelum/models`), with pinned revisions, size/hash checks and receipts.
+Interrupt a CLI download and repeat the command to resume. The desktop also has
+Pause, Resume and Cancel, a single-download queue, Check files, and confirmed
+removal. Use `caelum models verify <id>` for a full hash check or `caelum models
+remove <id>` to reclaim space (switch away from it and stop benchmarks first).
+`caelum models pin <id>` re-fetches a pinned source and prints file metadata for
+review; it never installs files or edits the catalog automatically.
+
+Parakeet vocabulary hints use local hotword biasing. Whisper receives the
+vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
+hints. Silero skips silence and finds pauses before local decoding. Long recordings
+are split at pauses, with maximum windows of 35 seconds for Cohere, 30 seconds
+for Whisper and 60 seconds for Parakeet. Vocabulary echoes and subtitle boilerplate
+are filtered. Offline cleanup removes “um” and “uh”, handles “new line”, and applies
+Dictionary replacements without uploading text.
+
+Settings → Transcription offers Auto, GPU and CPU execution and an idle unload
+period (five minutes by default; Never keeps the model resident). Auto uses CUDA
+for Whisper when available and otherwise uses CPU. The packaged sherpa runtime
+is CPU-only, so an explicit GPU choice for those models explains that it is
+unavailable. x86-64 processors without AVX2 are directed to Online before native
+runtimes are imported.
+
+Model switches load the candidate before saving the new selection. A failure keeps
+the previous selection and engine working. Explicit Online fallback runs only if
+a local model is missing or cannot load; unclear speech and decode failures do
+not upload audio. History records the engine, model, and selected or detected
+language (Auto when an engine cannot report detection).
+
+New downloads record verified file sizes and modified times. Startup and loading
+use these quick checks; Check files still performs full SHA-256 verification.
+Old receipts receive a one-time verification to populate the cache.
+Local inference is serialized; cancellation discards its result, though an
+in-progress native decode must finish before the worker can unload.
+
+### Optional Whisper component
+
+For Python installations:
+
+```sh
+pip install 'caelum-dictation[local,whisper]'
+```
+
+For native packages, install into a user-owned, ABI-specific component folder
+with the **same Python interpreter** that runs Caelum (no system pip changes):
+
+```sh
+component_dir="${XDG_DATA_HOME:-$HOME/.local/share}/caelum/components/$(python3 -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")')"
+uv pip install --python /usr/bin/python3 --target "$component_dir" 'faster-whisper>=1.2,<2'
+```
+
+Restart Caelum, then download Any language. Component folders are appended after
+packaged dependencies; `.pth` files are not executed. Remove/reinstall the folder
+for a new Python minor version. NVIDIA acceleration is attempted only when
+CTranslate2 reports support; missing CUDA libraries or a failed CUDA decode
+retry locally on CPU, never Online.
+
+The native builder also has an experimental `appimage` target, requiring
+linuxdeploy, its GTK plugin, and appimagetool. It targets **system Python 3.14**;
+GTK4/GI and desktop helpers are host prerequisites for the optional native HUD.
+It is not yet part of signed automated promotion. Clean-VM qualification and
+package-size comparisons remain mandatory before release.
+
+See [local model measurements](docs/local-models-benchmark.md) and the
+[release qualification checklist](docs/local-models-release-checklist.md).

@@ -219,14 +219,14 @@ def test_local_history_records_model_and_zero_cloud_cost_without_changing_prefer
 ):
     config, path, history = storage
     config.stt.engine = "local"
-    config.stt.local_model_path = "/private/models/ggml-base.en.bin"
+    config.stt.local_model = "parakeet-v3"
     config.stt.model = "saved-cloud-model"
     config.cleanup.model = "saved-cloud-cleanup"
     set_rate(storage, hourly_rate)
     snapshot = load(path)
     record(storage)
     row = history.read()[0]
-    assert row["stt_model"] == "ggml-base.en.bin"
+    assert row["stt_model"] == "parakeet-v3"
     assert row["cleanup_model"] == ""
     assert row["refined"] == 0
     assert row["estimated_stt_usd"] == 0
@@ -240,7 +240,7 @@ def test_mixed_local_and_cloud_history_charges_only_cloud_sessions(storage):
     set_rate(storage, 3.6)
     record(storage, "cloud")
     config.stt.engine = "local"
-    config.stt.local_model_path = "/models/ggml-base.bin"
+    config.stt.local_model = "parakeet-110m"
     save(config, path)
     record(storage, "local")
     rows = {row["id"]: row for row in history.read()}

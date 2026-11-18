@@ -9,7 +9,7 @@ import struct
 from contextlib import suppress
 from copy import deepcopy
 
-from .config import load
+from .config import STT, App, Cleanup, Config, Desktop, load, save, validate
 from .credentials import get as credential
 from .history import History
 from .linux import Bindings, hypr_json, runtime_dir, session_locked
@@ -33,7 +33,8 @@ async def prepare_update(core, stop):
             or core.work
             and not core.work.done()
             or core.state
-            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech"}
+            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech",
+                    "success_fallback_online", "success_fallback_local"}
         ):
             raise RuntimeError("Finish dictation or discard pending audio before updating")
         core.stopping = True
@@ -104,42 +105,75 @@ async def compositor_monitor(core, bindings):
         await writer.wait_closed()
 
 
-async def reload_settings(core, bindings, provider, path=None):
+async def reload_settings(core, bindings, provider, path=None, updated=None, persist=False):
     async with core.control_lock:
         if core.capture or core.pcm is not None or core.work and not core.work.done():
             raise RuntimeError("Finish or cancel dictation before applying settings")
-        updated = await asyncio.to_thread(load, path)
+        updated = updated or await asyncio.to_thread(load, path)
+        validate(updated)
         previous = bindings.hotkey
         previous_mode = getattr(bindings, "recording_mode", "hold")
         if backend_name(updated) != backend_name(core.config):
             raise RuntimeError("Restart the service to change desktop backend")
         if previous != updated.app.hotkey and getattr(bindings, "save_only", False):
             raise RuntimeError("Restart the service to change the desktop portal shortcut")
-        if previous != updated.app.hotkey or (
-            previous_mode != updated.app.recording_mode
-            and not getattr(bindings, "save_only", False)
-        ):
-            await bindings.remove()
-            bindings.hotkey = updated.app.hotkey
-            bindings.recording_mode = updated.app.recording_mode
+        # Stage native loading before either configuration or the active engine changes.
+        staged = hasattr(provider, "signature") and (
+            provider.signature(updated) != provider.local_signature
+            or updated.stt.engine == "local" and provider.local_state in ("missing", "error")
+        )
+        candidate = None
+        if staged:
+            if provider.local_task:
+                await asyncio.gather(provider.local_task, return_exceptions=True)
+            show_model = hasattr(core, "event") and bool(provider.signature(updated)[0])
+            if show_model:
+                with suppress(RuntimeError, OSError, TimeoutError):
+                    await core.event("model_loading")
             try:
+                candidate = await provider.prepare_local(updated)
+            except BaseException:
+                if show_model:
+                    with suppress(RuntimeError, OSError, TimeoutError):
+                        await core.event("model_failed")
+                raise
+        rebind = previous != updated.app.hotkey or (
+            previous_mode != updated.app.recording_mode and not getattr(bindings, "save_only", False)
+        )
+        try:
+            if rebind:
+                await bindings.remove()
+                bindings.hotkey = updated.app.hotkey
+                bindings.recording_mode = updated.app.recording_mode
                 await bindings.install()
-            except Exception:
+            if persist:
+                await asyncio.to_thread(save, updated, path)
+        except BaseException:
+            if rebind:
+                await bindings.remove()
                 bindings.hotkey = previous
                 bindings.recording_mode = previous_mode
                 await bindings.install()
-                raise
+            if candidate:
+                await candidate.aclose()
+                if hasattr(core, "event"):
+                    with suppress(RuntimeError, OSError, TimeoutError):
+                        await core.event("model_failed")
+            raise
         bindings.recording_mode = updated.app.recording_mode
         core.config = updated
         provider.config = updated
         provider.semaphore = asyncio.Semaphore(updated.stt.concurrency)
+        if staged:
+            await provider.commit_local(updated, candidate)
+            if candidate and hasattr(core, "event"):
+                with suppress(RuntimeError, OSError, TimeoutError):
+                    await core.event("model_ready")
+        elif hasattr(provider, "arm_idle"):
+            provider.arm_idle()
 
 
 async def serve(config, config_path=None):
-    if config.stt.engine == "local":
-        from .local_stt import check_local
-
-        check_local(config.stt)
     if config.stt.engine != "local" and not await asyncio.to_thread(credential, config.stt.key_env):
         raise ValueError(
             "Add the transcription key in Settings → Open setup / Manage keys "
@@ -216,6 +250,8 @@ async def serve(config, config_path=None):
                 "retry",
                 "status",
                 "reload",
+                "settings",
+                "model-progress",
                 "shutdown",
                 "prepare-update",
                 "pause",
@@ -229,12 +265,39 @@ async def serve(config, config_path=None):
                 await core.handle("cancel")
                 stop.set()
                 result = {"ok": True}
+            elif message["action"] == "model-progress":
+                from .models import get_model
+
+                progress = message.get("progress", {})
+                get_model(progress.get("id"))
+                states = {"downloading": "model_downloading", "stalled": "model_stalled",
+                          "verifying": "model_loading", "installing": "model_loading",
+                          "failed": "model_failed"}
+                kind = states.get(progress.get("state"))
+                if kind and not core.control_lock.locked() and core.capture is None and core.pcm is None and not (
+                    core.work and not core.work.done()
+                ) and core.state in {"hidden", "success", "unrefined", "saved", "copied", "no_speech",
+                                     "model_downloading", "model_stalled", "model_ready", "model_failed"} and core.state != kind:
+                    await core.event(kind)
+                result = {"ok": True}
+            elif message["action"] == "settings":
+                from .ipc_contract import CONFIG, matches
+
+                data = message.get("config")
+                if not matches(CONFIG, data):
+                    raise ValueError("Invalid settings")
+                updated = Config(**{name: cls(**data[name]) for name, cls in (
+                    ("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)
+                )})
+                await reload_settings(core, bindings, provider, config_path, updated, True)
+                result = {"ok": True}
             elif message["action"] == "reload":
                 await reload_settings(core, bindings, provider, config_path)
                 result = {"ok": True}
             else:
                 result = await core.handle(message["action"], token, message.get("address"))
                 if message["action"] == "status":
+                    result["engine"] = provider.engine_status()
                     result["storage_error"] = storage_error
                     result["hotkey"] = core.config.app.hotkey
                     result["recording_mode"] = core.config.app.recording_mode
@@ -244,11 +307,14 @@ async def serve(config, config_path=None):
                         core.config.app.hotkey if native else bindings.description
                     )
             writer.write(json.dumps(result or {"ok": True}).encode() + b"\n")
-        except Exception:
+        except Exception as error:
             if core.capture is None and core.pcm is None:
                 with suppress(RuntimeError, OSError, TimeoutError):
                     await bindings.active(False)
-            writer.write(b'{"error":"Command failed; run caelum doctor"}\n')
+            from .providers import ProviderError
+
+            safe = str(error) if isinstance(error, ProviderError) else "Command failed; run caelum doctor"
+            writer.write(json.dumps({"error": safe}).encode() + b"\n")
         finally:
             with suppress(ConnectionError):
                 await writer.drain()
@@ -259,8 +325,11 @@ async def serve(config, config_path=None):
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
         await bindings.install()
-        server = await asyncio.start_unix_server(handle, path=str(path), limit=4096)
+        server = await asyncio.start_unix_server(handle, path=str(path), limit=65536)
         path.chmod(0o600)
+        provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
+        provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
+        provider.configure_local()
         tasks = [
             asyncio.create_task(safety_monitor(core)),
             asyncio.create_task(lock_monitor(core, locked)),
@@ -302,6 +371,6 @@ async def serve(config, config_path=None):
         await asyncio.gather(*tasks, return_exceptions=True)
         await bindings.remove()
         await hud.close()
-        await provider.client.aclose()
+        await provider.aclose()
         path.unlink(missing_ok=True)
         lock.close()

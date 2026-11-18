@@ -135,6 +135,7 @@ class PrereleaseGitHub(GitHub):
         super().create(tag, sha, notes)
         self.info["prerelease"] = True
         self.tag = tag
+        return self.info
 
     def release(self, tag):
         return self.info if getattr(self, "tag", None) == tag else None
@@ -275,7 +276,13 @@ def test_prerelease_commands_cannot_replace_the_production_latest(monkeypatch, t
     commands = []
     monkeypatch.setattr(preview.subprocess, "run", lambda command, **_: commands.append(command))
     github = preview.PrereleaseGitHub()
-    github.create("v0.4.3-rc.123", "a" * 40, tmp_path / "notes")
+    def create(path, data):
+        assert data["make_latest"] == "false" and data["prerelease"] and data["draft"]
+        return {"id": 45, **data}
+    monkeypatch.setattr(github, "api", create)
+    notes = tmp_path / "notes"
+    notes.write_text("Testing")
+    assert github.create("v0.4.3-rc.123", "a" * 40, notes)["id"] == 45
     github.publish("v0.4.3-rc.123")
     assert all("--latest=false" in command and "--prerelease" in command for command in commands)
     assert all("--clobber" not in command for command in commands)
@@ -318,7 +325,7 @@ def test_publication_cannot_use_a_workflow_dispatched_from_an_old_tag(monkeypatc
     monkeypatch.setenv("GITHUB_REF", "refs/tags/v0.4.0")
     monkeypatch.setattr(resolver.subprocess, "check_output",
                         lambda _: json.dumps({"default_branch": "main"}).encode())
-    with pytest.raises(ValueError, match="default branch"):
+    with pytest.raises(ValueError, match="channel branch"):
         resolver.main()
 
 
@@ -327,6 +334,25 @@ def promote(data, github):
     publisher.publish(
         assets, identity["sha"], identity["run_id"], identity["run_attempt"], key, github
     )
+
+
+def test_local_runtime_is_vendored_by_default_and_has_size_budget(tmp_path):
+    import build_package
+
+    command = build_package.requirements_command(tmp_path / "requirements.txt")
+    assert command[command.index("--extra") + 1] == "local"
+    assert "--locked" in command
+    assert "whisper" not in command
+    library = tmp_path / "lib"
+    package = library / "sherpa_onnx"
+    package.mkdir(parents=True)
+    binary = package / "runtime.so"
+    binary.write_bytes(b"runtime")
+    assert build_package.check_local_runtime(library) == 7
+    with binary.open("wb") as stream:
+        stream.truncate(build_package.LOCAL_RUNTIME_BUDGET + 1)
+    with pytest.raises(RuntimeError, match="50 MB"):
+        build_package.check_local_runtime(library)
 
 
 def test_interrupted_publication_resumes_then_published_rerun_is_noop(release_candidate):

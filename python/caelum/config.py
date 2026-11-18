@@ -25,9 +25,12 @@ class App:
 
 @dataclass
 class STT:
-    engine: str = "cloud"
-    local_binary: str = "whisper-cli"
-    local_model_path: str = ""
+    engine: str = "online"
+    local_model: str = ""
+    local_threads: int = 0
+    fallback: str = "none"
+    local_device: str = "auto"
+    local_idle_seconds: int = 300
     local_timeout_seconds: float = 300.0
     base_url: str = "https://api.groq.com/openai/v1"
     model: str = "whisper-large-v3-turbo"
@@ -43,6 +46,7 @@ class STT:
 @dataclass
 class Cleanup:
     style: str = "light"
+    replacements: dict = field(default_factory=dict)
     base_url: str = "https://api.groq.com/openai/v1"
     key_env: str = "GROQ_API_KEY"
     model: str = ""
@@ -83,6 +87,10 @@ def load(path=None):
     config = Config()
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
         values = data.get(section, {}).copy()
+        if section == "stt":
+            # Ignore retired preview settings when upgrading; never execute them.
+            for retired in ("local_binary", "local_model_path"):
+                values.pop(retired, None)
         if set(values) - {f.name for f in fields(cls)}:
             raise ValueError(f"Unknown option in {section}")
         if section == "cleanup" and "style" not in values:
@@ -104,10 +112,33 @@ def load(path=None):
 
 def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
-    if s.engine not in ("cloud", "local"):
-        raise ValueError("Transcription engine must be cloud or local")
-    if not s.local_binary.strip() or not 10 <= s.local_timeout_seconds <= 1800:
-        raise ValueError("Local binary and timeout are invalid")
+    # The pre-catalog preview called Online "cloud". Preserve those configs.
+    if s.engine == "cloud":
+        s.engine = "online"
+    if s.engine not in ("online", "local"):
+        raise ValueError("Transcription engine must be online or local")
+    if s.fallback not in ("none", "online", "local") or s.fallback == s.engine:
+        raise ValueError("Fallback must be none or the other transcription engine")
+    if type(s.local_threads) is not int or not 0 <= s.local_threads <= 256:
+        raise ValueError("Local thread count must be between 0 and 256")
+    if s.local_model:
+        from .models import ModelError, get_model
+
+        try:
+            get_model(s.local_model)
+        except ModelError:
+            raise ValueError("Choose a known local speech model") from None
+    if s.local_device not in ("auto", "gpu", "cpu"):
+        raise ValueError("Local device must be auto, gpu, or cpu")
+    if type(s.local_idle_seconds) is not int or not 0 <= s.local_idle_seconds <= 3600:
+        raise ValueError("Idle unload must be between 0 and 3600 seconds")
+    if not 10 <= s.local_timeout_seconds <= 1800:
+        raise ValueError("Local timeout is invalid")
+    if (not isinstance(c.replacements, dict) or len(c.replacements) > 200
+            or any(not isinstance(key, str) or not key.strip() or len(key) > 200
+                   or not isinstance(value, str) or len(value) > 1000
+                   for key, value in c.replacements.items())):
+        raise ValueError("Dictionary replacements must contain up to 200 text pairs")
     if len(s.vocabulary) > 4000:
         raise ValueError("Custom vocabulary must be at most 4000 characters")
     if c.style not in ("light", "thorough", "email", "casual", "code"):
@@ -150,6 +181,8 @@ def validate(config):
     if len(set(modifiers)) != len(modifiers):
         raise ValueError("Hotkey modifiers must not repeat")
     for provider in (s, c):
+        if s.engine == "local" and s.fallback != "online":
+            continue  # Neither audio nor cleanup text can leave this machine.
         url = urlparse(provider.base_url)
         if url.scheme != "https" and not (
             url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1")
@@ -168,7 +201,10 @@ def save(config, path=None):
         lines.append(f"[{section}]")
         for key, value in values.items():
             if value is not None:
-                lines.append(f"{key} = {json.dumps(value, ensure_ascii=False)}")
+                encoded = ("{ " + ", ".join(json.dumps(k, ensure_ascii=False) + " = " +
+                           json.dumps(v, ensure_ascii=False) for k, v in value.items()) + " }"
+                           if isinstance(value, dict) else json.dumps(value, ensure_ascii=False))
+                lines.append(f"{key} = {encoded}")
         lines.append("")
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".caelum-")
     try:

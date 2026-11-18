@@ -1,24 +1,20 @@
 name: Publish development release
 on:
-  workflow_run:
-    workflows: [Linux candidate]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       candidate_run_id:
-        description: Successful main candidate run ID to publish or resume
+        description: Successful dev candidate run ID to publish or resume
         required: true
         type: string
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: development-${{ github.event.workflow_run.id || inputs.candidate_run_id }}
+  group: development-${{ inputs.candidate_run_id }}
   cancel-in-progress: false
 jobs:
   resolve:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -26,8 +22,6 @@ jobs:
       attempt: ${{ steps.candidate.outputs.attempt }}
       run_id: ${{ steps.candidate.outputs.run_id }}
     steps:
-      # workflow_run is privileged: resolve using main's trusted code first,
-      # never a PR checkout or a caller-supplied artifact/source identity.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -36,7 +30,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.event.workflow_run.id || inputs.candidate_run_id }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
           CHANNEL: development
         run: python3 scripts/resolve_candidate.py
   publish:

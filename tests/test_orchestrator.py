@@ -357,3 +357,23 @@ async def test_feedback_failure_during_release_still_stops_capture_and_restores_
         await core.release()
     capture.stop.assert_called_once()
     core.media.resume.assert_awaited_once()
+
+
+async def test_local_models_never_enter_online_chunker(core, monkeypatch):
+    core.pcm = None
+    core.config.stt.engine, core.config.stt.local_model = "local", "parakeet-v3"
+    core.config.app.strategy = "chunked"
+    core.bindings.target = AsyncMock(return_value=core.target)
+    capture = SimpleNamespace(start=lambda: None, stop=lambda: None, discard=lambda: None)
+    monkeypatch.setattr("caelum.orchestrator.Capture", lambda _: capture)
+    monkeypatch.setattr("caelum.orchestrator.Chunker", lambda *_: pytest.fail("Online chunker used for local model"))
+    core.poll = AsyncMock()
+    await core.handle("start", "local-capture")
+    assert core.chunker is None
+    await core.cancel(feedback=False)
+
+
+async def test_status_remains_responsive_while_loading_holds_control_lock(core):
+    async with core.control_lock:
+        status = await asyncio.wait_for(core.handle("status"), 0.1)
+        assert status["state"] == core.state
