@@ -426,8 +426,8 @@ export function Settings({
                     />
                   </Row>
                   <p className="py-4 text-meta text-muted-foreground">
-                    Offline cleanup removes um and uh, handles “new line”, and
-                    applies Dictionary replacements.
+                    Offline cleanup applies Dictionary replacements. For English
+                    speech it also removes “um” and “uh” and handles “new line”.
                   </p>
                 </>
               ) : (

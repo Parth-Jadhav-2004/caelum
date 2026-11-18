@@ -222,7 +222,7 @@ vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
 hints. Silero skips silence and finds pauses before local decoding. Long recordings
 are split at pauses, with maximum windows of 35 seconds for Cohere, 30 seconds
 for Whisper and 60 seconds for Parakeet. Vocabulary echoes and subtitle boilerplate
-are filtered. Offline cleanup removes “um” and “uh”, handles “new line”, and applies
+are filtered. For known English speech, offline cleanup removes “um” and “uh” and handles “new line”. All languages support
 Dictionary replacements without uploading text.
 
 Settings → Transcription offers Auto, GPU and CPU execution and an idle unload

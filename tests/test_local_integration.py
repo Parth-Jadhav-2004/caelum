@@ -165,6 +165,19 @@ async def test_retry_after_memory_pressure_reloads_without_changing_settings(mon
         await provider.aclose()
 
 
+@pytest.mark.parametrize("language,text", [
+    ("de", "Treffen wir uns um acht."), ("pt-BR", "Preciso de um minuto."),
+    ("auto", "Treffen wir uns um acht."), ("mixed", "Preciso de um minuto."),
+])
+async def test_local_cleanup_preserves_non_english_words(language, text):
+    provider = Providers(local_config(), client=AsyncMock())
+    try:
+        provider.metrics["language"] = language
+        assert await provider.cleanup(text) == (text, False)
+    finally:
+        await provider.aclose()
+
+
 def test_privacy_tracks_engine_and_explicit_fallback():
     config = local_config()
     assert privacy(config).startswith("Audio stays on this computer. Caelum downloads")

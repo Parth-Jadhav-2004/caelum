@@ -192,7 +192,7 @@ def service_presentation(status):
             return "Speech model needs attention", engine["message"] or "Open Settings to download a model."
         if state == "hidden":
             return ("Ready · On this computer" if engine["kind"] == "local" else "Ready · Online",
-                    "Audio stays on this computer." if engine["kind"] == "local" else
+                    "Your local speech model is selected." if engine["kind"] == "local" else
                     "Audio is sent to your provider.")
     if state == "error":
         if status.get("pending_audio"):
@@ -236,7 +236,7 @@ def service_presentation(status):
         "loading": ("Getting ready…", "Your speech model is loading."),
         "missing_model": ("Speech model not downloaded", "Open Caelum to download a speech model."),
         "success_fallback_online": ("Done · used Online", "This dictation used your online provider."),
-        "success_fallback_local": ("Done · used this computer", "This dictation stayed on this computer."),
+        "success_fallback_local": ("Done · used this computer", "Your local model transcribed the recording after an online attempt."),
         "refining": ("Processing", "Refining punctuation and formatting."),
         "success": ("Done", "Refined text was sent to the original application."),
         "unrefined": (

@@ -89,7 +89,7 @@ async def test_unclear_speech_or_pending_load_never_uploads(kind):
 
 
 def test_offline_cleanup_and_dictionary_are_bounded_and_non_cascading():
-    assert offline_cleanup("Um, hello uh world new line sea lum.", {"sea lum": "Caelum"}) == "hello world\nCaelum."
+    assert offline_cleanup("Um, hello uh world new line sea lum.", {"sea lum": "Caelum"}, "en-US") == "hello world\nCaelum."
     assert offline_cleanup("human UHF umbrella", {}) == "human UHF umbrella"
     assert offline_cleanup("Acme Acme Labs", {"Acme Labs": "Studio", "Acme": "Acme Labs"}) == "Acme Labs Studio"
     assert offline_cleanup("a+b", {"a+b": "$1"}) == "$1"

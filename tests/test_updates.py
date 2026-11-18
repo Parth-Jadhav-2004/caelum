@@ -478,6 +478,8 @@ def test_package_database_lock_reports_a_useful_error(release, monkeypatch):
         ("processing", False, False),
         ("refining", True, False),
         ("error", True, False),
+        ("model_failed", True, False),
+        ("model_ready", False, True),
     ],
 )
 async def test_busy_dictation_defers_update(state, pending, capture):
@@ -494,10 +496,11 @@ async def test_busy_dictation_defers_update(state, pending, capture):
     assert not stop.is_set()
 
 
-async def test_idle_dictation_can_stop_for_update():
+@pytest.mark.parametrize("state", ["hidden", "model_ready", "model_failed"])
+async def test_idle_dictation_can_stop_for_update(state):
     stop = asyncio.Event()
     core = SimpleNamespace(
-        control_lock=asyncio.Lock(), state="hidden", capture=None, pcm=None, work=None
+        control_lock=asyncio.Lock(), state=state, capture=None, pcm=None, work=None
     )
     assert await prepare_update(core, stop) == {"ok": True}
     assert stop.is_set()

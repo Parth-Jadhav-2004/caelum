@@ -390,7 +390,8 @@ class Providers:
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
         if self.metrics.get("engine", self.config.stt.engine) == "local":
-            return offline_cleanup(raw, cfg.replacements), False
+            language = self.metrics.get("language") or self.config.stt.language
+            return offline_cleanup(raw, cfg.replacements, language), False
         if not cfg.model:
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
@@ -470,10 +471,11 @@ class Providers:
             self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000
 
 
-def offline_cleanup(text, replacements):
+def offline_cleanup(text, replacements, language=""):
     """Deterministic local cleanup. Dictionary replacements run once, without cascades."""
-    text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
-    text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
+    if language.lower().replace("_", "-").split("-")[0] == "en":
+        text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
+        text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
     if replacements:
         keys = sorted(replacements, key=len, reverse=True)
         pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"

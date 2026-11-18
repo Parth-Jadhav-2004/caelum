@@ -113,6 +113,7 @@ def test_provider_presets_preserve_other_preferences():
         ({"state": "error", "error_kind": "microphone"}, "Microphone unavailable", "Settings"),
         ({"state": "saved", "metrics": [{"cleanup_refined": False}]}, "Saved", "Raw transcription"),
         ({"state": "copied"}, "Copied", "Paste manually"),
+        ({"state": "success_fallback_local"}, "Done · used this computer", "after an online attempt"),
     ],
 )
 def test_service_status_copy(status, title, detail):

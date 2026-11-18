@@ -36,7 +36,7 @@ async def prepare_update(core, stop):
             and not core.work.done()
             or core.state
             not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech",
-                    "success_fallback_online", "success_fallback_local"}
+                    "success_fallback_online", "success_fallback_local", "model_ready", "model_failed"}
         ):
             raise RuntimeError("Finish dictation or discard pending audio before updating")
         core.stopping = True
