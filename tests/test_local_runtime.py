@@ -192,6 +192,48 @@ async def test_idle_unload_and_next_dictation_reload(monkeypatch):
         await provider.aclose()
 
 
+async def test_download_recovers_retained_local_audio_only_on_explicit_retry(tmp_path, monkeypatch):
+    from caelum.sidecar import Backend
+
+    cfg = Config()
+    cfg.stt.engine = "local"
+    path = tmp_path / "config.toml"
+    save(cfg, path)
+    provider = Providers(cfg, client=AsyncMock())
+    engine = AsyncMock()
+    engine.decode_ms = 1
+    engine.transcribe.return_value = Transcript("Recovered", [])
+    provider.prepare_local = AsyncMock(return_value=engine)
+    backend = Backend(path)
+    backend.pending_model = "parakeet-110m"
+    pcm = b"retained speech"
+    core = SimpleNamespace(config=cfg, control_lock=asyncio.Lock(), capture=None, pcm=pcm,
+                           work=None, state="missing_model", event=AsyncMock())
+    bindings = SimpleNamespace(hotkey=cfg.app.hotkey)
+    monkeypatch.setattr(backend, "status", AsyncMock(return_value={
+        "running": True, "state": "missing_model", "pending_audio": True,
+    }))
+    monkeypatch.setattr("caelum.sidecar.installed", lambda _: True)
+    async def daemon_save(updated, _previous):
+        await reload_settings(core, bindings, provider, path, updated, True)
+    monkeypatch.setattr(backend, "save_settings", daemon_save)
+    try:
+        unsafe = deepcopy(cfg)
+        unsafe.stt.fallback = "online"
+        unsafe.stt.local_model = "parakeet-110m"
+        with pytest.raises(RuntimeError, match="Finish or cancel"):
+            await reload_settings(core, bindings, provider, path, unsafe, True)
+        await backend.apply_pending()
+        assert backend.pending_model is None and core.pcm == pcm
+        assert load(path).stt.local_model == "parakeet-110m"
+        core.event.assert_not_awaited()
+        engine.transcribe.assert_not_awaited()
+        assert (await provider.stt(core.pcm)).text == "Recovered"
+        provider.client.post.assert_not_called()
+    finally:
+        await provider.aclose()
+
+
 def test_old_processors_are_rejected_before_native_imports():
     assert local_support(Hardware(arch="x86_64", avx2=False))
     assert local_support(Hardware(arch="aarch64")) is None

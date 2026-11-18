@@ -9,6 +9,14 @@ from pathlib import Path
 
 from .config import validate
 
+# A valid replacement dictionary can exceed 64 KiB (200 entries, Unicode
+# keys/values). Keep the local control channel bounded even for escaped JSON.
+CONTROL_FRAME_LIMIT = 4 * 1024 * 1024
+
+
+class SettingsBusy(RuntimeError):
+    """Transient: the active session cannot accept a model switch yet."""
+
 
 def request(action, *, config=None, progress=None):
     root = os.environ.get("XDG_RUNTIME_DIR")
@@ -21,6 +29,8 @@ def request(action, *, config=None, progress=None):
                                  **({"progress": progress} if progress is not None else {})}).encode() + b"\n")
         result = json.loads(client.makefile("r").readline(65536))
         if "error" in result:
+            if result.get("error_code") == "settings_busy":
+                raise SettingsBusy(result["error"])
             raise RuntimeError(result["error"])
         return result
 

@@ -8,9 +8,11 @@ import sqlite3
 import struct
 from contextlib import suppress
 from copy import deepcopy
+from dataclasses import replace
 
 from .config import STT, App, Cleanup, Config, Desktop, load, save, validate
 from .credentials import get as credential
+from .desktop_services import CONTROL_FRAME_LIMIT, SettingsBusy
 from .history import History
 from .linux import Bindings, hypr_json, runtime_dir, session_locked
 from .orchestrator import HUD, Orchestrator
@@ -107,10 +109,18 @@ async def compositor_monitor(core, bindings):
 
 async def reload_settings(core, bindings, provider, path=None, updated=None, persist=False):
     async with core.control_lock:
-        if core.capture or core.pcm is not None or core.work and not core.work.done():
-            raise RuntimeError("Finish or cancel dictation before applying settings")
+        if core.capture or core.work and not core.work.done():
+            raise SettingsBusy("Finish or cancel dictation before applying settings")
         updated = updated or await asyncio.to_thread(load, path)
         validate(updated)
+        recovering = core.pcm is not None
+        if recovering:
+            # Retained audio may gain a local model, never a different upload
+            # policy, backend, or other settings. Retry remains an explicit action.
+            expected = replace(core.config, stt=replace(core.config.stt, local_model=updated.stt.local_model))
+            if (getattr(core, "state", "") != "missing_model" or updated.stt.engine != "local"
+                    or not updated.stt.local_model or expected != updated):
+                raise SettingsBusy("Finish or cancel dictation before applying settings")
         previous = bindings.hotkey
         previous_mode = getattr(bindings, "recording_mode", "hold")
         if backend_name(updated) != backend_name(core.config):
@@ -126,7 +136,7 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
         if staged:
             if provider.local_task:
                 await asyncio.gather(provider.local_task, return_exceptions=True)
-            show_model = hasattr(core, "event") and bool(provider.signature(updated)[0])
+            show_model = not recovering and hasattr(core, "event") and bool(provider.signature(updated)[0])
             if show_model:
                 with suppress(RuntimeError, OSError, TimeoutError):
                     await core.event("model_loading")
@@ -166,7 +176,7 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
         provider.semaphore = asyncio.Semaphore(updated.stt.concurrency)
         if staged:
             await provider.commit_local(updated, candidate)
-            if candidate and hasattr(core, "event"):
+            if candidate and not recovering and hasattr(core, "event"):
                 with suppress(RuntimeError, OSError, TimeoutError):
                     await core.event("model_ready")
         elif hasattr(provider, "arm_idle"):
@@ -313,8 +323,11 @@ async def serve(config, config_path=None):
                     await bindings.active(False)
             from .providers import ProviderError
 
-            safe = str(error) if isinstance(error, ProviderError) else "Command failed; run caelum doctor"
-            writer.write(json.dumps({"error": safe}).encode() + b"\n")
+            safe = str(error) if isinstance(error, (ProviderError, SettingsBusy)) else "Command failed; run caelum doctor"
+            payload = {"error": safe}
+            if isinstance(error, SettingsBusy):
+                payload["error_code"] = "settings_busy"
+            writer.write(json.dumps(payload).encode() + b"\n")
         finally:
             with suppress(ConnectionError):
                 await writer.drain()
@@ -325,7 +338,7 @@ async def serve(config, config_path=None):
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
         await bindings.install()
-        server = await asyncio.start_unix_server(handle, path=str(path), limit=65536)
+        server = await asyncio.start_unix_server(handle, path=str(path), limit=CONTROL_FRAME_LIMIT)
         path.chmod(0o600)
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)

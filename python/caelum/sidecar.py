@@ -12,7 +12,13 @@ from pathlib import Path
 
 from . import credentials
 from .config import config_path, load, save
-from .desktop_services import connection_status, microphones, request, service_presentation
+from .desktop_services import (
+    SettingsBusy,
+    connection_status,
+    microphones,
+    request,
+    service_presentation,
+)
 from .hardware import detect
 from .history import History
 from .ipc_contract import METHODS, error_payload, matches, validate_request
@@ -99,7 +105,7 @@ class Backend:
             self.reload_model = None
             return
         try:
-            await self.idle()
+            await self.idle(allow_missing_model=True)
             if (await self.status())["running"]:
                 await asyncio.to_thread(request, "reload")
             self.reload_model = None
@@ -110,11 +116,14 @@ class Backend:
         if not self.pending_model or self.pending_model in self.model_failures or not installed(self.pending_model):
             return
         try:
-            await self.idle()
+            await self.idle(allow_missing_model=True)
         except RuntimeError:
             return  # The event watcher retries after the dictation ends.
         model_id = self.pending_model
-        await self.use_model(model_id)
+        try:
+            await self.use_model(model_id, downloaded=True)
+        except SettingsBusy:
+            return  # Capture/retry won the race; keep the queued selection.
         self.pending_model = None
         (models_dir() / "pending-use.json").unlink(missing_ok=True)
 
@@ -149,9 +158,9 @@ class Backend:
                     return f"Saved; service not updated: {error}"
         return None
 
-    async def use_model(self, model_id):
+    async def use_model(self, model_id, *, downloaded=False):
         get_model(model_id)
-        await self.idle()
+        await self.idle(allow_missing_model=downloaded)
         previous = load(self.path)
         config = load(self.path)
         config.stt.engine, config.stt.local_model = "local", model_id
@@ -162,6 +171,8 @@ class Backend:
         self.emit("models-changed", {"id": model_id})
         try:
             await self.save_settings(config, previous)
+        except SettingsBusy:
+            raise
         except Exception as error:
             from .providers import ProviderError
 
@@ -206,8 +217,10 @@ class Backend:
                 detail = (progress.get("error") or {}).get("message", get_model(selected)["label"])
         return {**value, "title": title, "detail": detail}
 
-    async def idle(self):
+    async def idle(self, *, allow_missing_model=False):
         status = await self.status()
+        if allow_missing_model and status.get("state") == "missing_model" and load(self.path).stt.engine == "local":
+            return
         if status.get("pending_audio") or status.get("state") in {
             "starting",
             "listening",

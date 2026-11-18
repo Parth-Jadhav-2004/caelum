@@ -1,9 +1,13 @@
 import asyncio
+import json
+from dataclasses import asdict
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from caelum.config import Config, save
+from caelum.config import Config, save, validate
+from caelum.desktop_services import CONTROL_FRAME_LIMIT, request
 from caelum.service import reload_settings
 
 
@@ -64,3 +68,29 @@ async def test_reload_recording_mode_without_changing_shortcut(context):
     assert bindings.recording_mode == core.config.app.recording_mode == "toggle"
     bindings.remove.assert_awaited_once()
     bindings.install.assert_awaited_once()
+
+
+async def test_large_unicode_dictionary_crosses_settings_socket(tmp_path, monkeypatch):
+    import tempfile
+
+    config = Config()
+    config.cleanup.replacements = {f"{i:03d}" + "界" * 197: "🪐" * 1000 for i in range(200)}
+    validate(config)
+    data = asdict(config)
+    received = []
+
+    async def handle(reader, writer):
+        received.append(json.loads(await reader.readline()))
+        writer.write(b'{"ok":true}\n')
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    # Keep the AF_UNIX path below the platform limit even in long CI worktrees.
+    with tempfile.TemporaryDirectory() as runtime:
+        monkeypatch.setenv("XDG_RUNTIME_DIR", runtime)
+        directory = Path(runtime) / "caelum"
+        directory.mkdir()
+        async with await asyncio.start_unix_server(handle, directory / "control.sock", limit=CONTROL_FRAME_LIMIT):
+            assert await asyncio.to_thread(request, "settings", config=data) == {"ok": True}
+    assert received == [{"action": "settings", "config": data}]
