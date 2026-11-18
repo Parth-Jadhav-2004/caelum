@@ -2,6 +2,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import threading
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -165,11 +166,10 @@ def test_capture_uses_server_conversion_for_48khz_bluetooth_input(inputs, monkey
 
 
 def test_portaudio_remains_available_without_audio_server(monkeypatch):
-    import sounddevice
-
     monkeypatch.setattr(pulse, "sources", lambda: None)
     factory = Mock()
-    monkeypatch.setattr(sounddevice, "RawInputStream", factory)
+    # This unit test exercises routing, so never initialize a real PortAudio driver.
+    monkeypatch.setitem(sys.modules, "sounddevice", SimpleNamespace(RawInputStream=factory))
     capture = Capture(App(microphone="hw:0"))
     capture.start()
     assert factory.call_args.kwargs["device"] == "hw:0"
