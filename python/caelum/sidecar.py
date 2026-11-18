@@ -47,6 +47,7 @@ class Backend:
         self.sample_lock = asyncio.Lock()
         self.sample_finished = threading.Event()
         self.mutation_lock = asyncio.Lock()
+        self.model_feedback_lock = asyncio.Lock()
         self.update = None
         self.setup_checks = set()
         self.shutdown_complete = False
@@ -84,6 +85,12 @@ class Backend:
             task.add_done_callback(completed)
 
     async def notify_model_state(self, data):
+        # Preserve emission order on the socket: a late progress notification
+        # must not reinstate downloading after pause/cancel.
+        async with self.model_feedback_lock:
+            await self._send_model_state(data)
+
+    async def _send_model_state(self, data):
         with suppress(OSError, RuntimeError, ValueError):
             await asyncio.to_thread(request, "model-progress", progress={
                 "id": data["id"], "state": data["state"],

@@ -44,6 +44,26 @@ async def prepare_update(core, stop):
         return {"ok": True}
 
 
+async def model_download_feedback(core, state):
+    transient = {"model_downloading", "model_stalled", "model_loading"}
+    kind = {"downloading": "model_downloading", "stalled": "model_stalled",
+            "verifying": "model_loading", "installing": "model_loading",
+            "failed": "model_failed", "paused": "hidden", "cancelled": "hidden",
+            "ready": "hidden"}.get(state)
+    if kind is None:
+        return
+    async with core.control_lock:
+        if core.capture is not None or core.pcm is not None or core.work and not core.work.done():
+            return
+        # Ending a download clears only its transient feedback. Preserve
+        # dictation results and the outcome of any subsequent model activation.
+        eligible = transient if kind == "hidden" else transient | {
+            "hidden", "success", "unrefined", "saved", "copied", "no_speech", "model_ready", "model_failed",
+        }
+        if core.state in eligible and core.state != kind:
+            await core.event(kind)
+
+
 async def safety_monitor(core):
     """Fail closed on suspend/lock signals. Also monitor compositor reconnect/reload."""
     process = await asyncio.create_subprocess_exec(
@@ -280,15 +300,7 @@ async def serve(config, config_path=None):
 
                 progress = message.get("progress", {})
                 get_model(progress.get("id"))
-                states = {"downloading": "model_downloading", "stalled": "model_stalled",
-                          "verifying": "model_loading", "installing": "model_loading",
-                          "failed": "model_failed"}
-                kind = states.get(progress.get("state"))
-                if kind and not core.control_lock.locked() and core.capture is None and core.pcm is None and not (
-                    core.work and not core.work.done()
-                ) and core.state in {"hidden", "success", "unrefined", "saved", "copied", "no_speech",
-                                     "model_downloading", "model_stalled", "model_ready", "model_failed"} and core.state != kind:
-                    await core.event(kind)
+                await model_download_feedback(core, progress.get("state"))
                 result = {"ok": True}
             elif message["action"] == "settings":
                 from .ipc_contract import CONFIG, matches
