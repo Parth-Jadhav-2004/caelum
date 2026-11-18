@@ -93,6 +93,7 @@ def test_offline_cleanup_and_dictionary_are_bounded_and_non_cascading():
     assert offline_cleanup("human UHF umbrella", {}) == "human UHF umbrella"
     assert offline_cleanup("Acme Acme Labs", {"Acme Labs": "Studio", "Acme": "Acme Labs"}) == "Acme Labs Studio"
     assert offline_cleanup("a+b", {"a+b": "$1"}) == "$1"
+    assert offline_cleanup("İstanbul is lovely.", {"istanbul": "Istanbul"}) == "Istanbul is lovely."
     config = Config()
     config.cleanup.replacements = {"sea lum": "Caelum"}
     validate(config)

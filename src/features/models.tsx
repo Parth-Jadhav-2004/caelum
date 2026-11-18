@@ -75,6 +75,7 @@ export function DownloadProgress({ model }: { model: SpeechModel }) {
 export function ModelPicker({
   selected,
   onSelect,
+  requireInstalled = false,
   beforeUse,
   language,
   layout = "list",
@@ -83,6 +84,7 @@ export function ModelPicker({
   layout?: "list" | "grid";
   selected?: string;
   onSelect?: (id: string) => void;
+  requireInstalled?: boolean;
   beforeUse?: () => Promise<void>;
 }) {
   const { data, models, isPending, error, refetch } = useModels(language);
@@ -189,7 +191,12 @@ export function ModelPicker({
                     value={model.id}
                     className="mt-1 size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                     checked={chosen === model.id}
-                    disabled={disabled || loading || busy === model.id}
+                    disabled={
+                      disabled ||
+                      loading ||
+                      busy === model.id ||
+                      (requireInstalled && !ready)
+                    }
                     onChange={() => select(model)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -291,6 +298,7 @@ export function ModelPicker({
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
                   {onSelect &&
+                  (!requireInstalled || ready) &&
                   ![
                     "queued",
                     "downloading",

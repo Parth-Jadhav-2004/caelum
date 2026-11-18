@@ -24,6 +24,7 @@ beforeEach(() => {
 function mount(
   onSelect?: (id: string) => void,
   beforeUse?: () => Promise<void>,
+  requireInstalled = false,
 ) {
   return render(
     <QueryClientProvider
@@ -34,6 +35,7 @@ function mount(
       <TooltipProvider>
         <ModelPicker
           onSelect={onSelect}
+          requireInstalled={requireInstalled}
           beforeUse={beforeUse}
           selected={onSelect ? "parakeet-v3" : undefined}
         />
@@ -56,6 +58,23 @@ it.each<[SpeechModel["state"], string]>([
   expect(
     (await screen.findAllByText(label, { exact: true })).length,
   ).toBeGreaterThan(0);
+});
+it("downloads a fallback without changing engines, then offers it for selection", async () => {
+  const select = vi.fn();
+  vi.mocked(ipc).mockImplementation((async (method: string) => {
+    if (method === "models.list") return structuredClone(data);
+    if (method === "models.download") data.models[0].state = "installed";
+    return { ok: true };
+  }) as typeof ipc);
+  mount(select, undefined, true);
+  expect(await screen.findByRole("radio")).toBeDisabled();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Download Parakeet" }),
+  );
+  expect(select).not.toHaveBeenCalled();
+  expect(ipc).not.toHaveBeenCalledWith("models.use", expect.anything());
+  await userEvent.click(await screen.findByRole("button", { name: "Choose" }));
+  expect(select).toHaveBeenCalledWith("parakeet-v3");
 });
 it("shows in-use and loading states without offering removal", async () => {
   data.models[0].state = "installed";

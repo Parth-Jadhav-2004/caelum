@@ -475,8 +475,9 @@ def offline_cleanup(text, replacements):
     text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
     text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
     if replacements:
-        mapping = {key.casefold(): value for key, value in replacements.items()}
-        pattern = r"(?<!\w)(?:" + "|".join(re.escape(key) for key in sorted(
-            replacements, key=len, reverse=True)) + r")(?!\w)"
-        text = re.sub(pattern, lambda match: mapping[match.group().casefold()], text, flags=re.I)
+        keys = sorted(replacements, key=len, reverse=True)
+        pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"
+        # The capture index identifies the dictionary entry even when re.I
+        # equates characters whose casefolds differ (for example İ and i).
+        text = re.sub(pattern, lambda m: replacements[keys[m.lastindex - 1]], text, flags=re.I)
     return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text)).strip()
