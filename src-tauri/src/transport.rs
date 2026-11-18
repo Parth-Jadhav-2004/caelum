@@ -320,6 +320,8 @@ pub fn deadline(method: &str) -> Duration {
         "shutdown" | "service.stop" => 12,
         "service.start" | "settings.save" | "shortcut.check" => 20,
         "updates.stage" => 180,
+        // Local inference permits 1800 seconds, plus interactive capture and cleanup.
+        "practice" => 1830,
         _ => 90,
     })
 }
@@ -328,6 +330,12 @@ pub fn deadline(method: &str) -> Duration {
 mod tests {
     use super::*;
     use tokio::io::{duplex, BufReader};
+    #[test]
+    fn practice_allows_maximum_local_inference_without_slowing_cancellation() {
+        assert!(deadline("practice") >= Duration::from_secs(1800 + 15 + 10));
+        assert_eq!(deadline("sample.cancel"), Duration::from_secs(10));
+        assert_eq!(deadline("status"), Duration::from_secs(10));
+    }
     #[tokio::test]
     async fn shutdown_bounds_stalled_cleanup_and_reaps_child() {
         let child = tokio::process::Command::new("sleep")

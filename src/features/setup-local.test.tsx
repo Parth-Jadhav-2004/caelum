@@ -88,6 +88,9 @@ async function goToPractice() {
 it("starts a model download on the welcome screen and skips API keys", async () => {
   mount();
   await chooseLocal();
+  expect(
+    screen.getByRole("progressbar", { name: "Setup step 1 of 5" }),
+  ).toBeInTheDocument();
   await userEvent.click(screen.getByRole("radio", { name: "Parakeet" }));
   expect(ipc).toHaveBeenCalledWith("models.use", {
     id: "parakeet-v3",
@@ -97,6 +100,9 @@ it("starts a model download on the welcome screen and skips API keys", async () 
     screen.getByRole("heading", { name: "Welcome to Caelum" }),
   ).toBeInTheDocument();
   await goToPractice();
+  expect(
+    screen.getByRole("progressbar", { name: "Setup step 4 of 5" }),
+  ).toBeInTheDocument();
   expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
   expect(ipc).not.toHaveBeenCalledWith("setup.validate", expect.anything());
   expect(

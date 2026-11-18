@@ -293,3 +293,19 @@ async def test_provider_errors_and_metrics_omit_sensitive_content(config, caplog
         assert sentinel not in json.dumps(provider.metrics)
     assert sentinel not in caplog.text
     assert sentinel not in str(capsys.readouterr())
+
+
+@pytest.mark.parametrize("text", ["if ready:\n    launch()", "\tlaunch()\n", "value = 2  # note\n\n"])
+async def test_code_cleanup_preserves_whitespace(config, text):
+    config.cleanup.style = "code"
+    def respond(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client)
+        assert await provider.cleanup(text) == (text, True)
+
+
+@pytest.mark.parametrize("result", ["", "   ", "unrelated fabricated words", "bad\x00text"])
+def test_code_cleanup_rejection_preserves_raw_whitespace(result):
+    raw = "if ready:\n\tlaunch()\n"
+    assert validate_cleanup(raw, result, preserve_whitespace=True) == (raw, False)

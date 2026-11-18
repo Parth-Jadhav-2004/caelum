@@ -462,7 +462,7 @@ export default function App() {
                     ? "Setup"
                     : pages.find((p) => p.id === page)?.title
                 }
-                className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className={`min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain ${page === "setup" ? "" : "[scrollbar-gutter:stable]"}`}
               >
                 {engineError && (
                   <div
@@ -484,7 +484,11 @@ export default function App() {
                 <Suspense fallback={<Skeleton className="m-8 h-80" />}>
                   <div
                     key={page}
-                    className="screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
+                    className={
+                      page === "setup"
+                        ? "screen-enter h-full"
+                        : "screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
+                    }
                   >
                     {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}

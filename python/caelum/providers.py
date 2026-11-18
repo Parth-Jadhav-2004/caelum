@@ -441,7 +441,10 @@ class Providers:
                 if response.is_error:
                     raise response_error(response)
                 body = response.json()
-                result, refined = validate_cleanup(raw, body["choices"][0]["message"]["content"])
+                result, refined = validate_cleanup(
+                    raw, body["choices"][0]["message"]["content"],
+                    preserve_whitespace=cfg.style == "code",
+                )
                 self.metrics["cleanup_refined"] = refined
                 if isinstance(body.get("usage"), dict):
                     self.metrics["token_usage"] = {
