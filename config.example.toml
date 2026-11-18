@@ -15,6 +15,10 @@ high_contrast = false
 silence_dbfs = -60.0 # conservative silence rejection, never an audio gate
 
 [stt]
+engine = "cloud" # cloud or local (offline whisper.cpp; no cloud cleanup)
+local_binary = "whisper-cli" # executable name or full path
+local_model_path = "" # full path to a downloaded whisper.cpp GGML model
+local_timeout_seconds = 300.0
 base_url = "https://api.groq.com/openai/v1"
 model = "whisper-large-v3-turbo"
 key_env = "GROQ_API_KEY"
@@ -26,6 +30,7 @@ overlap_seconds = 0.8
 concurrency = 2
 
 [cleanup]
+style = "light" # light, thorough, email, casual, code; model="" disables cleanup
 # Free single-key default: raw transcription until refinement is benchmarked.
 # Opt in to Groq refinement with model = "openai/gpt-oss-20b".
 base_url = "https://api.groq.com/openai/v1"

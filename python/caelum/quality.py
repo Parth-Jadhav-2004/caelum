@@ -17,9 +17,10 @@ def normalize(text):
     ).strip()
 
 
-def validate_cleanup(raw, result):
-    raw, result = normalize(raw), normalize(result)
-    if not result or "\x00" in result:
+def validate_cleanup(raw, result, *, preserve_whitespace=False):
+    if not preserve_whitespace:
+        raw, result = normalize(raw), normalize(result)
+    if not result.strip() or "\x00" in result:
         return raw, False
     a, b = re.findall(r"\w+", raw.casefold()), re.findall(r"\w+", result.casefold())
     if not a or not 0.65 <= len(b) / len(a) <= 1.35:
@@ -34,3 +35,16 @@ def validate_cleanup(raw, result):
     if any(token.rstrip(".,!?") not in result for token in protected):
         return raw, False
     return result, True
+
+
+STYLE_PROMPTS = {
+    "light": "Make only minimal punctuation and capitalization corrections.",
+    "thorough": "Carefully correct grammar and organize sentences into readable paragraphs.",
+    "email": "Format as an email with readable paragraphs. Preserve any dictated greeting and signature; invent neither.",
+    "casual": "Keep a conversational tone, contractions, and informal wording. Use natural punctuation.",
+    "code": "Preserve code, identifiers, casing, indentation, and technical syntax exactly. Never wrap output in Markdown fences.",
+}
+
+
+def cleanup_prompt(style):
+    return PROMPT + "\n" + STYLE_PROMPTS[style]

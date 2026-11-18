@@ -57,7 +57,8 @@ class History:
         if not config.desktop.history_enabled or not preferences.history_enabled:
             return False
         duration = max(0, metrics.get("capture_ms", 0))
-        rate = preferences.stt_usd_per_hour
+        local = config.stt.engine == "local"
+        rate = 0 if local else preferences.stt_usd_per_hour
         with closing(self.connect()) as connection, connection:
             self.prune(connection)
             inserted = connection.execute(
@@ -69,11 +70,11 @@ class History:
                     duration,
                     len(text.split()),
                     max(0, metrics.get("release_to_dispatch_ms", 0)),
-                    config.stt.model,
-                    config.cleanup.model,
-                    int(refined),
+                    Path(config.stt.local_model_path).name if local else config.stt.model,
+                    "" if local else config.cleanup.model,
+                    int(refined and not local),
                     int(copied),
-                    duration / 3_600_000 * rate if rate else None,
+                    0.0 if local else (duration / 3_600_000 * rate if rate else None),
                     rate,
                 ),
             )
