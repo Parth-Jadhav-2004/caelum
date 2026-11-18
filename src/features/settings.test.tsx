@@ -388,3 +388,45 @@ it("retains a queued update after failure and shows its installation error", asy
     vi.mocked(ipc).mock.calls.filter(([method]) => method === "updates.stage"),
   ).toHaveLength(1);
 });
+
+
+it("preserves cloud preferences while editing offline transcription settings", async () => {
+  const change = vi.fn();
+  const config = {
+    ...testConfig,
+    stt: { ...testConfig.stt, engine: "local", local_binary: "/usr/bin/whisper-cli", local_model_path: "/models/base.bin" },
+    cleanup: { ...testConfig.cleanup, model: "cloud-cleanup", style: "code" },
+  };
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <Settings config={config} change={change} saveState="Saved" initialGroup="Transcription" />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  expect(screen.getByLabelText("Local executable")).toHaveValue("/usr/bin/whisper-cli");
+  expect(screen.getByLabelText("Local model file")).toHaveValue("/models/base.bin");
+  expect(screen.getByRole("combobox", { name: "Text cleanup" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("combobox", { name: "Transcription provider" }));
+  await userEvent.click(screen.getByRole("option", { name: "Groq" }));
+  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
+    stt: expect.objectContaining({ engine: "cloud", local_model_path: "/models/base.bin" }),
+    cleanup: config.cleanup,
+  }));
+});
+
+it("saves the selected cleanup style through the generated settings contract", async () => {
+  const change = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <Settings config={testConfig} change={change} saveState="Saved" initialGroup="Transcription" />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Text cleanup" }));
+  await userEvent.click(screen.getByRole("option", { name: "Code" }));
+  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
+    cleanup: expect.objectContaining({ style: "code", reasoning_effort: "low" }),
+  }));
+});
