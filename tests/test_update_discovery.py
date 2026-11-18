@@ -12,7 +12,7 @@ def discovery(monkeypatch):
     monkeypatch.setattr(updates, "installed", lambda: info)
     monkeypatch.setattr(updates, "compatible", lambda _: True)
 
-    def serve(releases, status=200, source_date="2026-11-16T10:00:00Z"):
+    def serve(releases, status=200, source_date="2026-11-16T10:00:00Z", latest=None):
         def respond(request):
             if "/git/commits/" in request.url.path:
                 return httpx.Response(200, json={
@@ -23,10 +23,12 @@ def discovery(monkeypatch):
                 return httpx.Response(200, json={
                     "schema": 1, "version": "0.4.1", "sha": "a" * 40,
                 })
-            assert str(request.url) == (
-                "https://api.github.com/repos/Parth-Jadhav-2004/caelum/releases?per_page=20"
-            )
-            return httpx.Response(status, content=json.dumps(releases))
+            if request.url.path.endswith("/latest"):
+                return httpx.Response(200, json=latest) if latest is not None else httpx.Response(404)
+            assert request.url.path == "/repos/Parth-Jadhav-2004/caelum/releases"
+            page = int(request.url.params["page"])
+            batch = releases[(page - 1) * 20:page * 20] if isinstance(releases, list) else releases
+            return httpx.Response(status, content=json.dumps(batch))
         monkeypatch.setattr(updates, "network_client", lambda _: httpx.Client(
             transport=httpx.MockTransport(respond), headers={"Accept-Encoding": "identity"},
         ))
@@ -60,6 +62,32 @@ def test_chooses_candidate_number_instead_of_api_order(discovery):
     _, serve = discovery
     serve([preview("v0.4.1-rc.2"), preview("v0.4.1-rc.10"), preview("v0.3.9-rc.99")])
     assert updates.check_testing()["version"] == "0.4.1-rc.10"
+
+
+def test_development_builds_do_not_hide_or_replace_testing(discovery):
+    _, serve = discovery
+    development = [preview(f"v0.4.1-dev.{n}.1") for n in range(25, 0, -1)]
+    serve([*development, preview()])
+    assert updates.check_testing() == {"version": "0.4.1-rc.2", "installed": False}
+
+
+def test_stable_outside_first_page_still_suppresses_released_candidate(discovery):
+    _, serve = discovery
+    serve([preview()], latest={"draft": False, "prerelease": False, "tag_name": "v0.4.1"})
+    assert updates.check_testing() is None
+
+
+def test_excessive_history_reports_failure_instead_of_false_up_to_date(discovery):
+    _, serve = discovery
+    serve([preview(f"v0.4.1-dev.{n}.1") for n in range(100, 0, -1)])
+    with pytest.raises(RuntimeError, match="Could not check testing releases"):
+        updates.check_testing()
+
+
+def test_a_recent_testing_candidate_remains_available_with_long_development_history(discovery):
+    _, serve = discovery
+    serve([preview(), *[preview(f"v0.4.1-dev.{n}.1") for n in range(100, 0, -1)]])
+    assert updates.check_testing() == {"version": "0.4.1-rc.2", "installed": False}
 
 
 @pytest.mark.parametrize("reason", ["stable", "draft", "old", "newer-install", "wrong-target"])

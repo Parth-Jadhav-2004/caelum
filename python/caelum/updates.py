@@ -332,13 +332,38 @@ def check_testing():
 
     try:
         with network_client(30) as client:
-            releases = json.loads(fetch(
-                client, f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=20",
-                512 * 1024,
-            ))
-        if not isinstance(releases, list):
-            raise ValueError("Invalid release list")
+            api = f"https://api.github.com/repos/{REPOSITORY}/releases"
+            # Frequent development builds can push stable/testing out of page one.
+            # Read latest stable separately; never infer it from a truncated list.
+            try:
+                latest = json.loads(fetch(client, api + "/latest", 128 * 1024))
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 404:
+                    raise
+                latest = None
+            if latest is not None and (
+                not isinstance(latest, dict) or latest.get("draft") is not False
+                or latest.get("prerelease") is not False
+                or not isinstance(latest.get("tag_name"), str)
+                or not re.fullmatch(r"v\d+\.\d+\.\d+", latest["tag_name"])
+            ):
+                raise ValueError("Invalid latest stable release")
+            releases = []
+            truncated = False
+            for page in range(1, 6):
+                batch = json.loads(fetch(
+                    client, api + f"?per_page=20&page={page}", 512 * 1024,
+                ))
+                if not isinstance(batch, list) or len(batch) > 20:
+                    raise ValueError("Invalid release list")
+                releases.extend(batch)
+                if len(batch) < 20:
+                    break
+            else:
+                truncated = True
         stable = (0, 0, 0)
+        if latest:
+            stable = version_tuple(latest["tag_name"][1:])
         candidates = []
         for release in releases:
             if not isinstance(release, dict) or release.get("draft") is not False:
@@ -379,6 +404,8 @@ def check_testing():
             ):
                 continue
             return {"version": release["tag_name"][1:], "installed": same_build}
+        if truncated:
+            raise ValueError("Release history exceeds bounded testing discovery; view GitHub releases")
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise RuntimeError("Could not check testing releases. Try again.") from error
     return None
