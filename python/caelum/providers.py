@@ -290,7 +290,7 @@ class Providers:
         if self.idle_task:
             await asyncio.gather(self.idle_task, return_exceptions=True)
             self.idle_task = None
-        self.configure_local(force=self.local_state in ("unloaded", "missing"))
+        self.configure_local(force=self.local_state in ("unloaded", "missing", "error"))
         loading = self.local_state == "loading"
         if loading and self.on_loading:
             await self.on_loading()

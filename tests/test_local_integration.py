@@ -145,6 +145,26 @@ async def test_background_load_returns_immediately_and_can_retry_missing_model(m
         await provider.aclose()
 
 
+async def test_retry_after_memory_pressure_reloads_without_changing_settings(monkeypatch):
+    provider = Providers(local_config(), client=AsyncMock())
+    engine = AsyncMock()
+    engine.decode_ms = 12
+    engine.transcribe.return_value = Transcript("Recovered", [])
+    load_model = AsyncMock(side_effect=[ProviderError("Not enough memory", "local_setup"), engine])
+    monkeypatch.setattr(provider, "prepare_local", load_model)
+    pcm = b"retained speech"
+    try:
+        with pytest.raises(ProviderError, match="Not enough memory"):
+            await provider.stt(pcm)
+        assert provider.engine_status()["state"] == "error"
+        assert (await provider.stt(pcm)).text == "Recovered"
+        assert load_model.await_count == 2
+        engine.transcribe.assert_awaited_once_with(pcm, 0, len(pcm) // 2)
+        provider.client.post.assert_not_called()
+    finally:
+        await provider.aclose()
+
+
 def test_privacy_tracks_engine_and_explicit_fallback():
     config = local_config()
     assert privacy(config).startswith("Audio stays on this computer. Caelum downloads")
