@@ -85,13 +85,23 @@ def test_duplicate_names_are_distinguished_and_legacy_ambiguity_is_rejected(inpu
 def test_resolution_supports_legacy_names_and_disconnected_bluetooth_fallback(inputs):
     assert pulse.resolve("CMF Buds 2") == inputs[1]
     assert pulse.resolve("pulse:" + inputs[1]["name"]) == inputs[1]
-    assert pulse.resolve(None) == {"name": None}
     assert pulse.resolve(0) is None
     assert pulse.resolve("hw:0") is None
     inputs.pop()
     assert pulse.resolve("pulse:bluez_input.2C:BE:EE:59:59:AC") == inputs[0]
     inputs.clear()
     with pytest.raises(RuntimeError, match="No microphones"):
+        pulse.resolve(None)
+
+
+def test_default_capture_follows_current_input_but_never_opens_a_monitor(inputs, monkeypatch):
+    query = Mock(side_effect=[
+        SimpleNamespace(stdout=device["name"] + "\n") for device in inputs
+    ] + [SimpleNamespace(stdout="alsa_output.builtin.monitor\n")])
+    monkeypatch.setattr(pulse.subprocess, "run", query)
+    assert pulse.resolve(None) == inputs[0]
+    assert pulse.resolve(None) == inputs[1]
+    with pytest.raises(RuntimeError, match="choose an input"):
         pulse.resolve(None)
 
 
