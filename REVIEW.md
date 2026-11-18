@@ -1,5 +1,9 @@
 # Caelum Codebase Review
 
+> Historical design proposal from November 14, 2026. These recommendations refer to
+> that snapshot and are not a current security assessment. Several items have since
+> been addressed on `main`; verify each finding against current code before acting.
+
 **Date:** November 14, 2026  
 **Version:** 0.4.1  
 **Reviewer:** Comprehensive code audit
