@@ -77,8 +77,10 @@ export function ModelPicker({
   onSelect,
   beforeUse,
   language,
+  layout = "list",
 }: {
   language?: string;
+  layout?: "list" | "grid";
   selected?: string;
   onSelect?: (id: string) => void;
   beforeUse?: () => Promise<void>;
@@ -151,7 +153,11 @@ export function ModelPicker({
         ref={root}
         role="radiogroup"
         aria-label="Speech model"
-        className="space-y-3"
+        className={
+          layout === "grid"
+            ? "grid items-start gap-3 xl:grid-cols-2"
+            : "space-y-3"
+        }
       >
         {visible.map((model) => {
           const loading =
@@ -170,7 +176,10 @@ export function ModelPicker({
             (!ready || model.disabled_reason === "Needs an extra component.");
           const id = `${group}-${model.id}`;
           return (
-            <div key={model.id} className="rounded-lg border p-4">
+            <div
+              key={model.id}
+              className={`rounded-lg border p-4 ${chosen === model.id ? "border-foreground bg-card" : ""}`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-start gap-3">
                   <input
