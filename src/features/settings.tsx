@@ -369,6 +369,10 @@ export function Settings({
                 <>
                   <ModelPicker
                     language={config.stt.language}
+                    applyInstalled={commit && ((id) => commit({
+                      ...config,
+                      stt: { ...config.stt, local_model: id },
+                    }))}
                     beforeUse={() => commit?.(config) ?? Promise.resolve()}
                   />
                   <Row title="Run local models on">

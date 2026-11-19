@@ -77,6 +77,7 @@ export function ModelPicker({
   onSelect,
   requireInstalled = false,
   beforeUse,
+  applyInstalled,
   language,
   layout = "list",
 }: {
@@ -86,6 +87,7 @@ export function ModelPicker({
   onSelect?: (id: string) => void;
   requireInstalled?: boolean;
   beforeUse?: () => Promise<void>;
+  applyInstalled?: (id: string) => Promise<void>;
 }) {
   const { data, models, isPending, error, refetch } = useModels(language);
   const client = useQueryClient();
@@ -110,6 +112,10 @@ export function ModelPicker({
       return;
     }
     void run(model.id, async () => {
+      if (model.state === "installed" && applyInstalled) {
+        await applyInstalled(model.id);
+        return;
+      }
       await beforeUse?.();
       await ipc("models.use", { id: model.id, when_ready: true });
     });

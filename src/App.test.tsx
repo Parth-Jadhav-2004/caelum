@@ -13,6 +13,7 @@ import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { ipc, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+import { testModels } from "@/test-models";
 import { testConfig } from "@/test-config";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -461,4 +462,40 @@ it("keeps a background model switch when an appearance edit is waiting to save",
       ([, params]) => !("stt" in (params as { config: object }).config),
     ),
   ).toBe(true);
+});
+
+it("retries an incompatible language with the installed model selected while saving", async () => {
+  const saved = structuredClone(testConfig);
+  Object.assign(saved.stt, { engine: "local", local_model: "parakeet-v3", language: "en" });
+  const model = { ...testModels.models[0], id: "whisper-turbo", languages: ["ja"], state: "installed" };
+  let rejectLanguage!: (reason: Error) => void;
+  const firstSave = new Promise((_, reject) => { rejectLanguage = reject; });
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) => {
+    if (method === "bootstrap")
+      return Promise.resolve({ config: structuredClone(saved), setup: { complete: true }, credentials: {} });
+    if (method === "models.list")
+      return Promise.resolve({ ...testModels, models: [model] });
+    if (method === "settings.save") {
+      const { config } = params as { config: { stt: Partial<Config["stt"]> } };
+      if (!config.stt.local_model) return firstSave;
+      Object.assign(saved.stt, config.stt);
+      return Promise.resolve({ saved: true });
+    }
+    return original(method, params);
+  }) as typeof ipc);
+  mount();
+  await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  await userEvent.click(await screen.findByRole("combobox", { name: "Language" }));
+  await userEvent.click(screen.getByRole("option", { name: "Japanese" }));
+  await waitFor(() => expect(ipc).toHaveBeenCalledWith("settings.save", {
+    config: { stt: { language: "ja" } },
+  }));
+  await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Use" }));
+  await act(async () => rejectLanguage(new Error("Unsupported language")));
+  await waitFor(() => expect(ipc).toHaveBeenCalledWith("settings.save", {
+    config: { stt: { language: "ja", local_model: "whisper-turbo" } },
+  }));
+  expect(ipc).not.toHaveBeenCalledWith("models.use", expect.anything());
 });

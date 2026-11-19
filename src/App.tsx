@@ -134,6 +134,7 @@ export default function App() {
     [saveState, setSaveState] = useState("Saved automatically");
   const draft = useRef<Config | null>(null);
   const pendingPatch = useRef<ConfigPatch>({});
+  const failedPatch = useRef<ConfigPatch>({});
   const onQuit = useCallback(() => setQuitting(true), []);
   const bootstrap = useEngine(onQuit),
     client = useQueryClient(),
@@ -175,7 +176,8 @@ export default function App() {
     if (!initialized.current || !saved || !draft.current) return;
     const stt = { ...draft.current.stt };
     for (const key of ["engine", "local_model", "fallback"] as const) {
-      if (!Object.hasOwn(pendingPatch.current.stt ?? {}, key))
+      if (!Object.hasOwn(pendingPatch.current.stt ?? {}, key) &&
+          !Object.hasOwn(failedPatch.current.stt ?? {}, key))
         stt[key] = saved[key];
     }
     if (JSON.stringify(stt) !== JSON.stringify(draft.current.stt)) {
@@ -213,7 +215,13 @@ export default function App() {
       const operation = chain.current
         .catch(() => {})
         .then(async () => {
-          const result = await ipc("settings.save", { config: patch });
+          // A preceding queued save may have failed after this edit was submitted.
+          const config = mergePatch(failedPatch.current, patch);
+          const result = await ipc("settings.save", { config }).catch((error) => {
+            failedPatch.current = config;
+            throw error;
+          });
+          failedPatch.current = {};
           setSaveState(result.warning ?? "Saved automatically");
           if (result.warning) toast.warning(result.warning);
           await client.invalidateQueries({ queryKey: ["bootstrap"] });
@@ -222,7 +230,6 @@ export default function App() {
       try {
         await operation;
       } catch (error) {
-        pendingPatch.current = mergePatch(patch, pendingPatch.current);
         setSaveState(`Not saved: ${errorText(error)}`);
         throw error;
       }
