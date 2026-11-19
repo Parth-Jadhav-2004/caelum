@@ -63,6 +63,7 @@ async def online_setup():
 
 
 async def desktop_delivery():
+    import win32clipboard
     import win32con
     import win32gui
     from caelum.config import App
@@ -74,13 +75,20 @@ async def desktop_delivery():
     try:
         binding = Bindings("CTRL + ALT + V", "hold")
         binding.core = SimpleNamespace(hud=hud)
-        original = SimpleNamespace(top=edit, address=edit, pid=os.getpid(), output="")
-        with patch("caelum.windows_desktop.focused_target", return_value=original):
+        focused = SimpleNamespace(top=edit, address=edit, pid=os.getpid(), output="")
+        with patch("caelum.windows_desktop.focused_target", return_value=focused):
+            original = await binding.target()
             assert await binding.insert("Unicode: café", original)
             assert win32gui.GetWindowText(edit) == "Unicode: café"
+            original = await binding.target()
         with patch("caelum.windows_desktop.focused_target", return_value=None):
             assert not await binding.insert("manual paste", original)
             assert win32gui.GetWindowText(edit) == "Unicode: café"
+            win32clipboard.OpenClipboard(hud.window)
+            try:
+                assert win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT) == "manual paste"
+            finally:
+                win32clipboard.CloseClipboard()
         focus = win32gui.GetForegroundWindow()
         await hud.emit({"state": "recording", "history": [0.5] * 17})
         assert win32gui.GetForegroundWindow() == focus

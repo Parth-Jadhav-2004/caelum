@@ -42,8 +42,11 @@ directory. Windows rechecks its signed manifest and hash before opening it.
   with a downloaded model and the network disconnected.
 - Focus a text field in Notepad. Use Ctrl + Win, the default for new setups, or your configured hold or toggle shortcut.
   The feedback pill should not take focus. Supported Windows Edit/RichEdit
-  controls receive an addressed paste. For other controls or a focus change,
-  use **Ctrl+V** in the intended field. A global synthetic Ctrl+V is never sent.
+  controls receive the text at the caret or selection, leaving your clipboard intact.
+  For other controls or a focus change, wait for **Copied**, then use **Ctrl+V**
+  in the intended field. If a field truncates the text, the clipboard changed, or copying failed,
+  choose **Retry** to copy the finished transcript before the retry window expires.
+  This also works with history saving off.
 - Cancel with Escape, lock during capture, change input devices and test
   retry after a network interruption. Check tray hide/show and quit.
 - Check light, dark and high-contrast appearances, the history calendar,

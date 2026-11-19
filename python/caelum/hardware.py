@@ -1,9 +1,11 @@
-"""Fast, unprivileged Linux hardware hints. No subprocesses or network probes."""
+"""Fast, unprivileged desktop hardware hints. No subprocesses or network probes."""
 
+import ctypes
 import os
 import platform
 import shutil
 from dataclasses import dataclass
+from itertools import count
 from pathlib import Path
 
 
@@ -20,20 +22,34 @@ class Hardware:
     language: str = "en"
 
 
+def _windows_locale():
+    name = ctypes.create_unicode_buffer(85)  # LOCALE_NAME_MAX_LENGTH
+    if ctypes.windll.kernel32.GetUserDefaultLocaleName(name, len(name)):
+        return name.value or "en"
+    return "en"
+
+
+def _windows_nvidia():
+    import pywintypes
+    import win32api
+
+    try:
+        for index in count():
+            device = win32api.EnumDisplayDevices(None, index)
+            if device.DeviceID.upper().startswith("PCI\\VEN_10DE&"):
+                return True
+    except pywintypes.error:  # End of enumeration or no accessible adapters.
+        return False
+
+
 def detect(config=None, directory=None):
     from .models import models_dir
 
     memory = {}
-    try:
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            name, value = line.split(":", 1)
-            memory[name] = int(value.split()[0]) // 1024
-    except (OSError, ValueError, IndexError):
-        pass
+    flags = set()
+    language = config.stt.language if config else ""
     arch = platform.machine()
     if os.name == "nt":
-        import ctypes
-
         class Memory(ctypes.Structure):
             _fields_ = [("size", ctypes.c_uint32), ("load", ctypes.c_uint32),
                         *((name, ctypes.c_uint64) for name in
@@ -45,16 +61,26 @@ def detect(config=None, directory=None):
             memory.update(MemTotal=status.total // 1048576, MemAvailable=status.available // 1048576)
         if arch.lower() == "amd64":
             arch = "x86_64"
-    flags = set()
-    if os.name == "nt" and ctypes.windll.kernel32.IsProcessorFeaturePresent(40):
-        flags.add("avx2")
-    try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith(("flags", "Features")):
-                flags = set(line.split(":", 1)[1].split())
-                break
-    except (OSError, IndexError):
-        pass
+        if ctypes.windll.kernel32.IsProcessorFeaturePresent(40):
+            flags.add("avx2")
+        language = language or _windows_locale()
+        nvidia = _windows_nvidia()
+    else:
+        try:
+            for line in Path("/proc/meminfo").read_text().splitlines():
+                name, value = line.split(":", 1)
+                memory[name] = int(value.split()[0]) // 1024
+        except (OSError, ValueError, IndexError):
+            pass
+        try:
+            for line in Path("/proc/cpuinfo").read_text().splitlines():
+                if line.startswith(("flags", "Features")):
+                    flags = set(line.split(":", 1)[1].split())
+                    break
+        except (OSError, IndexError):
+            pass
+        language = language or os.environ.get("LC_ALL") or os.environ.get("LANG") or "en"
+        nvidia = Path("/dev/nvidiactl").exists()
     try:
         cores = len(os.sched_getaffinity(0))
     except (OSError, AttributeError):
@@ -66,9 +92,6 @@ def detect(config=None, directory=None):
         free = shutil.disk_usage(directory).free // 1_000_000
     except OSError:
         free = 0
-    language = (config.stt.language if config else "") or (
-        os.environ.get("LC_ALL") or os.environ.get("LANG") or "en"
-    )
     language = language.split("_")[0].split("-")[0].split(".")[0].lower()
     if language in ("c", "posix"):
         language = "en"
@@ -77,7 +100,7 @@ def detect(config=None, directory=None):
         mem_available_mb=memory.get("MemAvailable", 0),
         cores=cores, arch=arch, avx2="avx2" in flags or arch == "aarch64",
         avx512=any(flag.startswith("avx512") for flag in flags), disk_free_mb=free,
-        nvidia=Path("/dev/nvidiactl").exists(), language=language,
+        nvidia=nvidia, language=language,
     )
 
 

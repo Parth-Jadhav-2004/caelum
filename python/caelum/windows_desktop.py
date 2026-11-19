@@ -117,11 +117,54 @@ def focused_target():
     top = win32gui.GetForegroundWindow()
     info = GuiThreadInfo()
     info.size = ctypes.sizeof(info)
-    thread, pid = win32process.GetWindowThreadProcessId(top) if top else (0, 0)
+    try:
+        thread, pid = win32process.GetWindowThreadProcessId(top) if top else (0, 0)
+    except pywintypes.error:  # The foreground window closed during capture.
+        thread, pid = 0, 0
     child = info.focus if thread and ctypes.windll.user32.GetGUIThreadInfo(
         thread, ctypes.byref(info)
     ) else None
     return SimpleNamespace(top=top, address=child, pid=pid, output="")
+
+
+def selection_start(window):
+    # The packed EM_GETSEL return value overflows at 65,535. Request the full offset.
+    offset = wintypes.DWORD()
+    win32gui.SendMessageTimeout(window, win32con.EM_GETSEL, ctypes.addressof(offset), 0,
+                                win32con.SMTO_ABORTIFHUNG, 300)
+    return offset.value
+
+
+def replace_selection(text, target):
+    window = target.address
+    if not window or target != focused_target():
+        return False
+    name = win32gui.GetClassName(window).lower()
+    if name != "edit" and not name.startswith("richedit"):
+        return False
+    style = win32gui.GetWindowLong(window, win32con.GWL_STYLE)
+    if style & win32con.ES_READONLY or not win32gui.IsWindowEnabled(window):
+        return False
+    if not text.isascii() and not ctypes.windll.user32.IsWindowUnicode(wintypes.HWND(window)):
+        return False
+    start = selection_start(window)
+    lines = text.replace("\r\n", "\n")
+    native_text = lines.replace("\n", "\r\n")
+    if target != focused_target():
+        return False
+    # EM_REPLACESEL is a system-marshalled Unicode message addressed to one edit control.
+    win32gui.SendMessageTimeout(window, win32con.EM_REPLACESEL, True, native_text,
+                                win32con.SMTO_ABORTIFHUNG, 300)
+    # A restricted field can silently truncate a successful dispatch. Modern RichEdit
+    # counts a paragraph break as one UTF-16 code unit, classic Edit and RichEdit 1.0 as two.
+    positions = native_text if name in ("edit", "richedit") else lines
+    expected = start + len(positions.encode("utf-16-le")) // 2
+    try:
+        if selection_start(window) == expected:
+            return True
+    except pywintypes.error:
+        pass
+    raise RuntimeError("The field did not confirm full insertion")
 
 
 class Bindings:
@@ -197,9 +240,22 @@ class Bindings:
             await asyncio.sleep(0.025)
 
     async def target(self, address=None):
+        self.clipboard_sequence = win32clipboard.GetClipboardSequenceNumber()
         return focused_target()
 
     async def insert(self, text, target):
+        try:
+            if replace_selection(text, target):
+                return True
+        except pywintypes.error:
+            pass  # The control closed, denied access or timed out.
+        await self.copy_result(text, self.clipboard_sequence)
+        return False
+
+    async def copy_result(self, text, expected_sequence=None):
+        # Explicit Retry authorizes copying over the clipboard as it is now.
+        if expected_sequence is None:
+            expected_sequence = win32clipboard.GetClipboardSequenceNumber()
         for attempt in range(6):
             try:
                 win32clipboard.OpenClipboard(self.core.hud.window)
@@ -209,23 +265,18 @@ class Bindings:
                     raise RuntimeError("Clipboard is busy") from None
                 await asyncio.sleep(0.025)
         try:
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardText(text, win32con.CF_UNICODETEXT)
-        finally:
-            win32clipboard.CloseClipboard()
-        # WM_PASTE is addressed to one edit control. Never synthesize Ctrl+V
-        # into whichever application happens to be foreground after this check.
-        if not target.address or target != focused_target():
-            return False
-        try:
-            name = win32gui.GetClassName(target.address).lower()
-            if name != "edit" and not name.startswith("richedit"):
-                return False
-            win32gui.SendMessageTimeout(target.address, win32con.WM_PASTE, 0, 0,
-                                        win32con.SMTO_ABORTIFHUNG, 300)
-            return True
+            # Check while holding the clipboard, including after any busy retries.
+            try:
+                current = win32clipboard.GetClipboardSequenceNumber()
+                # A new window station also reports zero for its untouched, empty clipboard.
+                if current != expected_sequence or (not current and win32clipboard.EnumClipboardFormats(0)):
+                    raise RuntimeError("Clipboard changed or unavailable")
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardText(text, win32con.CF_UNICODETEXT)
+            finally:
+                win32clipboard.CloseClipboard()
         except pywintypes.error:
-            return False
+            raise RuntimeError("Clipboard unavailable") from None
 
 
 class HUD:
@@ -257,6 +308,8 @@ class HUD:
                     x = 40 + 5 * i
                     win32gui.FillRect(dc, (x, 18-half, x+2, 18+half),
                                       win32gui.GetStockObject(win32con.WHITE_BRUSH))
+            elif state == "error" and self.message.get("error_code") == "clipboard":
+                label = "Retry to copy     ·     Cancel"
             else:
                 label = ERRORS.get(self.message.get("error_code"), LABELS.get(state, state))
             win32gui.DrawText(dc, label, -1, rect,

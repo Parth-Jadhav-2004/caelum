@@ -1,4 +1,5 @@
 import asyncio
+import os
 from dataclasses import replace
 from unittest.mock import AsyncMock
 
@@ -208,11 +209,15 @@ def test_recommendation_table(total, available, cores, language, expected):
         assert "slower on this computer" in result["reason_text"]
 
 
-def test_no_avx2_and_locale_detection(monkeypatch):
+def test_no_avx2():
     hardware = Hardware(mem_total_mb=16384, mem_available_mb=8000, cores=8,
                         language="en", arch="x86_64")
     assert recommend(hardware)["id"] is None
     assert recommend(replace(hardware, arch="aarch64"))["id"] == "parakeet-v3"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX locale environment")
+def test_posix_locale_detection(monkeypatch):
     monkeypatch.setenv("LC_ALL", "hi_IN.UTF-8")
     assert detect(Config()).language == "hi"
     config = Config()

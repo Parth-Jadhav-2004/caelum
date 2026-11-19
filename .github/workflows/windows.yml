@@ -25,6 +25,8 @@ jobs:
           version: "0.13.1"
       - run: npm ci
       - run: npm run check
+      - name: Test Windows dictation and model guidance
+        run: uv run --locked --extra dev --python 3.12 pytest -q tests/test_windows_desktop.py tests/test_windows_hardware.py tests/test_orchestrator.py
       - run: python scripts/build_windows_runtime.py
       - run: src-tauri/windows-runtime/python.exe scripts/smoke_windows_engine.py
         timeout-minutes: 3

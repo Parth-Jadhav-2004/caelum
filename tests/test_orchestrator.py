@@ -106,6 +106,50 @@ async def test_clipboard_fallback_is_distinct(core, monkeypatch):
     assert core.pcm is None
 
 
+async def test_retry_copies_exact_finished_transcript_with_history_off(core):
+    from caelum.desktop_services import service_presentation
+    from caelum.orchestrator import notify
+
+    core.config.desktop.history_enabled = False
+    core.bindings.insert = AsyncMock(side_effect=RuntimeError("Clipboard changed"))
+    core.bindings.copy_result = AsyncMock(side_effect=[RuntimeError("Clipboard is busy"), None])
+    await core.finalize(core.session)
+    status = await core.handle("status")
+    assert status["error_kind"] == "clipboard"
+    assert "Retry to copy the finished text" in service_presentation(status)[1]
+    assert "spoken words" not in str(status)
+    await core.handle("retry")
+    await core.work
+    assert core.state == "error"
+    await core.handle("retry")
+    await core.work
+    assert core.state == "copied"
+    assert core.pending_copy is core.pcm is None
+    core.bindings.copy_result.assert_awaited_with("Private spoken words.")
+    core.bindings.insert.assert_awaited_once()
+    core.provider.stt.assert_awaited_once()
+    core.provider.cleanup.assert_awaited_once()
+    notify.assert_awaited_with("Text copied. Paste manually in the intended application.")
+
+
+@pytest.mark.parametrize("ending", ["cancel", "expire", "locked"])
+async def test_pending_transcript_discarded_on_cancel_expiry_or_lock(core, ending):
+    core.bindings.insert = AsyncMock(side_effect=RuntimeError("Clipboard unavailable"))
+    core.bindings.copy_result = AsyncMock()
+    await core.finalize(core.session)
+    if ending == "expire":
+        await core.expire(core.session, 0)
+    elif ending == "locked":
+        core.bindings.locked = AsyncMock(return_value=True)
+        await core.handle("retry")
+        await core.work
+    else:
+        await core.handle("cancel")
+    await core.handle("retry")
+    assert core.pending_copy is core.pcm is None
+    core.bindings.copy_result.assert_not_awaited()
+
+
 async def test_error_retains_audio_and_blocks_new_recording(core):
     core.provider.stt.side_effect = ProviderError("offline")
     await core.finalize(core.session)

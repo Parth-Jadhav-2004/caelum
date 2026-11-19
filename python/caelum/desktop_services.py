@@ -205,6 +205,8 @@ def service_presentation(status):
                     "Audio is sent to your provider.")
     if state == "error":
         if status.get("pending_audio"):
+            if status.get("error_kind") == "clipboard":
+                return "Awaiting retry", "Choose Retry to copy the finished text, then paste it in your app."
             guidance = {
                 "invalid_key": "Replace the key in Settings → Transcription → Manage keys, then retry.",
                 "missing_key": "Add the key in Settings → Transcription → Manage keys, then retry.",
