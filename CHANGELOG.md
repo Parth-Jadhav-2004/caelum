@@ -4,14 +4,22 @@ Release notes, newest first.
 
 ## 0.5.0
 
-Changes since stable v0.4.2:
+Changes since stable v0.4.2.
+
+### Added
 
 - Dictate offline with a downloaded speech model. Setup recommends models for your memory and language and verifies downloads. Online mode still supports your own provider.
 - New onboarding guides you through speech mode, microphone, shortcut and a practice dictation. Local practice works without a key or upload after the model download.
-- Fixed clipboard delivery when the Linux selection owner forks. On portable desktops, use Record and Finish recording, then paste in your editor. With history on, use Copy on the saved transcript.
 - Windows x64 adds an installer with the bundled engine, global shortcuts and focus-aware paste. Online setup saves validated API keys in Windows Credential Manager.
 - The Linux x86-64 AppImage bundles Python and the local engine. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. Native Arch, Debian, Ubuntu and Fedora packages remain available. Model weights download separately.
+
+### Changed
+
 - New setups default to Ctrl + Win on Windows and Ctrl + Super on Linux. On desktops that require a non-modifier key, select another shortcut or use the on-screen controls.
+
+### Fixed
+
+- Fixed clipboard delivery when the Linux selection owner forks. On portable desktops, use Record and Finish recording, then paste in your editor. With history on, use Copy on the saved transcript.
 
 ## 0.4.2
 

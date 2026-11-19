@@ -1,26 +1,24 @@
 # Caelum
 
-Record your voice, finish, then copy the transcript into the app you’re using.
+## Download Caelum 0.5.0 for Linux and Windows
 
-## Download
+Dictate with a downloaded speech model or an online provider, then paste the transcript into your app. [Choose a download for your desktop](https://parth-jadhav-2004.github.io/caelum/#download) or [open the 0.5.0 release and SHA256SUMS](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0).
 
-Get the package for your distribution and `SHA256SUMS` from [Latest stable (v0.4.2)](https://github.com/Parth-Jadhav-2004/caelum/releases/latest). In the download folder, verify that your package reports **OK**, then run its install command.
+**Windows x64.** Download the installer from the release, compare its SHA-256 with the entry in `SHA256SUMS` using `Get-FileHash .\caelum-0.5.0-x64-setup.exe` in PowerShell, then run it. Windows SmartScreen may warn about an unsigned installer. [Windows setup and shortcut behavior](docs/windows.md)
 
-```sh
-sha256sum --check --ignore-missing SHA256SUMS
-```
+**Linux x86-64.** Download your package and `SHA256SUMS` to the same directory. Run `sha256sum --check --ignore-missing SHA256SUMS` and confirm your package reports **OK**. Then install it with the matching command.
 
 | Linux x86-64 | Install the downloaded package |
 | --- | --- |
-| Ubuntu 24.04 | `sudo apt install ./caelum_0.4.2-1_ubuntu-24.04_amd64.deb` |
-| Ubuntu 26.04 | `sudo apt install ./caelum_0.4.2-1_ubuntu-26.04_amd64.deb` |
-| Debian 12 | `sudo apt install ./caelum_0.4.2-1_debian-12_amd64.deb` |
-| Fedora 43 | `sudo dnf install ./caelum-0.4.2-1.fedora43.x86_64.rpm` |
-| Arch Linux | `sudo pacman -U ./caelum-0.4.2-1-x86_64.pkg.tar.zst` |
+| Ubuntu 24.04 | `sudo apt install ./caelum_0.5.0-1_ubuntu-24.04_amd64.deb` |
+| Ubuntu 26.04 | `sudo apt install ./caelum_0.5.0-1_ubuntu-26.04_amd64.deb` |
+| Debian 12 | `sudo apt install ./caelum_0.5.0-1_debian-12_amd64.deb` |
+| Fedora 43 | `sudo dnf install ./caelum-0.5.0-1.fedora43.x86_64.rpm` |
+| Arch Linux | `sudo pacman -U ./caelum-0.5.0-1-x86_64.pkg.tar.zst` |
 
-Stable v0.4.2 uses an online provider. On GNOME, KDE and other Linux desktops, use the recording controls and paste the transcript into your editor. Portal shortcuts depend on your desktop. Hyprland also supports native hold-to-talk and insertion. [Linux setup and troubleshooting](docs/linux.md)
+For the AppImage, run `chmod +x ./caelum-0.5.0-x86_64.AppImage` and launch it from the download folder. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio.
 
-**Testing 0.5.0.** Invited Linux testers can follow the [pinned RC instructions](https://github.com/Parth-Jadhav-2004/caelum/blob/beta-guide/README.md) for local models and guided practice. The next candidate also includes an AppImage and Windows x64 installer. [Changes since v0.4.2](CHANGELOG.md#050) · [Qualification issue #26](https://github.com/Parth-Jadhav-2004/caelum/issues/26)
+On GNOME, KDE and other Linux desktops, use Record and Finish recording, then copy and paste into your editor. Portal shortcut support depends on the desktop. Hyprland also supports native hold-to-talk and insertion. On Windows, a configurable shortcut can paste into a supported Edit or RichEdit field that retains focus. Use Ctrl+V in other applications. [Linux setup](docs/linux.md) · [Changes since 0.4.2](CHANGELOG.md#050)
 
 ## Development
 
