@@ -37,7 +37,8 @@ CONFIG = obj(
     {
         name: obj(
             {
-                field.name: {str: STRING, int: NUMBER, float: NUMBER, bool: BOOL}.get(
+                field.name: {str: STRING, int: NUMBER, float: NUMBER, bool: BOOL,
+                             dict: {"type": "object", "additionalProperties": STRING}}.get(
                     field.type, union(STRING, NUMBER, NULL)
                 )
                 for field in fields(cls)
@@ -62,12 +63,16 @@ STATUS = obj(
         "pending_audio": BOOL,
         "storage_error": BOOL,
         "backend": STRING,
+        "engine": obj({
+            "kind": {"enum": ["online", "local"]}, "model": union(STRING, NULL),
+            "state": {"enum": ["ready", "loading", "error", "missing", "unloaded"]}, "message": STRING,
+        }),
         "feedback": obj(
             {"state": STRING, "elapsed_ms": NUMBER, "history": array(NUMBER), "level": NUMBER},
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "feedback"),
+    optional=("pending_audio", "storage_error", "backend", "feedback", "engine"),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})
@@ -166,7 +171,9 @@ method(
     obj({"storage": STRINGS}),
 )
 method("shortcut.check", result=STRING)
-method("setup.finish")
+method("setup.finish", obj({"skip_practice": BOOL}, optional=("skip_practice",)))
+method("setup.stage", obj({"stage": {"enum": [0, 1, 2, 3]}}))
+method("setup.skip")
 method(
     "launcher", obj({"autostart": BOOL, "enabled": BOOL}, optional=("autostart", "enabled")), STRING
 )
@@ -177,6 +184,40 @@ method("updates.apply", result=BOOL)
 method("updates.discard")
 method("updates.pending", result=BOOL)
 method("shutdown", obj({"discard": BOOL}, optional=("discard",)))
+
+MODEL_PROGRESS = obj({
+    "id": STRING,
+    "state": {"enum": ["queued", "downloading", "stalled", "paused", "verifying", "installing",
+                       "ready", "failed", "cancelled"]},
+    "received_bytes": NUMBER, "total_bytes": NUMBER, "bytes_per_sec": NUMBER,
+    "eta_seconds": union(NUMBER, NULL),
+    "error": union(obj({"code": STRING, "message": STRING}), NULL),
+}, extra=True)
+MODEL = obj({
+    "id": STRING, "tier": STRING, "label": STRING, "blurb": STRING,
+    "languages": array(STRING), "auto_language": BOOL, "download_bytes": NUMBER,
+    "disk_bytes": NUMBER, "licence": obj({"id": STRING, "url": STRING, "attribution": STRING}),
+    "wer": obj(extra=True),
+    "state": {"enum": ["not_installed", "queued", "downloading", "stalled", "paused", "verifying",
+                       "installing", "installed", "failed", "cancelled", "ready"]},
+    "received_bytes": NUMBER, "total_bytes": NUMBER, "bytes_per_sec": NUMBER,
+    "eta_seconds": union(NUMBER, NULL),
+    "error": union(obj({"code": STRING, "message": STRING}), NULL),
+    "in_use": BOOL, "visible": BOOL, "disabled_reason": union(STRING, NULL),
+    "requires_extra": union(STRING, NULL), "stored_in": STRING,
+    "decode_ms": union(NUMBER, NULL),
+}, extra=True)
+method("models.list", obj({"language": STRING}, optional=("language",)), result=obj({
+    "hardware": obj(extra=True),
+    "recommended": obj({"id": union(STRING, NULL), "reason_code": STRING, "reason_text": STRING}),
+    "models": array(MODEL), "pending_use": union(STRING, NULL), "storage_bytes": NUMBER,
+}))
+for operation in ("download", "pause", "resume", "cancel"):
+    method(f"models.{operation}", obj({"id": STRING}))
+method("models.remove", obj({"id": STRING}), obj({"freed_bytes": NUMBER}))
+method("models.verify", obj({"id": STRING}), obj({"ok": BOOL, "bad_files": array(STRING)}))
+method("models.use", obj({"id": STRING, "when_ready": BOOL}, optional=("when_ready",)),
+       obj({"saved": BOOL}))
 
 
 def matches(schema, value):

@@ -1,5 +1,16 @@
 # Linux prerequisites
 
+## First-run help
+
+- **No microphone or silence:** select the input in Settings → General. Check the desktop input meter and mute switch; reconnect USB/Bluetooth and wait for device discovery. Use the local microphone test before trying transcription. `caelum devices` lists the inputs visible to the app.
+- **Shortcut denied or unavailable:** on portable desktops open Home, choose **Record**, then **Finish recording**. Copy from History and paste into an editor. With history disabled, the result goes straight to the clipboard. Check `wl-copy` on Wayland or `xclip` on X11 if clipboard delivery fails.
+- **No tray icon:** some desktops have no tray watcher. Keep the window open while dictating; reopen Caelum from the app launcher.
+- **Blank window:** quit Caelum, then try `WEBKIT_DISABLE_DMABUF_RENDERER=1 caelum-desktop` for this launch only. See the driver notes below.
+- **Local model unavailable (0.5.0 candidate):** choose a compatible downloaded model in Settings → Transcription. On x86-64, local inference needs AVX2 and sufficient available RAM. A model download needs network and disk space; local dictation does not require an online fallback.
+- **Uninstall:** quit the app, then `sudo apt remove caelum`, `sudo dnf remove caelum`, or `sudo pacman -R caelum`, depending on your package. Personal settings and fallback credentials remain in `~/.config/caelum`; history, models and pending downloads remain in `~/.local/share/caelum` (or the corresponding XDG directories). To remove saved keys, use the app before uninstalling; a keyring entry, clipboard history, exports and backups are independent of these directories.
+
+## Building and desktop integration
+
 Build inside the target distro; do not reuse an Arch-linked executable on Debian.
 
 - Arch/Omarchy: `base-devel rust nodejs npm uv webkit2gtk-4.1 libappindicator-gtk3

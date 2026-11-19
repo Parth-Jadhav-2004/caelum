@@ -1,0 +1,104 @@
+{
+  "measured_date": "2026-11-17",
+  "measurement": "Complete clip release to text ready, CPU, no cleanup or insertion",
+  "hardware": {
+    "cpu": "Intel Core i5-13450HX",
+    "arch": "x86_64",
+    "logical_cpus": 16,
+    "mem_total_mib": 15594,
+    "avx2": true,
+    "runtime_threads": 4
+  },
+  "versions": {
+    "python": "3.14.8",
+    "sherpa-onnx": "2.0.1",
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.9.0",
+    "numpy": "2.5.4"
+  },
+  "fixtures": [
+    {"id": "parakeet-sample", "audio_seconds": 7.435},
+    {"id": "librispeech-0", "audio_seconds": 6.625},
+    {"id": "librispeech-1", "audio_seconds": 16.715}
+  ],
+  "repeats": 3,
+  "rss_unit": "MiB; process lifetime peak, not model-only",
+  "models": [
+    {
+      "id": "parakeet-v3",
+      "measured_at": "2026-11-17T12:55:05.815865+00:00",
+      "load_seconds": 1.583489010001358,
+      "realtime_factor": 20.002001838050088,
+      "mean_wait_ms": 513.3410849994107,
+      "p95_wait_ms": 830.5146257989691,
+      "peak_rss_mb": 1467.109375,
+      "error_rate": 0,
+      "empty_outputs": 0,
+      "http_calls": 0,
+      "uploaded_audio_bytes": 0,
+      "wait_ms_by_fixture": {
+        "parakeet-sample": [472.383, 423.015, 301.003],
+        "librispeech-0": [442.133, 382.152, 275.465],
+        "librispeech-1": [847.225, 805.449, 671.244]
+      },
+      "gate_7_to_8_seconds_mean_wait_ms": 398.8005063329183
+    },
+    {
+      "id": "parakeet-110m",
+      "measured_at": "2026-11-17T12:55:08.459238+00:00",
+      "load_seconds": 0.6431368989979092,
+      "realtime_factor": 52.06753798014088,
+      "mean_wait_ms": 197.55445766673398,
+      "p95_wait_ms": 334.813199799828,
+      "peak_rss_mb": 463.98046875,
+      "error_rate": 0,
+      "empty_outputs": 0,
+      "http_calls": 0,
+      "uploaded_audio_bytes": 0,
+      "wait_ms_by_fixture": {
+        "parakeet-sample": [126.267, 155.755, 154.618],
+        "librispeech-0": [107.923, 137.858, 137.448],
+        "librispeech-1": [288.847, 335.517, 333.758]
+      },
+      "gate_7_to_8_seconds_mean_wait_ms": 145.54646733328505
+    },
+    {
+      "id": "cohere-transcribe",
+      "measured_at": "2026-11-17T12:55:24.730641+00:00",
+      "load_seconds": 4.117635663002147,
+      "realtime_factor": 7.711972307671172,
+      "mean_wait_ms": 1330.662114777725,
+      "p95_wait_ms": 1998.0985903996043,
+      "peak_rss_mb": 3664.046875,
+      "error_rate": 0,
+      "empty_outputs": 0,
+      "http_calls": 0,
+      "uploaded_audio_bytes": 0,
+      "wait_ms_by_fixture": {
+        "parakeet-sample": [1479.754, 943.483, 1025.119],
+        "librispeech-0": [1076.765, 783.306, 795.350],
+        "librispeech-1": [1987.167, 2005.387, 1879.629]
+      },
+      "gate_7_to_8_seconds_mean_wait_ms": 1149.4520070009457
+    },
+    {
+      "id": "whisper-turbo",
+      "measured_at": "2026-11-17T12:56:32.158291+00:00",
+      "load_seconds": 2.3095861059991876,
+      "realtime_factor": 1.425334800405368,
+      "mean_wait_ms": 7197.644785778215,
+      "p95_wait_ms": 7490.338228799374,
+      "peak_rss_mb": 1997.90625,
+      "error_rate": 0,
+      "empty_outputs": 0,
+      "http_calls": 0,
+      "uploaded_audio_bytes": 0,
+      "wait_ms_by_fixture": {
+        "parakeet-sample": [7058.474, 6990.005, 7556.162],
+        "librispeech-0": [6927.793, 7171.434, 7164.816],
+        "librispeech-1": [7283.065, 7235.451, 7391.603]
+      },
+      "gate_7_to_8_seconds_mean_wait_ms": 7201.547248000376
+    }
+  ]
+}

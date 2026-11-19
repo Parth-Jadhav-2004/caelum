@@ -2,6 +2,9 @@ import { contracts, matches } from "./contracts";
 import { invoke } from "@tauri-apps/api/core";
 import type { Config } from "./config.generated";
 export type { Config };
+export type ConfigPatch = {
+  [Section in keyof Config]?: Partial<Config[Section]>;
+};
 export interface Feedback {
   state: string;
   elapsed_ms: number;
@@ -18,6 +21,12 @@ export interface Status {
   storage_error?: boolean;
   backend?: string;
   feedback?: Feedback;
+  engine?: {
+    kind: "online" | "local";
+    model: string | null;
+    state: "ready" | "loading" | "error" | "missing" | "unloaded";
+    message: string;
+  };
 }
 export interface Dictation {
   id: string;
@@ -27,6 +36,9 @@ export interface Dictation {
   word_count: number;
   refined: number;
   copied: number;
+  engine?: "online" | "local";
+  language?: string;
+  stt_model?: string;
 }
 export interface Summary {
   total_words: number;
@@ -55,7 +67,72 @@ export interface Device {
 export interface Ack {
   ok: boolean;
 }
+export interface ModelProgress {
+  id: string;
+  state:
+    | "queued"
+    | "downloading"
+    | "stalled"
+    | "paused"
+    | "verifying"
+    | "installing"
+    | "ready"
+    | "failed"
+    | "cancelled";
+  received_bytes: number;
+  total_bytes: number;
+  bytes_per_sec: number;
+  eta_seconds: number | null;
+  error: { code: string; message: string } | null;
+}
+export interface SpeechModel extends Omit<ModelProgress, "state"> {
+  state: ModelProgress["state"] | "not_installed" | "installed";
+  tier: string;
+  label: string;
+  blurb: string;
+  languages: string[];
+  auto_language: boolean;
+  download_bytes: number;
+  disk_bytes: number;
+  licence: { id: string; url: string; attribution: string };
+  wer: { open_asr_v1_1?: number; open_asr_latest?: number };
+  in_use: boolean;
+  visible: boolean;
+  disabled_reason: string | null;
+  requires_extra: string | null;
+  stored_in: string;
+  decode_ms: number | null;
+  runtime_state?:
+    "ready" | "loading" | "error" | "missing" | "unloaded" | "failed";
+  runtime_message?: string;
+  reference_wait_ms?: number;
+}
+export interface ModelList {
+  hardware: {
+    mem_total_mb: number;
+    mem_available_mb: number;
+    cores: number;
+    arch: string;
+    avx2: boolean;
+    avx512: boolean;
+    disk_free_mb: number;
+    nvidia: boolean;
+    language: string;
+  };
+  recommended: { id: string | null; reason_code: string; reason_text: string };
+  models: SpeechModel[];
+  pending_use: string | null;
+  storage_bytes: number;
+}
 interface Methods {
+  "models.list": [{ language?: string }, ModelList];
+  "models.download": [{ id: string }, Ack];
+  "models.pause": [{ id: string }, Ack];
+  "models.resume": [{ id: string }, Ack];
+  "models.cancel": [{ id: string }, Ack];
+  "models.remove": [{ id: string }, { freed_bytes: number }];
+  "models.verify": [{ id: string }, { ok: boolean; bad_files: string[] }];
+  "models.use": [{ id: string; when_ready?: boolean }, { saved: boolean }];
   bootstrap: [Record<string, never>, Bootstrap];
   status: [Record<string, never>, Status];
   history: [{ query?: string }, Dictation[]];
@@ -63,7 +140,10 @@ interface Methods {
   devices: [Record<string, never>, Device[]];
   "history.delete": [{ id?: string }, Ack];
   "history.export": [{ path: string }, Ack];
-  "settings.save": [{ config: Config }, { saved: boolean; warning?: string }];
+  "settings.save": [
+    { config: ConfigPatch },
+    { saved: boolean; warning?: string },
+  ];
   "service.start": [Record<string, never>, Ack];
   "service.stop": [{ discard?: boolean }, Ack];
   control: [
@@ -87,7 +167,9 @@ interface Methods {
     { storage: Record<string, string> },
   ];
   "shortcut.check": [Record<string, never>, string];
-  "setup.finish": [Record<string, never>, Ack];
+  "setup.finish": [{ skip_practice?: boolean }, Ack];
+  "setup.stage": [{ stage: number }, Ack];
+  "setup.skip": [Record<string, never>, Ack];
   launcher: [{ autostart?: boolean; enabled?: boolean }, string];
   "updates.check": [Record<string, never>, { version: string } | null];
   "updates.testing": [

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve a successful main-branch candidate before granting publication permissions."""
+"""Resolve a successful dev-branch candidate before granting publication permissions."""
 
 import json
 import os
@@ -18,7 +18,7 @@ def resolve(run, workflow_id, repository, default_branch):
         or not re.fullmatch(r"[a-f0-9]{40}", run["head_sha"])
         or type(run.get("run_attempt")) is not int or run["run_attempt"] < 1
     ):
-        raise ValueError("Select a completed successful candidate built from the default branch")
+        raise ValueError("Select a completed successful candidate built from the candidate branch")
     return {"sha": run["head_sha"], "attempt": run["run_attempt"]}
 
 
@@ -33,12 +33,16 @@ def main():
         return json.loads(subprocess.check_output(["gh", "api", path]))
 
     repository = os.environ["GH_REPO"]
-    default = api(f"repos/{repository}")["default_branch"]
-    if os.environ["GITHUB_REF"] != f"refs/heads/{default}":
-        raise ValueError("Run promotion from the default branch")
+    branch = {"development": "dev", "testing": "testing", "production": "main"}[channel]
+    if os.environ["GITHUB_REF"] != f"refs/heads/{branch}":
+        raise ValueError("Run promotion from the channel branch")
     workflow = api(f"repos/{repository}/actions/workflows/release.yml")
     run = api(f"repos/{repository}/actions/runs/{run_id}")
-    identity = resolve(run, workflow["id"], repository, default)
+    identity = resolve(run, workflow["id"], repository, "dev")
+    tree = api(f"repos/{repository}/git/commits/{identity['sha']}")["tree"]["sha"]
+    tip = api(f"repos/{repository}/commits/{branch}")
+    if tip["sha"] != os.environ["GITHUB_SHA"] or tip["commit"]["tree"]["sha"] != tree:
+        raise ValueError("Promotion branch must contain the exact candidate tree")
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         output.write(f"sha={identity['sha']}\nattempt={identity['attempt']}\nrun_id={run_id}\n")
 

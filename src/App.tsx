@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
-import { ipc, errorText, type Config } from "@/lib/ipc";
+import { ipc, errorText, type Config, type ConfigPatch } from "@/lib/ipc";
 import { action, Confirm } from "@/components/common";
 import {
   SidebarProvider,
@@ -49,7 +49,6 @@ import {
 import { version } from "../package.json";
 import { History } from "@/features/history";
 import { CaelumBrand } from "@/components/brand";
-import { Settings, Dictionary } from "@/features/settings";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,6 +56,12 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Dashboard, Statistics } from "@/features/dashboard";
+const Settings = lazy(() =>
+  import("@/features/settings").then((m) => ({ default: m.Settings })),
+);
+const Dictionary = lazy(() =>
+  import("@/features/settings").then((m) => ({ default: m.Dictionary })),
+);
 const Setup = lazy(() =>
   import("@/features/setup").then((m) => ({ default: m.Setup })),
 );
@@ -67,6 +72,32 @@ const pages = [
   { id: "statistics", title: "Insights", icon: ChartNoAxesColumn },
   { id: "settings", title: "Settings", icon: SettingsIcon },
 ] as const;
+function mergePatch(left: ConfigPatch, right: ConfigPatch): ConfigPatch {
+  const result = { ...left };
+  for (const section of Object.keys(right) as (keyof Config)[]) {
+    Object.assign(result, {
+      [section]: { ...left[section], ...right[section] },
+    });
+  }
+  return result;
+}
+function changedFields(previous: Config | null, next: Config): ConfigPatch {
+  if (!previous) return next;
+  const patch: ConfigPatch = {};
+  for (const section of Object.keys(next) as (keyof Config)[]) {
+    const fields = Object.fromEntries(
+      Object.entries(next[section]).filter(
+        ([key, value]) =>
+          JSON.stringify(value) !==
+          JSON.stringify(
+            (previous[section] as unknown as Record<string, unknown>)[key],
+          ),
+      ),
+    );
+    if (Object.keys(fields).length) Object.assign(patch, { [section]: fields });
+  }
+  return patch;
+}
 function FrontendReady() {
   useEffect(() => {
     // Mount inside Suspense so the smoke probe cannot pass on a loading shell.
@@ -101,6 +132,9 @@ export default function App() {
     [updateAvailable, setUpdateAvailable] = useState(false),
     [config, setConfig] = useState<Config | null>(null),
     [saveState, setSaveState] = useState("Saved automatically");
+  const draft = useRef<Config | null>(null);
+  const pendingPatch = useRef<ConfigPatch>({});
+  const failedPatch = useRef<ConfigPatch>({});
   const onQuit = useCallback(() => setQuitting(true), []);
   const bootstrap = useEngine(onQuit),
     client = useQueryClient(),
@@ -121,6 +155,7 @@ export default function App() {
   useEffect(() => {
     if (!bootstrap.data || initialized.current) return;
     initialized.current = true;
+    draft.current = bootstrap.data.config;
     setConfig(bootstrap.data.config);
     if (!bootstrap.data.setup.complete) navigate("setup");
     else {
@@ -136,6 +171,20 @@ export default function App() {
           .catch(() => {});
     }
   }, [bootstrap.data, navigate]);
+  useEffect(() => {
+    const saved = bootstrap.data?.config.stt;
+    if (!initialized.current || !saved || !draft.current) return;
+    const stt = { ...draft.current.stt };
+    for (const key of ["engine", "local_model", "fallback"] as const) {
+      if (!Object.hasOwn(pendingPatch.current.stt ?? {}, key) &&
+          !Object.hasOwn(failedPatch.current.stt ?? {}, key))
+        stt[key] = saved[key];
+    }
+    if (JSON.stringify(stt) !== JSON.stringify(draft.current.stt)) {
+      draft.current = { ...draft.current, stt };
+      setConfig(draft.current);
+    }
+  }, [bootstrap.data]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
@@ -154,12 +203,25 @@ export default function App() {
   const commit = useCallback(
     async (next: Config) => {
       if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      const patch = mergePatch(
+        pendingPatch.current,
+        changedFields(draft.current, next),
+      );
+      pendingPatch.current = {};
+      draft.current = next;
       setConfig(next);
       setSaveState("Saving…");
       const operation = chain.current
         .catch(() => {})
         .then(async () => {
-          const result = await ipc("settings.save", { config: next });
+          // A preceding queued save may have failed after this edit was submitted.
+          const config = mergePatch(failedPatch.current, patch);
+          const result = await ipc("settings.save", { config }).catch((error) => {
+            failedPatch.current = config;
+            throw error;
+          });
+          failedPatch.current = {};
           setSaveState(result.warning ?? "Saved automatically");
           if (result.warning) toast.warning(result.warning);
           await client.invalidateQueries({ queryKey: ["bootstrap"] });
@@ -175,12 +237,17 @@ export default function App() {
     [client],
   );
   function change(next: Config) {
+    pendingPatch.current = mergePatch(
+      pendingPatch.current,
+      changedFields(draft.current, next),
+    );
+    draft.current = next;
     setConfig(next);
     setSaveState("Saving…");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       timer.current = null;
-      void action(() => commit(next));
+      void action(() => commit(draft.current ?? next));
     }, 200);
   }
   if (bootstrap.isError)
@@ -402,7 +469,7 @@ export default function App() {
                     ? "Setup"
                     : pages.find((p) => p.id === page)?.title
                 }
-                className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className={`min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain ${page === "setup" ? "" : "[scrollbar-gutter:stable]"}`}
               >
                 {engineError && (
                   <div
@@ -424,7 +491,11 @@ export default function App() {
                 <Suspense fallback={<Skeleton className="m-8 h-80" />}>
                   <div
                     key={page}
-                    className="screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
+                    className={
+                      page === "setup"
+                        ? "screen-enter h-full"
+                        : "screen-enter mx-auto max-w-5xl px-4 py-8 sm:px-8"
+                    }
                   >
                     {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}

@@ -29,7 +29,6 @@ benchmark-results*.json
 *.egg-info/
 dist/
 voice_dictation_implementation_plan.md
-website/
 docs/product-page-design.md
 docs/product-page-components.html
 

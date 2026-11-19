@@ -25,6 +25,27 @@ TARGETS = {
     "arch": ("arch", "3.14"),
     "fedora-43": ("rpm", "3.14"),
 }
+EXTRA_TARGETS = {"appimage": ("appimage", "3.14")}
+LOCAL_RUNTIME_BUDGET = 50_000_000
+
+
+def requirements_command(destination):
+    return (
+        "uv", "export", "--locked", "--extra", "local", "--no-dev",
+        "--no-emit-project", "--no-editable", "--format", "requirements-txt",
+        "--output-file", destination,
+    )
+
+
+def check_local_runtime(library):
+    directories = [library / name for name in ("sherpa_onnx", "sherpa_onnx_core")]
+    if not (library / "sherpa_onnx").is_dir():
+        raise RuntimeError("The local speech runtime was not vendored")
+    size = sum(path.stat().st_size for folder in directories for path in folder.rglob("*")
+               if path.is_file())
+    if size > LOCAL_RUNTIME_BUDGET:
+        raise RuntimeError("The local speech runtime exceeds the 50 MB package growth budget")
+    return size
 
 
 def run(*args, **kwargs):
@@ -59,7 +80,7 @@ def write(path, text, executable=False):
 
 
 def build(target, output, epoch):
-    kind, python = TARGETS[target]
+    kind, python = (TARGETS | EXTRA_TARGETS)[target]
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     upper = f"3.{int(python.split('.')[1]) + 1}"
     run("python3", ROOT / "scripts/dev-sidecar.py")
@@ -70,19 +91,7 @@ def build(target, output, epoch):
         stage = work / "stage"
         library = stage / "opt/caelum/lib"
         requirements = work / "requirements.txt"
-        run(
-            "uv",
-            "export",
-            "--locked",
-            "--no-dev",
-            "--no-emit-project",
-            "--no-editable",
-            "--format",
-            "requirements-txt",
-            "--output-file",
-            requirements,
-            stdout=subprocess.DEVNULL,
-        )
+        run(*requirements_command(requirements), stdout=subprocess.DEVNULL)
         run(
             "uv",
             "pip",
@@ -99,6 +108,7 @@ def build(target, output, epoch):
             "-r",
             requirements,
         )
+        local_bytes = check_local_runtime(library)
         shutil.copytree(
             ROOT / "python/caelum", library / "caelum", ignore=shutil.ignore_patterns("__pycache__")
         )
@@ -179,6 +189,8 @@ exec /usr/bin/python3 -m caelum.cli "$@"
             "Python dependencies: uv.lock, vendored with their upstream license metadata.\n"
             "This package does not configure credentials, autostart, or desktop shortcuts.\n",
         )
+        with (docs / "build-info.txt").open("a") as info:
+            info.write(f"Local runtime: {local_bytes} bytes (budget {LOCAL_RUNTIME_BUDGET}).\n")
         from scan_privacy import check
 
         check(stage.rglob("*"))
@@ -196,8 +208,8 @@ Maintainer: Parth Jadhav <Parth-Jadhav-2004@users.noreply.github.com>
 Depends: libwebkit2gtk-4.1-0, libayatana-appindicator3-1, python3 (>= {python}), python3 (<< {upper}), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, libportaudio2, pulseaudio-utils, libnotify-bin, libglib2.0-bin, libsecret-tools, wl-clipboard, xclip, systemd, openssl, pkexec
 Installed-Size: {sum(p.stat().st_size for p in stage.rglob("*") if p.is_file()) // 1024}
 Homepage: https://github.com/Parth-Jadhav-2004/caelum
-Description: Cloud dictation with optional local history
- Sends audio to your transcription provider and text to refinement when enabled.
+Description: Local or online dictation with optional local history
+ Choose downloaded offline models or an online transcription provider.
  Local transcript history is optional; clipboard managers and exports keep copies.
  GNOME/KDE/X11 use explicit copy; native Hyprland integration is optional.
 """,
@@ -220,7 +232,7 @@ Description: Cloud dictation with optional local history
                 f"""pkgname = caelum
 pkgbase = caelum
 pkgver = {version}-1
-pkgdesc = Cloud dictation with optional local history
+pkgdesc = Local or online dictation with optional local history
 url = https://github.com/Parth-Jadhav-2004/caelum
 builddate = {epoch}
 packager = Caelum release build
@@ -252,6 +264,35 @@ optdepend = wl-clipboard: Hyprland automatic paste
             raw = work / "package.tar"
             raw.write_bytes(archive(stage, epoch))
             run("zstd", "-q", "-f", "-19", raw, "-o", destination)
+        elif kind == "appimage":
+            # Build on the declared Python/ABI target, like native packages.
+            # GTK/WebKit libraries are deployed by linuxdeploy's GTK plugin;
+            # system Python 3.14 and optional GTK4/GI remain documented prerequisites.
+            for tool in ("linuxdeploy", "appimagetool"):
+                if not shutil.which(tool):
+                    raise RuntimeError(f"Install {tool} in the AppImage build environment")
+            write(stage / "AppRun", """#!/bin/sh
+set -eu
+APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export APPDIR
+export PYTHONPATH="$APPDIR/opt/caelum/lib"
+/usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 14) else "Caelum AppImage requires system Python 3.14")'
+exec "$APPDIR/usr/bin/caelum-desktop" "$@"
+""", executable=True)
+            write(stage / "usr/bin/caelum", """#!/bin/sh
+set -eu
+engine_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export PYTHONPATH="$engine_dir/../../opt/caelum/lib"
+exec /usr/bin/python3 -m caelum.cli "$@"
+""", executable=True)
+            run("linuxdeploy", "--appdir", stage,
+                "--executable", stage / "usr/bin/caelum-desktop",
+                "--desktop-file", applications / "io.caelum.Dictation.desktop",
+                "--icon-file", icons / "caelum.svg", "--plugin", "gtk",
+                env={**os.environ, "DEPLOY_GTK_VERSION": "3", "APPIMAGE_EXTRACT_AND_RUN": "1"})
+            destination = output / f"Caelum-{version}-x86_64.AppImage"
+            run("appimagetool", stage, destination,
+                env={**os.environ, "ARCH": "x86_64", "APPIMAGE_EXTRACT_AND_RUN": "1"})
         else:
             rpmroot = work / "rpm"
             for folder in ("BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS"):
@@ -262,15 +303,15 @@ optdepend = wl-clipboard: Hyprland automatic paste
                 f"""Name: caelum
 Version: {version}
 Release: 1
-Summary: Cloud dictation with optional local history
+Summary: Local or online dictation with optional local history
 License: MIT
 URL: https://github.com/Parth-Jadhav-2004/caelum
 BuildArch: x86_64
 AutoReqProv: no
 Requires: webkit2gtk4.1, libappindicator-gtk3, python3 >= {python}, python3 < {upper}, python3-gobject, python3-cairo, gobject-introspection, gtk4, portaudio, pulseaudio-utils, libnotify, libsecret, wl-clipboard, xclip, glib2, systemd, openssl, polkit
 %description
-Cloud dictation with optional local history. Audio goes to transcription; text goes
-to refinement when enabled. Clipboard managers and exports keep independent copies.
+Choose downloaded offline models or an online transcription provider.
+Refinement is optional. Clipboard managers and exports keep independent copies.
 GNOME/KDE use manual paste; Hyprland integration is optional.
 %install
 mkdir -p %{{buildroot}}
@@ -306,7 +347,7 @@ cp -a {stage}/. %{{buildroot}}/
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", choices=TARGETS)
+    parser.add_argument("target", choices=TARGETS | EXTRA_TARGETS)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     epoch_value = os.environ.get("SOURCE_DATE_EPOCH")

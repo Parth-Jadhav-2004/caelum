@@ -12,7 +12,7 @@ import httpx
 import pytest
 from caelum import updates
 from caelum.desktop import install_queued_update
-from caelum.service import prepare_update
+from caelum.service import model_download_feedback, prepare_update
 
 
 @pytest.fixture
@@ -478,6 +478,8 @@ def test_package_database_lock_reports_a_useful_error(release, monkeypatch):
         ("processing", False, False),
         ("refining", True, False),
         ("error", True, False),
+        ("model_failed", True, False),
+        ("model_ready", False, True),
     ],
 )
 async def test_busy_dictation_defers_update(state, pending, capture):
@@ -494,14 +496,31 @@ async def test_busy_dictation_defers_update(state, pending, capture):
     assert not stop.is_set()
 
 
-async def test_idle_dictation_can_stop_for_update():
+@pytest.mark.parametrize("state", ["hidden", "model_ready", "model_failed"])
+async def test_idle_dictation_can_stop_for_update(state):
     stop = asyncio.Event()
     core = SimpleNamespace(
-        control_lock=asyncio.Lock(), state="hidden", capture=None, pcm=None, work=None
+        control_lock=asyncio.Lock(), state=state, capture=None, pcm=None, work=None
     )
     assert await prepare_update(core, stop) == {"ok": True}
     assert stop.is_set()
     assert core.stopping
+
+
+@pytest.mark.parametrize("progress,end", [
+    ("downloading", "paused"), ("stalled", "cancelled"), ("verifying", "ready"),
+    ("installing", "failed"),
+])
+async def test_finished_download_no_longer_blocks_idle_shutdown(progress, end):
+    core = SimpleNamespace(control_lock=asyncio.Lock(), state="hidden", capture=None, pcm=None, work=None)
+    async def event(state):
+        core.state = state
+    core.event = event
+    await model_download_feedback(core, progress)
+    assert core.state.startswith("model_")
+    await model_download_feedback(core, end)
+    assert core.state == ("model_failed" if end == "failed" else "hidden")
+    assert await prepare_update(core, asyncio.Event()) == {"ok": True}
 
 
 def test_restart_stops_daemon_before_installing(release, tmp_path, monkeypatch):

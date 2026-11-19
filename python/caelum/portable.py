@@ -298,8 +298,17 @@ class HUD:
             return
         self.last = phase
         labels = {
+            "model_downloading": "Downloading speech model",
+            "model_stalled": "Model download stalled",
+            "model_loading": "Loading speech model",
+            "model_ready": "Speech model ready",
+            "model_failed": "Speech model failed; open Settings",
             "recording": "Recording. Release your shortcut or choose Finish recording in Caelum.",
             "processing": "Processing dictation…",
+            "loading": "Getting ready…",
+            "missing_model": "Speech model not downloaded. Open Caelum.",
+            "success_fallback_online": "Done · used Online",
+            "success_fallback_local": "Done · used this computer",
             "refining": "Cleaning up your words…",
             "saved": "Dictation saved. Open Caelum and choose Copy text, then paste where you want.",
             "error": "Dictation failed. Retry or cancel in Caelum.",

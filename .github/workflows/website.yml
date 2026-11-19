@@ -4,9 +4,16 @@ on:
   push:
     branches: [main]
     paths:
-      - 'website/**'
-      - '.github/workflows/website.yml'
+      - "website/**"
+      - ".github/workflows/website.yml"
+      - "scripts/update-website-release.py"
   workflow_dispatch:
+  release:
+    types: [published]
+  # Releases created with GITHUB_TOKEN do not emit another workflow event.
+  workflow_run:
+    workflows: [Promote to testing or production]
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,6 +26,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
@@ -27,7 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           persist-credentials: false
+      - name: Generate verified stable downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/update-website-release.py
+      - name: Check release manifest and download commands
+        run: node --test website/release-check.mjs
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

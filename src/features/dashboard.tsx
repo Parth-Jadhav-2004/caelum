@@ -97,7 +97,9 @@ export function Dashboard({ config }: { config: Config }) {
   const recording = ["starting", "listening", "recording"].includes(
     status?.state ?? "",
   );
-  const processing = ["processing", "refining"].includes(status?.state ?? "");
+  const processing = ["processing", "refining", "loading"].includes(
+    status?.state ?? "",
+  );
   const summary = useQuery({
     queryKey: ["summary"],
     queryFn: () => ipc("summary", {}),
@@ -124,8 +126,14 @@ export function Dashboard({ config }: { config: Config }) {
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 tabIndex={-1} className="text-title font-medium">
-            {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
-            <kbd>{config.app.hotkey}</kbd> to dictate anywhere
+            {status?.backend === "hyprland" ? (
+              <>
+                {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
+                <kbd>{config.app.hotkey}</kbd> to dictate
+              </>
+            ) : (
+              "Record, finish, then copy your transcript"
+            )}
           </h1>
           {status?.backend !== "hyprland" && (
             <Button

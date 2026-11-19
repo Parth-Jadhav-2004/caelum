@@ -8,9 +8,12 @@ import { Shortcut } from "./settings";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useApp } from "@/stores/app";
 import { ipc, type Config } from "@/lib/ipc";
+import { testConfig } from "@/test-config";
+import { noModels } from "@/test-models";
 vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 const config = {
+  ...testConfig,
   app: {
     hotkey: "SUPER + ALT + V",
     microphone: "missing",
@@ -41,6 +44,7 @@ beforeEach(() => {
     page: "home",
   });
   vi.mocked(ipc).mockImplementation((async (method: string) => {
+    if (method === "models.list") return noModels;
     if (method === "devices") return [];
     if (method === "history") return [];
     if (method === "summary") return { daily: {}, activity: {} };
@@ -156,7 +160,7 @@ it("keeps native capture on the global shortcut so text targets the original app
     screen.queryByRole("button", { name: "Record" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: /dictate anywhere/ }),
+    screen.getByRole("heading", { name: /Hold .* to dictate/ }),
   ).toHaveTextContent(config.app.hotkey);
 });
 

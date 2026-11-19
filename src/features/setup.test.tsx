@@ -50,9 +50,9 @@ async function connect() {
   await userEvent.click(screen.getByRole("checkbox"));
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
 }
-it("starts with a time estimate and requires consent before validating a key", async () => {
+it("shows the no-key path and requires consent before validating an online key", async () => {
   mount();
-  expect(screen.getByText("About two minutes")).toBeInTheDocument();
+  expect(screen.getByText(/choose On this computer to dictate offline/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Get started" }));
   expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   await userEvent.type(screen.getByLabelText("API key"), "test-only");

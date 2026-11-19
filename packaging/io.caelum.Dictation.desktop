@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Caelum
-Comment=Cloud dictation with optional local history
+Comment=Record speech and copy the transcript using local or online dictation
 Exec=caelum app
 Icon=caelum
 StartupWMClass=io.caelum.Dictation

@@ -100,6 +100,8 @@ def test_provider_presets_preserve_other_preferences():
         ({"state": "hidden"}, "Ready", "begin"),
         ({"state": "hidden", "paused": True}, "Paused", "Resume"),
         ({"state": "recording"}, "Recording", "Release"),
+        ({"state": "recording", "backend": "portable"}, "Recording", "Finish recording"),
+        ({"state": "recording", "recording_mode": "toggle"}, "Recording", "Press"),
         ({"state": "refining"}, "Processing", "Refining"),
         ({"state": "processing"}, "Processing", "Transcribing"),
         ({"state": "unrefined"}, "Done · unrefined", "Raw transcription"),
@@ -111,6 +113,7 @@ def test_provider_presets_preserve_other_preferences():
         ({"state": "error", "error_kind": "microphone"}, "Microphone unavailable", "Settings"),
         ({"state": "saved", "metrics": [{"cleanup_refined": False}]}, "Saved", "Raw transcription"),
         ({"state": "copied"}, "Copied", "Paste manually"),
+        ({"state": "success_fallback_local"}, "Done · used this computer", "after an online attempt"),
     ],
 )
 def test_service_status_copy(status, title, detail):

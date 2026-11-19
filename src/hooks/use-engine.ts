@@ -3,8 +3,11 @@ import { listen } from "@tauri-apps/api/event";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { notifyError } from "@/components/common";
 import { validStatus } from "@/lib/contracts";
-import { ipc, errorText, type Status } from "@/lib/ipc";
+import { ipc, errorText, type Status, type ModelProgress } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+import { useDownloads } from "@/stores/models";
+import contract from "@/lib/ipc-contract.generated.json";
+import { matches } from "@/lib/contracts";
 export function useEngine(onQuit: () => void) {
   const client = useQueryClient();
   const data = useQuery({
@@ -45,6 +48,8 @@ export function useEngine(onQuit: () => void) {
       const previous = useApp.getState().status;
       useApp.getState().setStatus(status);
       useApp.getState().setEngineError(null);
+      if (previous?.engine?.state !== status.engine?.state)
+        void client.invalidateQueries({ queryKey: ["models"] });
       if (previous?.state !== status.state) {
         void client.invalidateQueries({ queryKey: ["history"] });
         void client.invalidateQueries({ queryKey: ["summary"] });
@@ -78,6 +83,20 @@ export function useEngine(onQuit: () => void) {
       });
     });
     register<unknown>("desktop:error", (error) => notifyError(error));
+    register<ModelProgress>("engine:model-download", (event) => {
+      if (!matches(contract.model_progress, event))
+        throw new Error("Invalid model download event");
+      useDownloads.getState().update(event);
+      if (["ready", "cancelled", "failed", "paused"].includes(event.state))
+        void client.invalidateQueries({ queryKey: ["models"] });
+    });
+    register<{ id: string }>("engine:models-changed", () => {
+      void client.invalidateQueries({ queryKey: ["bootstrap"] });
+      void client.invalidateQueries({ queryKey: ["models"] });
+    });
+    register<{ message: string }>("engine:model-attention", (event) => {
+      notifyError(event.message, { id: "model-attention" });
+    });
     register("desktop:quit", onQuit);
     register("desktop:settings", () => useApp.getState().navigate("settings"));
     register<{ message: string }>("engine:status-error", (value) => {
