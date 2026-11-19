@@ -2,6 +2,11 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- Windows dictation preserves the clipboard when inserting into a focused Edit or RichEdit field. If direct insertion fails and the clipboard has changed, choose Retry to copy the finished transcript.
+- Windows setup uses your regional language and detects NVIDIA display adapters when recommending a speech model. An explicit language selection takes priority.
+
 ## 0.5.0
 
 Changes since stable v0.4.2.

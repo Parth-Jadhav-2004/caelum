@@ -328,9 +328,11 @@ class Backend:
             return await self.status()
         if method == "models.list":
             await self.models.recover()
+            if os.name == "nt" and "language" in params:
+                config.stt.language = params["language"]
             hardware = await asyncio.to_thread(detect, config)
-            if "language" in params:
-                hardware.language = params["language"] or hardware.language
+            if os.name != "nt" and params.get("language"):
+                hardware.language = params["language"]
             result = await asyncio.to_thread(self.models.list, config, hardware)
             status = await self.status()
             for model in result["models"]:

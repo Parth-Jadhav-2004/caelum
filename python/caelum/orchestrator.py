@@ -64,6 +64,7 @@ class Orchestrator:
         self.sequence = 0
         self.capture = None
         self.pcm = None
+        self.pending_copy = None
         self.chunker = None
         self.work = None
         self.expiry = None
@@ -279,6 +280,20 @@ class Orchestrator:
         capture.discard()
         self.work = asyncio.create_task(self.finalize(self.session))
 
+    async def finished_transcript(self):
+        if self.pending_copy is not None:
+            return self.pending_copy
+        began = time.monotonic()
+        raw = (
+            await self.chunker.finish(self.pcm)
+            if self.chunker
+            else (await self.provider.stt(self.pcm)).text
+        )
+        self.metrics["remaining_stt_ms"] = (time.monotonic() - began) * 1000
+        if raw:
+            return await self.provider.cleanup(raw, lambda: self.event("refining"))
+        return None
+
     async def finalize(self, session):
         try:
             async with asyncio.timeout(
@@ -287,21 +302,15 @@ class Orchestrator:
                  else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
             ):
                 await self.event("processing")
-                began = time.monotonic()
-                raw = (
-                    await self.chunker.finish(self.pcm)
-                    if self.chunker
-                    else (await self.provider.stt(self.pcm)).text
-                )
-                self.metrics["remaining_stt_ms"] = (time.monotonic() - began) * 1000
-                if not raw:
+                transcript = await self.finished_transcript()
+                if session != self.session:
+                    return
+                if transcript is None:
                     self.pcm = None
                     await self.event("no_speech")
                     await self.bindings.active(False)
                     return
-                text, refined = await self.provider.cleanup(raw, lambda: self.event("refining"))
-                if session != self.session:
-                    return
+                text, refined = transcript
                 await self.event("processing")
                 began = time.monotonic()
                 if await getattr(self.bindings, "locked", session_locked)():
@@ -340,10 +349,18 @@ class Orchestrator:
                     await self.event("saved")
                     return
                 try:
-                    dispatched = await getattr(self.bindings, "insert", insert)(text, self.target)
+                    if self.pending_copy is not None:
+                        await self.bindings.copy_result(text)
+                        dispatched = False
+                    else:
+                        dispatched = await getattr(self.bindings, "insert", insert)(text, self.target)
                 except (RuntimeError, OSError, TimeoutError):
+                    if hasattr(self.bindings, "copy_result"):
+                        self.pending_copy = transcript
+                        raise ProviderError("Choose Retry to copy the finished text.", "clipboard") from None
                     # Retain audio for explicit retry if even clipboard dispatch fails.
                     raise ProviderError("Insertion unavailable; retry or cancel") from None
+                self.pending_copy = None
                 self.metrics.update(self.provider.metrics)
                 self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000
                 self.metrics["release_to_dispatch_ms"] = (time.monotonic() - self.released) * 1000
@@ -367,7 +384,7 @@ class Orchestrator:
                         )
                 if not dispatched:
                     await notify(
-                        "Target focus changed. Text copied; paste manually in the intended application."
+                        "Text copied. Paste manually in the intended application."
                     )
         except asyncio.CancelledError:
             raise
@@ -382,6 +399,7 @@ class Orchestrator:
             await self.event(
                 "missing_model" if self.error_kind == "missing_model" else "error",
                 "missing_model" if self.error_kind == "missing_model" else
+                "clipboard" if self.error_kind == "clipboard" else
                 "local_setup" if self.error_kind == "local_setup" else
                 "local_decode" if self.config.stt.engine == "local" else "network",
             )
@@ -413,7 +431,7 @@ class Orchestrator:
         if self.chunker:
             self.chunker.cancel()
         await self.abort_capture()
-        self.chunker, self.pcm, self.failed_at = None, None, None
+        self.chunker = self.pcm = self.pending_copy = self.failed_at = None
         await self.bindings.active(False)
         if feedback:
             await self.event("hidden")
