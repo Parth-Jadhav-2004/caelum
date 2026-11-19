@@ -52,12 +52,15 @@ def main():
                     frame = json.loads(line)
                     if frame.get("id") == i:
                         assert "result" in frame, (method, frame)
+                        if method == "history":
+                            assert frame["result"] == []
                         break
                 else:
                     raise RuntimeError(f"Engine exited during {method}")
             child.stdin.close()
             assert child.wait(15) == 0
-        assert (Path(directory) / "Caelum/history.sqlite3").exists()
+        # A read on first launch must not create a transcript database.
+        assert not (Path(directory) / "Caelum/history.sqlite3").exists()
 
 
 if __name__ == "__main__":
