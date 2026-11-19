@@ -76,7 +76,16 @@ def notes_for(manifest, channel):
         "Use the package matching your distro, architecture and system Python. "
         "Back up configuration/history before testing; previews currently share production "
         "profile paths and are not side-by-side installations. SHA256SUMS detects download "
-        "corruption; it is not a signed production update manifest.\n"
+        "corruption; it is not a signed production update manifest.\n\n"
+        "### First dictation\n\n"
+        "- **Online** — enter your provider API key and consent to send practice audio.\n"
+        "- **On this computer** — download a model that fits your RAM and language. "
+        "After download, disconnect and practice locally without an API key.\n\n"
+        "Test your microphone in setup. On GNOME, KDE and other portable desktops, "
+        "choose Record on Home, speak, then Finish recording. With history enabled, "
+        "choose Copy on the transcript. With history disabled, paste from the clipboard. "
+        "Paste into a text editor and compare the result with what you said. "
+        "On Hyprland use the displayed shortcut from your editor.\n"
     )
 
 

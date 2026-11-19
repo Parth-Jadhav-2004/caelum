@@ -657,8 +657,8 @@ export function Setup({
                 </div>
                 <p className="text-body">
                   {config.app.recording_mode === "toggle"
-                    ? "Press to talk. Press again to insert."
-                    : "Hold to talk. Let go to insert."}
+                    ? "Press to talk. Press again to finish recording."
+                    : "Hold to talk. Let go to finish recording."}
                 </p>
                 {shortcutHint && (
                   <>
@@ -687,7 +687,7 @@ export function Setup({
                   </p>
                 )}
                 <p className="text-body">
-                  {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
+                  Choose Record practice, or use your shortcut{" "}
                   <kbd>{config.app.hotkey}</kbd> and say:
                 </p>
                 <p className="text-body">

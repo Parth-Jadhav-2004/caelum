@@ -4,7 +4,7 @@ Record your voice, finish, then copy the transcript into the app you’re using.
 
 **[Download stable](https://github.com/Parth-Jadhav-2004/caelum/releases/latest)** · **[Testing and development releases](https://github.com/Parth-Jadhav-2004/caelum/releases)** · [Linux troubleshooting](docs/linux.md)
 
-**[0.5.0 development download (prerelease)](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0-dev.44309773651.1)** · [Desktop test checklist](https://github.com/Parth-Jadhav-2004/caelum/issues/26)
+**[Invite-only beta installation and first paste](https://github.com/Parth-Jadhav-2004/caelum/blob/beta-guide/README.md)** · [Desktop test checklist](https://github.com/Parth-Jadhav-2004/caelum/issues/26)
 
 Stable **0.4.2** uses your API provider. The **0.5.0 candidate** adds an equally supported **On this computer** setup path; it is not a stable download. Models download separately; select one matching your memory, language and license in setup. Local speech needs no cloud key, upload consent or network after provisioning. Online uses your own provider key and may incur charges. Optional cleanup sends text to the configured cleanup provider. [Privacy and storage](docs/privacy.md).
 
