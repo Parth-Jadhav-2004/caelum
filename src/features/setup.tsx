@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, Eye, EyeOff } from "lucide-react";
 import { CaelumBrand } from "@/components/brand";
 import { ipc, type Config, errorText } from "@/lib/ipc";
+import { formatShortcut } from "@/lib/shortcut";
 import { useApp } from "@/stores/app";
 import { action, Confirm, CopyButton, briefError } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -132,13 +133,16 @@ export function Setup({
       .then((result) => {
         if (!disposed)
           setShortcutHint(
-            typeof result === "string" && result.includes("permission")
-              ? "Your system may ask for shortcut access."
+            typeof result === "string" && result.includes("Record / Finish recording")
+              ? result
               : "",
           );
       })
       .catch((e) => {
-        if (!disposed) setNotice(errorText(e));
+        if (!disposed) {
+          setShortcutHint("");
+          setNotice(errorText(e));
+        }
       });
     return () => {
       disposed = true;
@@ -688,7 +692,7 @@ export function Setup({
                 )}
                 <p className="text-body">
                   Choose Record practice, or use your shortcut{" "}
-                  <kbd>{config.app.hotkey}</kbd> and say:
+                  <kbd>{formatShortcut(config.app.hotkey)}</kbd> and say:
                 </p>
                 <p className="text-body">
                   “A little less typing, a little more room to think.”
@@ -722,7 +726,7 @@ export function Setup({
                       config.app.microphone ?? "System default",
                       2,
                     ],
-                    ["Shortcut", config.app.hotkey, 3],
+                    ["Shortcut", formatShortcut(config.app.hotkey), 3],
                   ].map(([label, value, target]) => (
                     <div
                       key={String(label)}

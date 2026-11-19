@@ -117,6 +117,15 @@ it("captures modified shortcuts and permits Escape cancellation", async () => {
   await userEvent.keyboard("{Escape}");
   expect(button).toHaveTextContent("SUPER + V");
 });
+it("labels the Windows modifier Win in the shortcut control", () => {
+  const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT");
+  try {
+    mount(<Shortcut value="CTRL + SUPER" change={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Recording shortcut" })).toHaveTextContent("Ctrl + Win");
+  } finally {
+    userAgent.mockRestore();
+  }
+});
 it("requires confirmation before deleting transcripts", async () => {
   vi.mocked(ipc).mockImplementation(async (method) =>
     method === "history"

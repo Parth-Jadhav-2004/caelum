@@ -40,7 +40,7 @@ directory. Windows rechecks its signed manifest and hash before opening it.
 
 - Complete setup with a real microphone, once with an online provider and once
   with a downloaded model and the network disconnected.
-- Focus a text field in Notepad. Use the configured hold or toggle shortcut.
+- Focus a text field in Notepad. Use Ctrl + Win, the default for new setups, or your configured hold or toggle shortcut.
   The feedback pill should not take focus. Supported Windows Edit/RichEdit
   controls receive an addressed paste. For other controls or a focus change,
   use **Ctrl+V** in the intended field. A global synthetic Ctrl+V is never sent.

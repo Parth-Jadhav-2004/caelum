@@ -14,9 +14,13 @@ Record your voice, finish, then copy the transcript into the app you’re using.
   <a href="https://parth-jadhav-2004.github.io/caelum/?download=arch#download"><img alt="Download Arch Linux" src="https://img.shields.io/badge/Arch-Linux-167496?style=for-the-badge"></a>
 </p>
 
-[Stable releases and checksums](https://github.com/Parth-Jadhav-2004/caelum/releases/latest) · [Testing builds](https://github.com/Parth-Jadhav-2004/caelum/releases) · [Windows guide](docs/windows.md) · [Linux troubleshooting](docs/linux.md)
+[Stable releases and checksums](https://github.com/Parth-Jadhav-2004/caelum/releases/latest) · [Development and testing builds](https://github.com/Parth-Jadhav-2004/caelum/releases) · [Windows guide](docs/windows.md) · [Linux troubleshooting](docs/linux.md)
 
-**What's new in 0.4.3:** choose **On this computer** in setup to download a model for your memory and language, or **Online** to use your own provider. Test your microphone, choose a shortcut and try your first dictation. Local practice never uploads audio. [Privacy and storage](docs/privacy.md).
+**0.4.4 development preview**
+
+Windows setup saves validated API keys in Credential Manager. New setups default to **Ctrl + Win** (**Ctrl + Super** on Linux). Windows and Hyprland support the chord globally. On Linux desktops that require a non-modifier key, choose another global shortcut or use **Record / Finish recording**.
+
+In setup, choose **On this computer** in setup to download a model for your memory and language, or **Online** to use your own provider. Test your microphone, choose a shortcut and try your first dictation. Local practice never uploads audio. [Privacy and storage](docs/privacy.md).
 
 Downloads are for x86-64. Run the Windows installer, or make the AppImage executable and open it. The AppImage bundles Python and the local inference engine; it needs an Ubuntu 24.04-compatible system with WebKitGTK 4.1 and PortAudio. For distro-managed dependencies and signed native updates, choose your distribution's package.
 
@@ -26,17 +30,17 @@ Open Caelum, choose your speech mode, test the microphone, and complete practice
 
 *Actual Ubuntu 24.04 candidate package in [automated X11 smoke](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), not a GNOME/KDE qualification.*
 
-**Native 0.4.3 installation** — run just the command for your downloaded package:
+**Native 0.4.4 preview installation** — run just the command for your downloaded package:
 
 ```sh
-sudo apt install ./caelum_0.4.3-1_ubuntu-24.04_amd64.deb
-sudo apt install ./caelum_0.4.3-1_ubuntu-26.04_amd64.deb
-sudo apt install ./caelum_0.4.3-1_debian-12_amd64.deb
-sudo dnf install ./caelum-0.4.3-1.fedora43.x86_64.rpm
-sudo pacman -U ./caelum-0.4.3-1-x86_64.pkg.tar.zst
+sudo apt install ./caelum_0.4.4-1_ubuntu-24.04_amd64.deb
+sudo apt install ./caelum_0.4.4-1_ubuntu-26.04_amd64.deb
+sudo apt install ./caelum_0.4.4-1_debian-12_amd64.deb
+sudo dnf install ./caelum-0.4.4-1.fedora43.x86_64.rpm
+sudo pacman -U ./caelum-0.4.4-1-x86_64.pkg.tar.zst
 ```
 
-For an RC, use the package filename on its own release page. [Microphone, shortcut, tray, blank window and uninstall help](docs/linux.md#first-run-help).
+For other builds, use the package filename on the corresponding release page. [Microphone, shortcut, tray, blank window and uninstall help](docs/linux.md#first-run-help).
 
 ## Development
 

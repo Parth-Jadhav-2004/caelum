@@ -44,6 +44,7 @@ def test_recording_defaults_and_toggle_roundtrip(tmp_path):
     config = Config()
     assert config.app.max_recording_seconds == 180
     assert config.app.recording_mode == "hold"
+    assert config.app.hotkey == "CTRL + SUPER"
     config.app.recording_mode = "toggle"
     path = tmp_path / "config.toml"
     save(config, path)

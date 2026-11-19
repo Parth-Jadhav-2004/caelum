@@ -11,6 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { KeyRound, FlaskConical, Check } from "lucide-react";
 import { ipc, type Config } from "@/lib/ipc";
+import { formatShortcut } from "@/lib/shortcut";
 import { action, Heading, Confirm } from "@/components/common";
 import { useApp } from "@/stores/app";
 import { Button } from "@/components/ui/button";
@@ -140,7 +141,7 @@ export function Shortcut({
         }
       }}
     >
-      {capture ? "Keys… Esc cancels" : value}
+      {capture ? "Keys… Esc cancels" : formatShortcut(value)}
     </Button>
   );
 }

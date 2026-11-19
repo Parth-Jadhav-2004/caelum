@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/stores/app";
 import { ipc, type Config } from "@/lib/ipc";
+import { formatShortcut } from "@/lib/shortcut";
 import { action, Heading } from "@/components/common";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -130,7 +131,7 @@ export function Dashboard({ config }: { config: Config }) {
             {nativeShortcut ? (
               <>
                 {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
-                <kbd>{config.app.hotkey}</kbd> to dictate
+                <kbd>{formatShortcut(config.app.hotkey)}</kbd> to dictate
               </>
             ) : (
               "Record, finish, then copy your transcript"

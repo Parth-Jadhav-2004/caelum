@@ -7,11 +7,13 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from urllib.parse import urlparse
 
+DEFAULT_HOTKEY = "CTRL + SUPER"
+
 
 @dataclass
 class App:
     backend: str = "auto"
-    hotkey: str = "CTRL + ALT + V" if os.name == "nt" else "SUPER + ALT + V"
+    hotkey: str = DEFAULT_HOTKEY
     recording_mode: str = "hold"
     strategy: str = "single"
     max_recording_seconds: int = 180

@@ -25,6 +25,7 @@ import {
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
 import { ipc, errorText, type Config, type ConfigPatch } from "@/lib/ipc";
+import { formatShortcut } from "@/lib/shortcut";
 import { action, Confirm } from "@/components/common";
 import {
   SidebarProvider,
@@ -416,7 +417,7 @@ export default function App() {
                       {status?.title ?? "Connecting…"}
                     </p>
                     {!["home", "settings"].includes(page) && (
-                      <kbd className="inline-block">{config.app.hotkey}</kbd>
+                      <kbd className="inline-block">{formatShortcut(config.app.hotkey)}</kbd>
                     )}
                     <label className="flex items-center justify-between gap-3 text-body">
                       Pause

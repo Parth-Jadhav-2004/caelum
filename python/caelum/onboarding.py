@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import Capture
-from .config import validate
+from .config import DEFAULT_HOTKEY, validate
 from .portable import backend_name
 from .providers import ProviderError, Providers
 
@@ -124,6 +124,11 @@ async def check_shortcut(config):
     from .portable import portal_trigger
 
     if portal_trigger(config.app.hotkey) is None:
+        if config.app.hotkey == DEFAULT_HOTKEY:
+            return (
+                "This desktop needs a shortcut with a letter or another non-modifier key. "
+                "Choose another shortcut for global recording, or use Record / Finish recording."
+            )
         raise ValueError("Choose a shortcut with a non-modifier key on this desktop")
     return (
         "Your desktop checks conflicts and may ask permission when the service starts. "

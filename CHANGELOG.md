@@ -2,6 +2,12 @@
 
 Release notes, newest first.
 
+## 0.4.4
+
+- Fixed API key storage in Windows Credential Manager during Online setup.
+- New installs default to Ctrl + Win (Ctrl + Super on Linux). Windows uses the Win label in shortcut displays.
+- Linux desktops that require a non-modifier key explain how to choose a different global shortcut or use the recording controls.
+
 ## 0.4.3
 
 - Choose **On this computer** during onboarding to find, download and verify a compatible speech model. Local dictation and practice work offline after download, without a provider key. Online mode still supports your own provider and optional text refinement.
