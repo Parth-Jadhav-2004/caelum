@@ -46,7 +46,9 @@ failure prevents publication rather than inventing download links.
 
 ## Product and design
 
-The silent laptop scene shows the default shortcut, the Caelum pill, and the completed note when it scrolls into view. Reduced motion advances the same states without animated transitions or word-by-word captions. The download buttons and package label come from the shared desktop shadcn components via website/tools/render-controls.tsx.
+The demo is an HTML notebook with a looping shortcut, listening, and insertion sequence. The clock pauses offscreen or in a background tab and resumes at the same point. Visitors can pause it; reduced-motion visitors start with the completed note.
+
+“At your desk” uses native radio controls and a paper crossfade to switch examples. The FAQ starts with grouped native disclosures and enhances them with keyboard-operable buttons and panels that expand and contract together. Download buttons and the package label come from the shared desktop shadcn components via `website/tools/render-controls.tsx`.
 
 ## Publication and qualification
 

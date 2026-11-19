@@ -19,12 +19,18 @@ export function packageChoices(packages, platform, userAgent) {
 
 const formats = { exe: ".exe", apt: ".deb", dnf: ".rpm", pacman: ".pkg.tar.zst", appimage: ".AppImage" };
 
-export function populateDownloads(release, matches) {
-  const latestUbuntu = release.packages.filter(p => p.id.startsWith("ubuntu-"))
+export function menuChoices(packages, matches) {
+  const ubuntu = matches.length === 1 && matches[0].id.startsWith("ubuntu-") ? matches[0] :
+    packages.filter(p => p.id.startsWith("ubuntu-"))
     .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }))[0];
-  const menuPackages = release.packages.filter(p => !p.id.startsWith("ubuntu-") || p === latestUbuntu);
-  const preferred = new Set(matches.map(p => p.id.startsWith("ubuntu-") ? latestUbuntu.id : p.id));
-  const ordered = [...menuPackages].sort((a, b) => Number(preferred.has(b.id)) - Number(preferred.has(a.id)));
+  const preferred = new Set(matches.map(p => p.id));
+  const ordered = packages.filter(p => !p.id.startsWith("ubuntu-") || p.id === ubuntu?.id)
+    .sort((a, b) => Number(preferred.has(b.id)) - Number(preferred.has(a.id)));
+  return { ordered, preferred };
+}
+
+export function populateDownloads(release, matches) {
+  const { ordered, preferred } = menuChoices(release.packages, matches);
   const platformLabel = matches.some(p => p.id.startsWith("ubuntu-")) ? "Ubuntu" : matches[0]?.name;
   for (const menu of document.querySelectorAll(".download-menu")) {
     const trigger = menu.querySelector("summary");

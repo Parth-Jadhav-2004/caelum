@@ -13,64 +13,74 @@
   <meta property="og:image:alt" content="Caelum dictation with a draft open on a laptop.">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="./mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=13">
-  <script type="module" src="./app.js?v=13"></script>
+  <link rel="preload" as="font" type="font/woff2" href="./fonts/ClashGrotesk-500.woff2" crossorigin>
+  <link rel="stylesheet" href="./style.css?v=15">
+  <script type="module" src="./app.js?v=15"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap mast">
   <a class="brand" href="#main"><img alt="" src="./mark.svg">Caelum</a>
-  <nav aria-label="Main navigation"><a href="#studio">How it works</a><a href="#features">Features</a><a class="repo-icon" href="https://github.com/Parth-Jadhav-2004/caelum" aria-label="Caelum on GitHub" title="Caelum on GitHub"><img src="./media/github.svg" width="22" height="22" alt=""></a></nav>
+  <nav aria-label="Main navigation"><a href="#studio">Demo</a><a href="#features">Features</a><a href="#questions">FAQ</a><a class="repo-icon" href="https://github.com/Parth-Jadhav-2004/caelum" aria-label="Caelum on GitHub" title="Caelum on GitHub"><img src="./media/github.svg" width="20" height="20" alt=""></a></nav>
 </header>
 <main id="main">
   <section class="hero wrap">
-    <p class="category">Voice dictation for your desktop</p>
+    <p class="category"><span class="signal" aria-hidden="true">▂▅▇▃</span> Desktop dictation</p>
     <h1>A first draft, <em>spoken.</em></h1>
-    <p class="lede">Say the line while it’s still in your head. Caelum puts it into words for your next note, message, or email.</p>
+    <p class="lede">Speak while the thought is fresh.<br>Caelum writes it where your cursor is.</p>
     <div class="actions"><!-- ui:hero --><details class="download-menu"><summary data-slot="button" data-variant="default" data-size="lg" class="inline-flex shrink-0 items-center justify-center gap-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[&gt;svg]:px-4 button"><span class="download-title">Download Caelum</span><svg class="menu-chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"></path></svg></summary><div class="package-options"><a href="https://github.com/Parth-Jadhav-2004/caelum/releases/latest">View stable downloads ↗</a></div></details><!-- /ui:hero --><!-- ui:star --><link rel="preload" as="image" href="./media/github.svg"/><a href="https://github.com/Parth-Jadhav-2004/caelum" aria-label="Star Caelum on GitHub" title="Star Caelum on GitHub" data-slot="button" data-variant="outline" data-size="lg" class="inline-flex shrink-0 items-center justify-center gap-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 border bg-background shadow-none hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-10 rounded-md px-6 has-[&gt;svg]:px-4 github-star"><img src="./media/github.svg" width="22" height="22" alt=""/></a><!-- /ui:star --></div>
   </section>
 
   <section class="studio wrap" id="studio" aria-label="How Caelum works">
-    <figure class="laptop" data-phase="finished">
-      <div class="display" aria-hidden="true">
-        <div class="screen">
-          <div class="menubar"><span>▧ &nbsp; Notes</span><span>Thu &nbsp; 10:42</span></div>
-          <div class="window">
-            <div class="titlebar"><span class="dots"><i></i><i></i><i></i></span><span>Studio notebook</span></div>
-            <div class="notebook">
-              <aside><b>Notebooks</b><span>▤ &nbsp; Studio</span><small>▧ &nbsp; Personal</small></aside>
-              <div class="sheet"><small>THURSDAY, MAY 14</small><h2>Field notes</h2>
-                <div class="writing-area"><p class="spoken-line"></p><p class="draft">Open the film with the sound of the street. Let the music come in after the first shot.</p></div>
-              </div>
-            </div>
+    <figure class="desk-demo" data-phase="inserted">
+      <div class="desk-stage" aria-hidden="true">
+        <div class="desk-window">
+          <div class="desk-bar"><span class="window-lights"><i></i><i></i><i></i></span>Studio notebook<span>✎</span></div>
+          <div class="desk-page"><small>Notebook &nbsp;/&nbsp; Production</small><h3>Field notes</h3>
+            <p>Pick up the keys on Thursday.</p>
+            <p class="desk-line"><span>Move the sound check to Friday.</span><i></i></p>
           </div>
-          <div class="shortcut"><kbd>Super</kbd><kbd>Alt</kbd><kbd>V</kbd></div>
-          <div class="pill"><span class="listening-label">Listening</span><span class="wave"><i style="--i:0;--h:6px"></i><i style="--i:1;--h:9px"></i><i style="--i:2;--h:14px"></i><i style="--i:3;--h:11px"></i><i style="--i:4;--h:17px"></i><i style="--i:5;--h:22px"></i><i style="--i:6;--h:16px"></i><i style="--i:7;--h:19px"></i><i style="--i:8;--h:14px"></i><i style="--i:9;--h:10px"></i><i style="--i:10;--h:12px"></i><i style="--i:11;--h:8px"></i><i style="--i:12;--h:5px"></i></span><span class="processing">Transcribing…</span><span class="inserted">✓ Inserted</span></div>
+          <div class="desk-hud">
+            <span class="desk-keys"><kbd>Super</kbd><kbd>Alt</kbd><kbd>V</kbd></span>
+            <span class="desk-pill listen"><img src="./mark.svg" alt=""> Listening</span>
+            <span class="desk-pill done">✓ &nbsp; Inserted</span>
+          </div>
         </div>
       </div>
-      <div class="base" aria-hidden="true"></div>
-      <figcaption>
-        <span class="sr">Caelum dictation demonstration.</span>
-        <span class="demo-track"><span class="step-key">Press shortcut</span><i aria-hidden="true">→</i><span class="step-voice">Speak</span><i aria-hidden="true">→</i><span class="step-write">Text appears</span></span>
-      </figcaption>
+      <figcaption><span><i class="desk-dot"></i> In session <b>/</b> Field notes</span><button type="button" class="motion-toggle" hidden>Pause animation</button></figcaption>
+      <p class="sr">The looping example shows Super, Alt and V starting dictation. Caelum listens, then inserts the spoken sentence into the open notebook.</p>
     </figure>
   </section>
-  <section class="product-info wrap" id="features" aria-labelledby="features-title">
-    <h2 id="features-title">The words are yours.</h2>
-    <div class="details">
-      <article><h3>Get the names right.</h3><p>Add people, projects, and specialist terms to your vocabulary. Give Caelum the spelling you want before you dictate the next update.</p></article>
-      <article><h3>Choose how much to tidy.</h3><p>Keep a transcript as spoken, or turn on cleanup to smooth out hesitations and punctuation before the words reach your draft.</p></article>
-      <article><h3>Write away from Wi-Fi.</h3><p>Download a speech model once and transcribe on your computer, without an API key. Prefer an online model? Connect your transcription provider in Settings.</p></article>
-      <article><h3>Find yesterday’s idea.</h3><p>Search the final text of earlier dictations in your local history. Set how long entries are kept, delete individual drafts, or turn saving off.</p></article>
+  <section class="samples wrap split" aria-labelledby="samples-title">
+    <div><p class="eyebrow">01 / At your desk</p><h2 id="samples-title">What would <br>you write?</h2>
+      <fieldset class="sample-picker"><legend class="sr">Choose an example draft</legend>
+        <label><input type="radio" name="sample" value="note" checked>Note</label>
+        <label><input type="radio" name="sample" value="message">Message</label>
+        <label><input type="radio" name="sample" value="email">Email</label>
+      </fieldset>
+    </div>
+    <div class="paper-stack">
+      <article class="sample-paper note"><small>Field notebook <span>01 / 03</span></small><h3>Location scout</h3><p>Come back just before sunset. The west wall catches the last of the light.</p><span class="paper-sign">Studio notes</span></article>
+      <article class="sample-paper message"><small>Team message <span>02 / 03</span></small><h3>Sound check</h3><p>Meet me at the studio at four. I’ll bring the recorder and a spare cable.</p><span class="paper-sign">To the crew</span></article>
+      <article class="sample-paper email"><small>Email draft <span>03 / 03</span></small><h3>Friday’s session</h3><p>Hi Mira, the first cut is ready. Could you listen to the opening before we meet?</p><span class="paper-sign">To Mira</span></article>
     </div>
   </section>
-  <section class="questions wrap" aria-labelledby="questions-title">
-    <h2 id="questions-title">Before your first draft</h2>
-    <div>
-      <details open><summary>How do I get started?</summary><p>Choose a local model or connect an online provider, test your microphone, and pick your shortcut. The practice step lets you try a sentence before returning to your work.</p></details>
-      <details><summary>Where do my words go?</summary><p>On-device transcription processes speech locally. In online mode, your provider receives the speech and custom vocabulary. If you enable online cleanup, its provider also receives the transcript. Audio is never written to dictation history. Saved text stays in a local, unencrypted database.</p><a href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/docs/privacy.md">Read the privacy details</a></details>
-      <details><summary>Can I dictate into my writing app?</summary><p>Where direct insertion is supported, keep your cursor in the text field while you speak. If the app or desktop doesn’t support insertion, or you switch focus, paste the finished text wherever you need it.</p></details>
-      <details><summary>What does it cost?</summary><p>Caelum is free and open source. Local transcription runs on your hardware. If you connect an online provider, its pricing applies to your account.</p></details>
+  <section class="product-info wrap" id="features" aria-labelledby="features-title">
+    <p class="eyebrow">02 / The toolkit</p><h2 id="features-title">The words are yours.</h2>
+    <div class="details">
+      <article><div class="specimen terms" aria-hidden="true"><span>+ Mira</span><span>+ Caelum</span></div><h3>Your vocabulary</h3><p>Give names and specialist terms the spelling you use.</p></article>
+      <article><div class="specimen proof" aria-hidden="true"><s>Um,</s> let’s begin<i>.</i></div><h3>Optional cleanup</h3><p>Smooth out hesitations, or keep the words exactly as spoken.</p></article>
+      <article><div class="specimen device" aria-hidden="true"><span>✓</span> On device</div><h3>Offline dictation</h3><p>Download a speech model once. Then write without Wi-Fi or an API key.</p></article>
+      <article><div class="specimen archive" aria-hidden="true"><i></i><i></i><i></i></div><h3>Local history</h3><p>Find an earlier draft, delete it, or turn saving off.</p></article>
+    </div>
+  </section>
+  <section class="questions wrap split" id="questions" aria-labelledby="questions-title">
+    <div class="faq-heading"><p class="eyebrow">03 / FAQ</p><h2 id="questions-title">Before your <br>first draft.</h2></div>
+    <div class="faq-list">
+      <details name="faq" open><summary>How do I get started?<span aria-hidden="true"></span></summary><div class="answer"><p>Choose a local model or online provider, test your microphone, and pick a shortcut. Try a sentence in setup before returning to your work.</p></div></details>
+      <details name="faq"><summary>Where do my words go?<span aria-hidden="true"></span></summary><div class="answer"><p>On-device transcription stays on your computer. Online transcription sends speech and vocabulary to your provider; online cleanup sends the transcript. History stores text locally, unencrypted, and never saves audio.</p><a href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/docs/privacy.md">Read the privacy details ↗</a></div></details>
+      <details name="faq"><summary>Can I dictate into my writing app?<span aria-hidden="true"></span></summary><div class="answer"><p>Keep your cursor in a text field while you speak. If your app doesn’t support direct insertion, or you switch focus, paste the finished text where you need it.</p></div></details>
+      <details name="faq"><summary>What does it cost?<span aria-hidden="true"></span></summary><div class="answer"><p>Caelum is free and open source. Local transcription runs on your hardware. If you connect an online provider, its pricing applies to your account.</p></div></details>
     </div>
   </section>
   <section class="download" id="download"><div class="wrap download-grid">

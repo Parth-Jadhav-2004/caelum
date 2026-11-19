@@ -1,5 +1,5 @@
-import "./demo.js?v=12";
-import { packageChoices, populateDownloads } from "./downloads.js?v=12";
+import "./demo.js?v=15";
+import { packageChoices, populateDownloads } from "./downloads.js?v=15";
 import { validateRelease } from "./release.js";
 
 const distroSelect = document.querySelector("#distro");

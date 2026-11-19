@@ -2,9 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { validateRelease } from "./release.js";
+import { menuChoices, packageChoices } from "./downloads.js";
 const manifest = JSON.parse(
   readFileSync(new URL("./release.json", import.meta.url)),
 );
+
+test("download menu preserves the detected Ubuntu version", () => {
+  const packages = ["arch", "ubuntu-2604", "ubuntu-2404"].map(id => ({ id }));
+  for (const [agent, expected] of [["Ubuntu/24.04", "ubuntu-2404"], ["Ubuntu", "ubuntu-2604"]]) {
+    const matches = packageChoices(packages, "Linux", agent);
+    assert.deepEqual(menuChoices(packages, matches).ordered.map(p => p.id), [expected, "arch"]);
+  }
+});
 
 test("every published package has a matching version, architecture, URL and install command", () => {
   const release = validateRelease(manifest);
