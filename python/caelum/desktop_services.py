@@ -19,6 +19,10 @@ class SettingsBusy(RuntimeError):
 
 
 def request(action, *, config=None, progress=None):
+    if os.name == "nt":
+        from .windows_desktop import request as windows_request
+
+        return windows_request(action, config=config, progress=progress)
     root = os.environ.get("XDG_RUNTIME_DIR")
     if not root:
         raise RuntimeError("Open Caelum inside your desktop session")
@@ -86,6 +90,11 @@ def microphones():
         return devices
     import sounddevice as sound
 
+    if os.name == "nt":
+        # MME, WASAPI and DirectSound frequently expose the same friendly name.
+        apis = sound.query_hostapis()
+        return [(f"{device['name']} · {apis[device['hostapi']]['name']}", index)
+                for index, device in enumerate(sound.query_devices()) if device["max_input_channels"]]
     return [
         (device["name"], device["name"])
         for device in sound.query_devices()

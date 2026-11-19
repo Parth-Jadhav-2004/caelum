@@ -2,7 +2,6 @@
 
 import asyncio
 import errno
-import fcntl
 import hashlib
 import importlib.util
 import json
@@ -115,7 +114,9 @@ def get_model(model_id):
 
 
 def models_dir():
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "caelum/models"
+    from .config import data_dir
+
+    return data_dir() / "models"
 
 
 def sha256(path):
@@ -382,13 +383,18 @@ class ModelManager:
         self.root.mkdir(parents=True, exist_ok=True)
         with (self.root / ".lock").open("a") as lock:
             try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+                if os.name == "nt":
+                    import msvcrt
+
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, PermissionError):
                 raise ModelError("Another model operation is running", "busy") from None
-            try:
-                yield
-            finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+            yield  # Closing the file releases the lock on either platform.
 
     async def download(self, model_id):
         model = get_model(model_id)

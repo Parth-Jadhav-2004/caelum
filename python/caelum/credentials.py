@@ -21,8 +21,9 @@ def _read():
         return {}
     if (
         path.is_symlink()
-        or path.stat().st_uid != os.getuid()
-        or stat.S_IMODE(path.stat().st_mode) != 0o600
+        or os.name != "nt" and (
+            path.stat().st_uid != os.getuid() or stat.S_IMODE(path.stat().st_mode) != 0o600
+        )
     ):
         raise RuntimeError("Credential file must be owned by you with mode 600")
     try:
@@ -54,6 +55,27 @@ def _write(data):
 
 
 def _secret(action, name, value=None):
+    if os.name == "nt":
+        import pywintypes
+        import win32cred
+
+        target = f"Caelum/{name}"
+        output = ""
+        try:
+            if action == "store":
+                win32cred.CredWrite({"Type": win32cred.CRED_TYPE_GENERIC, "TargetName": target,
+                                     "CredentialBlob": value.encode("utf-16-le"),
+                                     "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE}, 0)
+            elif action == "lookup":
+                output = win32cred.CredRead(target, win32cred.CRED_TYPE_GENERIC)["CredentialBlob"].decode("utf-16-le")
+            else:
+                win32cred.CredDelete(target, win32cred.CRED_TYPE_GENERIC)
+        except pywintypes.error as exc:
+            if exc.winerror != 1168 or action == "store":
+                raise RuntimeError("Windows Credential Manager is unavailable") from None
+            if action == "lookup":
+                return None
+        return subprocess.CompletedProcess([], 0, output)
     args = ["secret-tool", action]
     if action == "store":
         args.append("--label=Caelum provider key")

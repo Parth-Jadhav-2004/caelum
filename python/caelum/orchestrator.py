@@ -340,7 +340,7 @@ class Orchestrator:
                     await self.event("saved")
                     return
                 try:
-                    dispatched = await insert(text, self.target)
+                    dispatched = await getattr(self.bindings, "insert", insert)(text, self.target)
                 except (RuntimeError, OSError, TimeoutError):
                     # Retain audio for explicit retry if even clipboard dispatch fails.
                     raise ProviderError("Insertion unavailable; retry or cancel") from None

@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 @dataclass
 class App:
     backend: str = "auto"
-    hotkey: str = "SUPER + ALT + V"
+    hotkey: str = "CTRL + ALT + V" if os.name == "nt" else "SUPER + ALT + V"
     recording_mode: str = "hold"
     strategy: str = "single"
     max_recording_seconds: int = 180
@@ -76,7 +76,15 @@ class Config:
 
 
 def config_path():
+    if os.name == "nt":
+        return Path(os.environ["APPDATA"]) / "Caelum/config.toml"
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "caelum/config.toml"
+
+
+def data_dir():
+    if os.name == "nt":
+        return Path(os.environ["LOCALAPPDATA"]) / "Caelum"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "caelum"
 
 
 def load(path=None):

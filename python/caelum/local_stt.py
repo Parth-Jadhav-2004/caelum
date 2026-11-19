@@ -84,6 +84,18 @@ class SherpaTransducer:
             if line.rsplit(" ", 1)[0]
         )
         descriptors = []
+        if os.name == "nt":
+            import tempfile
+
+            with tempfile.TemporaryDirectory(prefix="caelum-vocabulary-") as tmp:
+                vocabulary_path, words = Path(tmp) / "vocab", Path(tmp) / "words"
+                vocabulary_path.write_text(vocab, encoding="utf-8")
+                words.write_text("\n".join(phrases), encoding="utf-8")
+                self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                    **options, hotwords_file=str(words), bpe_vocab=str(vocabulary_path),
+                    modeling_unit="bpe", decoding_method="modified_beam_search",
+                )
+            return
         try:
             for content in (vocab, "\n".join(phrases)):
                 descriptor = os.memfd_create("caelum-hotwords", flags=0)

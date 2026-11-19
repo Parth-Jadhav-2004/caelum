@@ -7,12 +7,11 @@ from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import load
+from .config import data_dir, load
 
 
 def data_path():
-    root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "caelum"
-    return root / "history.sqlite3"
+    return data_dir() / "history.sqlite3"
 
 
 class History:

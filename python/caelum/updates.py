@@ -42,6 +42,8 @@ def installed():
     try:
         info = json.loads((BASE / "release.json").read_text())
         version_tuple(info["version"])
+        if os.name == "nt":
+            return info if info.get("target") == "windows-x64" else None
         if info["target"] not in TARGETS or BASE != Path("/opt/caelum/lib/caelum"):
             return None
         if not (BASE / "update-public.pem").is_file():
@@ -52,10 +54,14 @@ def installed():
 
 
 def cache_dir():
+    if os.name == "nt":
+        return Path(os.environ["LOCALAPPDATA"]) / "Caelum/updates"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "caelum/updates"
 
 
 def compatible(info):
+    if info["target"] == "windows-x64":
+        return os.name == "nt" and platform.machine().lower() in ("amd64", "x86_64")
     distro, release, _ = TARGETS[info["target"]]
     current = platform.freedesktop_os_release()
     return (
@@ -130,6 +136,16 @@ def trusted_public_keys(directory, *, now=None):
 
 
 def public_key_id(public):
+    if os.name == "nt":
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        key = serialization.load_pem_public_key(public)
+        if not isinstance(key, Ed25519PublicKey):
+            raise ValueError("An Ed25519 update key is required")
+        return hashlib.sha256(key.public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )).hexdigest()
     der = subprocess.check_output(
         ["/usr/bin/openssl", "pkey", "-pubin", "-outform", "DER"],
         input=public,
@@ -171,7 +187,7 @@ def signature_candidates(signature):
 def verify_manifest(raw, signature, info, *, key=None, now=None):
     if len(raw) > 65536 or not 0 < len(signature) <= 4096:
         raise ValueError("Invalid update signature or metadata size")
-    with tempfile.TemporaryDirectory(prefix="caelum-verify-", dir="/tmp") as directory:
+    with tempfile.TemporaryDirectory(prefix="caelum-verify-", dir=None if os.name == "nt" else "/tmp") as directory:
         work = Path(directory)
         (work / "manifest").write_bytes(raw)
         signatures = signature_candidates(signature)
@@ -185,6 +201,17 @@ def verify_manifest(raw, signature, info, *, key=None, now=None):
             )
             if matching is None:
                 continue
+            if os.name == "nt":
+                from cryptography.exceptions import InvalidSignature
+                from cryptography.hazmat.primitives import serialization
+
+                public_key_id(public)  # Enforce Ed25519, including for legacy signatures.
+                try:
+                    serialization.load_pem_public_key(public).verify(matching, raw)
+                except InvalidSignature:
+                    continue
+                verified = True
+                break
             (work / "signature").write_bytes(matching)
             (work / "public.pem").write_bytes(public)
             result = subprocess.run(
@@ -220,12 +247,14 @@ def verify_manifest(raw, signature, info, *, key=None, now=None):
         issued - 86400 <= current_time < expires <= issued + 90 * 86400
     ):
         raise ValueError("Update metadata expired or is not yet valid; check your clock")
+    if info["target"] == "windows-x64" and info["target"] not in manifest["assets"]:
+        raise WindowsPackageUnavailable("No Windows installer in this stable release")
     asset = manifest["assets"][info["target"]]
     name = asset["name"]
     if (
         not isinstance(name, str)
         or not re.fullmatch(r"caelum[-_][a-zA-Z0-9._-]+", name)
-        or not name.endswith(TARGETS[info["target"]][2])
+        or not name.endswith(".exe" if info["target"] == "windows-x64" else TARGETS[info["target"]][2])
         or type(asset["size"]) is not int
         or not 0 < asset["size"] <= MAX_PACKAGE
         or not re.fullmatch(r"[0-9a-f]{64}", asset["sha256"])
@@ -254,6 +283,10 @@ def fetch(client, url, maximum, output=None):
             else:
                 output.write(chunk)
     return b"".join(chunks)
+
+
+class WindowsPackageUnavailable(ValueError):
+    """An authenticated stable release predates Windows packaging."""
 
 
 def require_https(request):
@@ -291,6 +324,8 @@ def check():
                     if error.response.status_code != 404:
                         raise
         manifest, _ = verify_manifest(raw, signature, info)
+    except WindowsPackageUnavailable:
+        return None
     except httpx.HTTPError as error:
         raise RuntimeError(
             "Could not check updates. Check your connection and try again."
@@ -394,7 +429,8 @@ def check_testing():
                     continue
             target = info["target"]
             name = (
-                f"caelum-{base_version}-1-x86_64.pkg.tar.zst" if target == "arch"
+                f"caelum-{base_version}-windows-x64.exe" if target == "windows-x64"
+                else f"caelum-{base_version}-1-x86_64.pkg.tar.zst" if target == "arch"
                 else f"caelum-{base_version}-1.fedora43.x86_64.rpm" if target == "fedora-43"
                 else f"caelum_{base_version}-1_{target}_amd64.deb"
             )
@@ -458,7 +494,13 @@ def verify_package(path, asset):
 
 
 def read_regular(path, maximum):
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    if os.name == "nt":
+        if path.is_symlink():
+            raise ValueError("Update files must be regular files")
+        flags = os.O_BINARY
+    else:
+        flags = os.O_NOFOLLOW | os.O_NONBLOCK
+    descriptor = os.open(path, os.O_RDONLY | flags)
     with os.fdopen(descriptor, "rb") as source:
         if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
             raise ValueError("Update files must be regular files")
@@ -549,6 +591,12 @@ def apply_pending():
         discard_pending()
         return False
     verify_package(pending / asset["name"], asset)
+    if os.name == "nt":
+        # The desktop exits after this handoff, releasing its installed files.
+        # A cancelled install leaves the verified package available for retry.
+        subprocess.Popen([str(pending / asset["name"])], cwd=pending, close_fds=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
     try:
         # stdout belongs exclusively to the sidecar JSON protocol. Inheriting it
         # lets pacman progress break the connection during its own transaction.

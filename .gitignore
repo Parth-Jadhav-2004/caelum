@@ -35,5 +35,6 @@ docs/product-page-components.html
 node_modules/
 src-tauri/target/
 src-tauri/binaries/
+src-tauri/windows-runtime/
 
 *.tsbuildinfo

@@ -12,6 +12,9 @@ COMMENT = "Dictation with native Hyprland paste or manual copy on other desktops
 
 
 def entry_path(autostart=False):
+    if os.name == "nt":
+        programs = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs"
+        return (programs / "Startup" if autostart else programs) / "Caelum.lnk"
     root = (
         Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         if autostart
@@ -86,6 +89,22 @@ def install(config, autostart=False, enabled=True):
     destination = entry_path(autostart)
     if not enabled:
         destination.unlink(missing_ok=True)
+        return destination
+    if os.name == "nt":
+        import pythoncom
+        from win32com.shell import shell
+
+        executable = os.environ["CAELUM_DESKTOP_EXE"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        pythoncom.CoInitialize()
+        try:
+            link = pythoncom.CoCreateInstance(shell.CLSID_ShellLink, None,
+                                              pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink)
+            link.SetPath(executable)
+            link.SetWorkingDirectory(str(Path(executable).parent))
+            link.QueryInterface(pythoncom.IID_IPersistFile).Save(str(destination), 0)
+        finally:
+            pythoncom.CoUninitialize()
         return destination
     launcher = Path(__file__).resolve().parents[2] / "scripts/run.sh"
     if not launcher.is_file():

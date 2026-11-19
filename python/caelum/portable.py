@@ -21,6 +21,8 @@ SHORTCUTS = "org.freedesktop.portal.GlobalShortcuts"
 
 
 def backend_name(config):
+    if os.name == "nt":
+        return "windows"
     if config.app.backend != "auto":
         return config.app.backend
     return "hyprland" if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") else "portable"

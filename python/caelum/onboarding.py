@@ -101,6 +101,10 @@ async def validate_providers(config, credential_resolver=None):
 
 async def check_shortcut(config):
     validate(config)
+    if os.name == "nt":
+        from .windows_desktop import check_shortcut as windows_check
+
+        return windows_check(config.app.hotkey)
     if backend_name(config) == "hyprland":
         from .linux import hypr_json, shortcut_keys
 

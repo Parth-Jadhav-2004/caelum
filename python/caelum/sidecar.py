@@ -42,6 +42,7 @@ class Backend:
         self.path = Path(path or os.environ.get("CAELUM_CONFIG") or config_path())
         self.history = History(self.path)
         self.process = None
+        self.service_task = None
         self.emit = emit
         self.cancelled = threading.Event()
         self.sample_lock = asyncio.Lock()
@@ -241,6 +242,21 @@ class Backend:
     async def start(self):
         if (await self.status())["running"]:
             return
+        if os.name == "nt":
+            from .service import serve
+
+            self.service_task = asyncio.create_task(serve(load(self.path), self.path))
+            for _ in range(100):
+                await asyncio.sleep(0.1)
+                if self.service_task.done():
+                    finished, self.service_task = self.service_task, None
+                    await finished
+                    raise RuntimeError("Windows dictation service stopped during startup")
+                if (await self.status())["running"]:
+                    return
+            self.service_task.cancel()
+            await asyncio.gather(self.service_task, return_exceptions=True)
+            raise RuntimeError("Windows dictation service took too long to start")
         if self.process and self.process.returncode is None:
             raise RuntimeError("Service is still starting")
         args = [sys.executable, "-m", "caelum.cli", "--config", str(self.path), "serve"]
@@ -265,6 +281,9 @@ class Backend:
         if request_shutdown:
             with suppress(OSError, RuntimeError):
                 await asyncio.to_thread(request, "shutdown")
+        if self.service_task:
+            await self.service_task
+            self.service_task = None
         if self.process and self.process.returncode is None:
             try:
                 await asyncio.wait_for(self.process.wait(), 8)
@@ -591,6 +610,11 @@ class Backend:
             from .desktop_services import install_queued_update
 
             await self.idle()
+            if os.name == "nt":
+                from .updates import apply_pending
+
+                await self.stop_idle()
+                return await asyncio.to_thread(apply_pending)
             return await asyncio.to_thread(install_queued_update)
         elif method == "updates.discard":
             from .updates import discard_pending
@@ -614,20 +638,30 @@ class Backend:
         return {"ok": True}
 
 
-async def run():
+async def run(output=None):
     loop = asyncio.get_running_loop()
 
     def emit(event, data):
         frame = json.dumps({"v": VERSION, "event": event, "data": data}, allow_nan=False)
-        loop.call_soon_threadsafe(lambda: print(frame, flush=True))
+        loop.call_soon_threadsafe(lambda: print(frame, file=output, flush=True))
 
     backend = Backend(emit=emit)
     tasks = set()
     reader = asyncio.StreamReader(limit=MAX_FRAME)
     protocol = asyncio.StreamReaderProtocol(reader)
-    transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, transport.close)
+    transport = None
+    if os.name == "nt":
+        # Inherited Windows stdio handles aren't overlapped asyncio pipes.
+        async def readline():
+            data = await asyncio.to_thread(sys.stdin.buffer.readline, MAX_FRAME + 1)
+            if len(data) > MAX_FRAME:
+                raise ValueError("Oversized desktop request")
+            return data
+    else:
+        transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, transport.close)
+        readline = reader.readline
 
     async def respond(message):
         identifier = message.get("id")
@@ -659,7 +693,7 @@ async def run():
             frame = json.dumps({"v": VERSION, "id": identifier, "result": result}, allow_nan=False)
             if len(frame.encode()) > 16 * MAX_FRAME:
                 raise ValueError("Result is too large; narrow your history search")
-            print(frame, flush=True)
+            print(frame, file=output, flush=True)
         except Exception as error:
             info = error_payload(error)
             # Preserve the JSONL v1 string for older clients; typed metadata is additive.
@@ -667,7 +701,7 @@ async def run():
                 json.dumps(
                     {"v": VERSION, "id": identifier, "error": info["message"], "error_info": info}
                 ),
-                flush=True,
+                file=output, flush=True,
             )
 
     async def events():
@@ -690,7 +724,7 @@ async def run():
 
     watcher = asyncio.create_task(events())
     try:
-        while line := await reader.readline():
+        while line := await readline():
             try:
                 message = json.loads(line)
                 if not isinstance(message, dict):
@@ -716,11 +750,21 @@ async def run():
         for task in list(backend.model_tasks):
             task.cancel()
         await asyncio.gather(*backend.model_tasks, return_exceptions=True)
-        transport.close()
+        if transport:
+            transport.close()
 
 
 def main():
-    asyncio.run(run())
+    if os.name == "nt":
+        # The shared service and native decoders run in this process on
+        # Windows. Only protocol frames may reach Tauri, even if a DLL writes
+        # progress to stdout. Never send decoder diagnostics to a log file.
+        with os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf-8", newline="\n") as out:
+            with open(os.devnull, "wb") as sink:
+                os.dup2(sink.fileno(), sys.stdout.fileno())
+            asyncio.run(run(out))
+    else:
+        asyncio.run(run())
 
 
 if __name__ == "__main__":

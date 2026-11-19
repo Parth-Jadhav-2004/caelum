@@ -110,6 +110,7 @@ export function Dashboard({ config }: { config: Config }) {
     await action(() => ipc("control", { action: actionName }));
     setBusy(false);
   }
+  const nativeShortcut = status?.backend === "hyprland" || status?.backend === "windows";
   const activity = summary.data?.activity ?? {};
   let streak = 0;
   const day = new Date();
@@ -126,7 +127,7 @@ export function Dashboard({ config }: { config: Config }) {
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 tabIndex={-1} className="text-title font-medium">
-            {status?.backend === "hyprland" ? (
+            {nativeShortcut ? (
               <>
                 {config.app.recording_mode === "toggle" ? "Press" : "Hold"}{" "}
                 <kbd>{config.app.hotkey}</kbd> to dictate
@@ -135,7 +136,7 @@ export function Dashboard({ config }: { config: Config }) {
               "Record, finish, then copy your transcript"
             )}
           </h1>
-          {status?.backend !== "hyprland" && (
+          {!nativeShortcut && (
             <Button
               variant="secondary"
               disabled={
@@ -152,7 +153,7 @@ export function Dashboard({ config }: { config: Config }) {
               {recording ? "Finish recording" : "Record"}
             </Button>
           )}
-          {status?.backend === "hyprland" && recording && (
+          {nativeShortcut && recording && (
             <Button variant="secondary" onClick={() => void run("stop")}>
               Finish recording
             </Button>

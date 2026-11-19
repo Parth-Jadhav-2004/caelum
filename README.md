@@ -10,6 +10,8 @@ Stable **0.4.2** uses your API provider. The **0.5.0 candidate** adds an equally
 
 Packages target **x86-64 Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch**. Download only the matching package and its `SHA256SUMS`. Architecture and distribution support do not certify a desktop session.
 
+The [Windows x64 development port](docs/windows.md) builds the same desktop pages from this checkout using Tauri and WebView2.
+
 Open Caelum, choose your speech mode, test the microphone, and complete practice. On portable desktops use **Record → Finish recording**. With history on, copy the result from History; with history off, paste directly from the clipboard. Paste into an editor to confirm delivery. A denied or unavailable global shortcut does not prevent the on-screen workflow. Hyprland adds native shortcuts, overlay and insertion. [Desktop qualification](docs/acceptance.md) is separate from package smoke tests.
 
 ![Setup in the 0.5.0 candidate: choose a transcription mode](website/media/setup-0.5.0.png)

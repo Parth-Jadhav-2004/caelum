@@ -26,6 +26,7 @@ struct Engine {
 }
 impl Engine {
     async fn spawn(app: tauri::AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
+        #[cfg(not(windows))]
         let executable = std::env::current_exe()?
             .parent()
             .unwrap()
@@ -34,12 +35,31 @@ impl Engine {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .unwrap();
-            let mut cmd = Command::new(root.join(".venv/bin/python"));
+            let mut cmd = Command::new(root.join(if cfg!(windows) {
+                ".venv/Scripts/python.exe"
+            } else {
+                ".venv/bin/python"
+            }));
+            #[cfg(windows)]
+            cmd.args(["-X", "utf8"]);
             cmd.args(["-m", "caelum.sidecar"]);
             cmd
         } else {
-            Command::new(executable)
+            #[cfg(windows)]
+            {
+                let mut cmd = Command::new(app.path().resource_dir()?.join("engine/python.exe"));
+                cmd.args(["-I", "-X", "utf8", "-m", "caelum.sidecar"]);
+                cmd
+            }
+            #[cfg(not(windows))]
+            {
+                Command::new(executable)
+            }
         };
+        #[cfg(windows)]
+        command
+            .creation_flags(0x08000000)
+            .env("CAELUM_DESKTOP_EXE", std::env::current_exe()?);
         graphics::configure_sidecar(&mut command);
         let mut child = command
             .stdin(std::process::Stdio::piped())
@@ -146,13 +166,20 @@ impl Engine {
 }
 
 struct Desktop {
+    #[cfg(windows)]
+    installer_started: AtomicBool,
     engine: Engine,
     quitting: AtomicBool,
     tray_available: AtomicBool,
 }
 #[tauri::command]
 async fn backend(method: String, params: Value, state: tauri::State<'_, Desktop>) -> Reply {
-    state.engine.call(&method, params).await
+    let result = state.engine.call(&method, params).await;
+    #[cfg(windows)]
+    if method == "updates.apply" && matches!(&result, Ok(Value::Bool(true))) {
+        state.installer_started.store(true, Ordering::SeqCst);
+    }
+    result
 }
 #[tauri::command]
 async fn restart_app(
@@ -171,23 +198,35 @@ async fn restart_app(
     }
     state.quitting.store(true, Ordering::SeqCst);
     state.engine.close(shutdown_complete).await;
+    #[cfg(windows)]
+    if state.installer_started.load(Ordering::SeqCst) {
+        app.exit(0);
+        return Ok(());
+    }
     app.restart();
 }
 #[tauri::command]
 fn open_key_console() -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg("https://console.groq.com/keys")
+    open_url("https://console.groq.com/keys")
+}
+fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    let mut opener = {
+        let mut cmd = std::process::Command::new("rundll32.exe");
+        cmd.arg("url.dll,FileProtocolHandler");
+        cmd
+    };
+    #[cfg(not(windows))]
+    let mut opener = std::process::Command::new("xdg-open");
+    opener
+        .arg(url)
         .spawn()
         .map(|_| ())
         .map_err(|_| "Could not open your browser".into())
 }
 #[tauri::command]
 fn open_releases(version: Option<String>) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(release_url(version.as_deref())?)
-        .spawn()
-        .map(|_| ())
-        .map_err(|_| "Could not open your browser".into())
+    open_url(&release_url(version.as_deref())?)
 }
 fn release_url(version: Option<&str>) -> Result<String, String> {
     let root = "https://github.com/Parth-Jadhav-2004/caelum/releases";
@@ -207,11 +246,7 @@ fn release_url(version: Option<&str>) -> Result<String, String> {
 }
 #[tauri::command]
 fn open_model_help() -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg("https://github.com/Parth-Jadhav-2004/caelum#optional-whisper-component")
-        .spawn()
-        .map(|_| ())
-        .map_err(|_| "Could not open your browser".into())
+    open_url("https://github.com/Parth-Jadhav-2004/caelum#optional-whisper-component")
 }
 #[tauri::command]
 async fn quit_app(
@@ -317,11 +352,7 @@ fn update_tray(app: &tauri::AppHandle, data: &Value) {
 }
 #[tauri::command]
 fn open_docs() -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg("https://github.com/Parth-Jadhav-2004/caelum#readme")
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    open_url("https://github.com/Parth-Jadhav-2004/caelum#readme")
 }
 fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -370,6 +401,8 @@ fn main() {
             let handle = app.handle().clone();
             let engine = tauri::async_runtime::block_on(Engine::spawn(handle.clone()))?;
             app.manage(Desktop {
+                #[cfg(windows)]
+                installer_started: AtomicBool::new(false),
                 engine,
                 quitting: AtomicBool::new(false),
                 tray_available: AtomicBool::new(false),
@@ -434,6 +467,11 @@ fn main() {
                     }
                 })
                 .build(app);
+            #[cfg(windows)]
+            app.state::<Desktop>()
+                .tray_available
+                .store(tray.is_ok(), Ordering::SeqCst);
+            #[cfg(not(windows))]
             if tray.is_ok() {
                 // A successfully created icon does not imply a registered tray watcher.
                 let app = handle.clone();

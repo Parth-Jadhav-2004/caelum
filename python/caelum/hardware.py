@@ -31,7 +31,23 @@ def detect(config=None, directory=None):
     except (OSError, ValueError, IndexError):
         pass
     arch = platform.machine()
+    if os.name == "nt":
+        import ctypes
+
+        class Memory(ctypes.Structure):
+            _fields_ = [("size", ctypes.c_uint32), ("load", ctypes.c_uint32),
+                        *((name, ctypes.c_uint64) for name in
+                          ("total", "available", "page", "free_page", "virtual", "free_virtual", "extended"))]
+
+        status = Memory()
+        status.size = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            memory.update(MemTotal=status.total // 1048576, MemAvailable=status.available // 1048576)
+        if arch.lower() == "amd64":
+            arch = "x86_64"
     flags = set()
+    if os.name == "nt" and ctypes.windll.kernel32.IsProcessorFeaturePresent(40):
+        flags.add("avx2")
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
             if line.startswith(("flags", "Features")):

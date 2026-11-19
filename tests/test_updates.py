@@ -587,6 +587,20 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
     assert set(manifest["assets"]) == set(signer.TARGETS)
     assert asset == release.asset
     assert manifest["expires"] == release.now + 90 * 86400
+    windows_info = {"target": "windows-x64"}
+    with pytest.raises(updates.WindowsPackageUnavailable):
+        updates.verify_manifest((assets / "update.json").read_bytes(),
+                                (assets / "update.json.sig").read_bytes(), windows_info)
+    installer = assets / "caelum-0.3.0-windows-x64.exe"
+    installer.write_bytes(b"windows installer fixture")
+    signer.sign(assets, release.private, now=release.now)
+    _, windows_asset = updates.verify_manifest((assets / "update.json").read_bytes(),
+                                               (assets / "update.json.sig").read_bytes(), windows_info)
+    assert windows_asset["name"] == installer.name
+    updates.verify_package(installer, windows_asset)
+    installer.write_bytes(b"modified")
+    with pytest.raises(ValueError, match="corrupt"):
+        updates.verify_package(installer, windows_asset)
     (root / "python/caelum/update-public.pem").write_bytes(b"wrong key")
     with pytest.raises(ValueError, match="does not match"):
         signer.sign(assets, release.private)

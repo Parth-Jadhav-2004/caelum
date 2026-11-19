@@ -1,11 +1,11 @@
 import asyncio
-import fcntl
 import json
 import os
 import signal
 import socket
 import sqlite3
 import struct
+import sys
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
@@ -209,16 +209,27 @@ async def serve(config, config_path=None):
             "Add the transcription key in Settings → Open setup / Manage keys "
             "before starting Caelum; run caelum doctor"
         )
-    directory = runtime_dir()
-    lock = (directory / "daemon.lock").open("w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        raise RuntimeError("Caelum is already running") from None
-    path = directory / "control.sock"
-    path.unlink(missing_ok=True)
+    windows = os.name == "nt"
+    path = lock = None
+    if not windows:
+        import fcntl
+
+        directory = runtime_dir()
+        lock = (directory / "daemon.lock").open("w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Caelum is already running") from None
+        path = directory / "control.sock"
+        path.unlink(missing_ok=True)
     native = backend_name(config) == "hyprland"
-    if native:
+    if windows:
+        from . import windows_desktop
+
+        bindings = windows_desktop.Bindings(config.app.hotkey, config.app.recording_mode)
+        hud = windows_desktop.HUD(config.app)
+        locked = bindings.locked
+    elif native:
         bindings, hud = Bindings(config.app.hotkey, config.app.recording_mode), HUD(config.app)
         locked = session_locked
     else:
@@ -229,6 +240,8 @@ async def serve(config, config_path=None):
         bindings, hud = PortableBindings(config.app.hotkey, config.app.recording_mode), PortableHUD(config.app)
     provider = Providers(config)
     core = Orchestrator(config, provider, hud, bindings)
+    if windows:
+        core.media = windows_desktop.RecordingMedia()
     if not native:
         bindings.core = core
     history = History(config_path)
@@ -256,20 +269,14 @@ async def serve(config, config_path=None):
     core.on_completed = completed
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    if not windows:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
     tasks = []
     server = None
 
-    async def handle(reader, writer):
+    async def dispatch(message):
         try:
-            peer = writer.get_extra_info("socket").getsockopt(
-                socket.SOL_SOCKET, socket.SO_PEERCRED, 12
-            )
-            if struct.unpack("3i", peer)[1] != os.getuid():
-                return
-            line = await asyncio.wait_for(reader.readline(), 1)
-            message = json.loads(line)
             if stop.is_set():
                 raise RuntimeError("Caelum is shutting down")
             if message.get("action") not in {
@@ -323,12 +330,12 @@ async def serve(config, config_path=None):
                     result["storage_error"] = storage_error
                     result["hotkey"] = core.config.app.hotkey
                     result["recording_mode"] = core.config.app.recording_mode
-                    result["backend"] = "hyprland" if native else "portable"
+                    result["backend"] = backend_name(core.config)
                     result["shortcut_mode"] = "native" if native else bindings.mode
                     result["shortcut_description"] = (
                         core.config.app.hotkey if native else bindings.description
                     )
-            writer.write(json.dumps(result or {"ok": True}).encode() + b"\n")
+            return result or {"ok": True}
         except Exception as error:
             if core.capture is None and core.pcm is None:
                 with suppress(RuntimeError, OSError, TimeoutError):
@@ -339,7 +346,18 @@ async def serve(config, config_path=None):
             payload = {"error": safe}
             if isinstance(error, SettingsBusy):
                 payload["error_code"] = "settings_busy"
-            writer.write(json.dumps(payload).encode() + b"\n")
+            return payload
+
+    async def handle(reader, writer):
+        try:
+            peer = writer.get_extra_info("socket").getsockopt(
+                socket.SOL_SOCKET, socket.SO_PEERCRED, 12
+            )
+            if struct.unpack("3i", peer)[1] != os.getuid():
+                return
+            line = await asyncio.wait_for(reader.readline(), 1)
+            result = await dispatch(json.loads(line))
+            writer.write(json.dumps(result).encode() + b"\n")
         finally:
             with suppress(ConnectionError):
                 await writer.drain()
@@ -350,18 +368,22 @@ async def serve(config, config_path=None):
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
         await bindings.install()
-        server = await asyncio.start_unix_server(handle, path=str(path), limit=CONTROL_FRAME_LIMIT)
-        path.chmod(0o600)
+        if windows:
+            windows_desktop.endpoint = loop, dispatch
+        else:
+            server = await asyncio.start_unix_server(handle, path=str(path), limit=CONTROL_FRAME_LIMIT)
+            path.chmod(0o600)
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
         provider.configure_local()
         tasks = [
-            asyncio.create_task(safety_monitor(core)),
             asyncio.create_task(lock_monitor(core, locked)),
             asyncio.create_task(
                 compositor_monitor(core, bindings) if native else bindings.monitor()
             ),
         ]
+        if not windows:
+            tasks.append(asyncio.create_task(safety_monitor(core)))
 
         if owner := os.environ.get("CAELUM_OWNER_PID"):
             tasks.append(asyncio.create_task(owner_monitor(int(owner))))
@@ -371,19 +393,21 @@ async def serve(config, config_path=None):
         def failed(task):
             if not task.cancelled():
                 if task.exception():
-                    print("Caelum safety/helper connection closed; stopping.", flush=True)
+                    print("Caelum safety/helper connection closed; stopping.", file=sys.stderr, flush=True)
                 stop.set()
 
         for task in tasks:
             task.add_done_callback(failed)
-        print(
-            f"Caelum ready · {config.app.recording_mode} {config.app.hotkey} · Escape cancels"
-            if native
-            else f"Caelum ready · {bindings.description} · manual paste",
-            flush=True,
-        )
+        if not windows:
+            print(
+                f"Caelum ready · {config.app.recording_mode} {config.app.hotkey} · Escape cancels"
+                if native else f"Caelum ready · {bindings.description} · manual paste",
+                flush=True,
+            )
         await stop.wait()
     finally:
+        if windows:
+            windows_desktop.endpoint = None
         if server:
             server.close()
             await server.wait_closed()
@@ -397,5 +421,7 @@ async def serve(config, config_path=None):
         await bindings.remove()
         await hud.close()
         await provider.aclose()
-        path.unlink(missing_ok=True)
-        lock.close()
+        if path:
+            path.unlink(missing_ok=True)
+        if lock:
+            lock.close()

@@ -58,6 +58,14 @@ def sign(directory, private_key, now=None, legacy_private_key=None):
         with path.open("rb") as source:
             checksum = hashlib.file_digest(source, "sha256").hexdigest()
         assets[target] = {"name": name, "sha256": checksum, "size": path.stat().st_size}
+    windows = directory / f"caelum-{version}-windows-x64.exe"
+    if windows.exists():
+        size = windows.stat().st_size
+        if not 0 < size <= verifier.MAX_PACKAGE:
+            raise ValueError("Invalid Windows installer size")
+        with windows.open("rb") as source:
+            assets["windows-x64"] = {"name": windows.name, "size": size,
+                                     "sha256": hashlib.file_digest(source, "sha256").hexdigest()}
     issued = int(time.time()) if now is None else now
     manifest = directory / "update.json"
     manifest.write_text(

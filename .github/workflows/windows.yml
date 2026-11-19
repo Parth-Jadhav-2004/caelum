@@ -1,0 +1,68 @@
+name: Windows desktop
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev, feat/windows-desktop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+        with:
+          version: "0.13.1"
+      - run: npm ci
+      - run: npm run check
+      - run: python scripts/build_windows_runtime.py
+      - run: src-tauri/windows-runtime/python.exe scripts/smoke_windows_engine.py
+        timeout-minutes: 3
+      - run: npx --no-install tauri build --bundles nsis
+      - name: Install and exercise the bundled engine
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe
+          $dest = "$env:RUNNER_TEMP\Caelum Install"
+          $process = Start-Process $installer.FullName -ArgumentList "/S /D=$dest" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS install failed: $($process.ExitCode)" }
+          & "$dest\engine\python.exe" scripts/smoke_windows_engine.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:CAELUM_SMOKE_TEST = "1"
+          $log = "$env:RUNNER_TEMP\caelum-stderr.txt"
+          $gui = Get-ChildItem "$dest\*.exe" | Where-Object { $_.BaseName -in 'caelum-desktop', 'Caelum' } | Select-Object -First 1
+          $app = Start-Process $gui.FullName -RedirectStandardError $log -PassThru
+          try {
+            for ($i = 0; $i -lt 60; $i++) {
+              if (Select-String -Path $log -Pattern 'CAELUM_FRONTEND_READY_V1' -Quiet) { break }
+              if ($app.HasExited) { throw "Installed app exited during startup" }
+              Start-Sleep -Seconds 1
+            }
+            if (-not (Select-String -Path $log -Pattern 'CAELUM_FRONTEND_READY_V1' -Quiet)) {
+              throw "Installed WebView2 frontend did not become ready"
+            }
+          } finally {
+            if (-not $app.HasExited) { $app.Kill() }
+          }
+      - name: Name installer for the shared release manifest
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Rename-Item -NewName "caelum-$version-windows-x64.exe"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Caelum-Windows-x64
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "externalBin": [],
+    "resources": {
+      "windows-runtime/": "engine/"
+    },
+    "windows": { "nsis": { "installMode": "currentUser" } }
+  }
+}
