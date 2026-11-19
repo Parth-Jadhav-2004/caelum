@@ -45,8 +45,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if git diff --quiet "$BASE_SHA" HEAD -- . ':!website/**' ':!.github/workflows/website.yml' ':!scripts/update-website-release.py' ':!tests/test_website_release.py'; then
-            exit 0
+          if git diff --quiet "$BASE_SHA" HEAD -- . ':!website/**' ':!.github/workflows/website.yml' ':!scripts/update-website-release.py' ':!tests/test_website_release.py' ':!.gitignore'; then
+            # The standalone refresh also unignores website/ so its new assets can be tracked.
+            if git diff --quiet "$BASE_SHA" HEAD -- .gitignore ||
+               diff -q <(git show "$BASE_SHA:.gitignore" | sed '/^website\/$/d') .gitignore; then
+              exit 0
+            fi
           fi
           state=$(gh api "repos/$GITHUB_REPOSITORY/issues/26" --jq .state)
           if [[ $state != closed ]]; then
