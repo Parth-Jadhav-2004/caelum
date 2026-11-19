@@ -16,11 +16,11 @@ are not designed to load from a `file://` URL.
 ## Releases and downloads
 
 `release.json` is the only source of the version, supported distributions, and
-package filenames. The checked-in manifest describes **0.4.2**: Ubuntu 24.04,
-Ubuntu 26.04, Debian 12, Arch Linux, and Fedora 43, all x86-64. Debian 13 and ARM
-are not offered. The page derives download URLs, install commands, labels, and
-the checksum link from this manifest. JavaScript or manifest failure leaves a
-safe link to the stable release page and hides package installation commands.
+package filenames. Pages regenerates it from Latest. Each published package carries its SHA256SUMS
+digest. The Windows installer and AppImage links appear when their release assets
+are available. The page highlights the visitor’s OS when detected and keeps the
+package selector available for other platforms. If the manifest cannot load,
+visitors can still open the stable release page.
 
 Refresh from GitHub's latest stable release:
 

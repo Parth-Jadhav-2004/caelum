@@ -6,16 +6,16 @@
     <meta name="theme-color" content="#121214" />
     <meta
       name="description"
-      content="Dictate on Linux. Record, finish, then copy the transcript into your app. Free and open source."
+      content="Open-source dictation for Linux and Windows. Record on GNOME, KDE, Hyprland or Windows, then paste your words into your app."
     />
-    <title>Caelum — Dictate on your Linux desktop.</title>
+    <title>Caelum — Dictate on Linux and Windows.</title>
     <link rel="canonical" href="https://parth-jadhav-2004.github.io/caelum/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Caelum" />
-    <meta property="og:title" content="Caelum — Dictate on your Linux desktop." />
+    <meta property="og:title" content="Caelum — Dictate on Linux and Windows." />
     <meta
       property="og:description"
-      content="Record on your Linux desktop, then copy the transcript into your app."
+      content="Dictate on Linux and Windows, then paste the transcript into your app. Choose a downloaded model or an online provider in Caelum 0.5."
     />
     <meta
       property="og:url"
@@ -32,10 +32,10 @@
       content="Caelum 0.5.0 candidate setup screen and the words Record, finish, copy and paste."
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Caelum — Dictate on your Linux desktop." />
+    <meta name="twitter:title" content="Caelum — Dictate on Linux and Windows." />
     <meta
       name="twitter:description"
-      content="Dictate on Linux. Record, finish, copy and paste."
+      content="Dictate on Linux and Windows. Record, finish, copy and paste."
     />
     <meta
       name="twitter:image"
@@ -53,8 +53,8 @@
       type="font/woff2"
       crossorigin
     />
-    <link rel="stylesheet" href="./style.css?v=5" />
-    <script src="./app.js?v=5" type="module"></script>
+    <link rel="stylesheet" href="./style.css?v=6" />
+    <script src="./app.js?v=6" type="module"></script>
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -91,19 +91,18 @@
           ><span data-release-label>Caelum · Stable release</span
           ><span aria-hidden="true">↗</span></a
         >
-        <h1>Dictate on your Linux desktop.</h1>
+        <h1>Dictate on Linux and Windows.</h1>
         <p class="hero-description">
-          Record your voice. Finish recording. Copy your words into any app.
+          Record on GNOME, KDE, Hyprland, other Linux desktops, or Windows. Copy your words into the app where you need them.
         </p>
         <div class="hero-actions">
           <a class="button primary" href="#download"
             ><span aria-hidden="true">↓</span> Downloads</a
           ><a class="button secondary" href="#demo">Try the walkthrough</a>
         </div>
-        <p>Invited to test? <a href="https://github.com/Parth-Jadhav-2004/caelum/blob/beta-guide/README.md">Install the exact Linux beta and try your first dictation</a>.</p>
         <figure class="release-shot">
           <img src="./media/setup-0.5.0.png" width="1100" height="780" alt="Caelum setup with the Transcribe with selector on the Welcome and models step" />
-          <figcaption>0.5.0 candidate · Ubuntu 24.04 package in an automated X11 session. Desktop qualification is ongoing.</figcaption>
+          <figcaption>Caelum 0.5.0 setup on Ubuntu 24.04 in an automated X11 session.</figcaption>
         </figure>
         <section class="walkthrough" id="demo" aria-labelledby="demo-title">
           <h2 id="demo-title">From Record to first paste</h2>
@@ -118,7 +117,7 @@
         <div class="section-heading">
           <h2>From speech to text.<br />Ready to copy.</h2>
           <p>
-            A simple recording workflow for your Linux desktop. Speak, finish
+            Use the recording controls on Linux and Windows. Speak, finish
             recording, and use your text wherever you need it.
           </p>
         </div>
@@ -149,7 +148,7 @@
         <div class="portable-note">
           <strong>A workflow for your desktop</strong>
           <p>
-            Use Record → Finish recording → Copy text. Portal shortcuts are
+            Use Record → Finish recording → Copy text. On Linux, portal shortcuts are
             available when your desktop allows them. Wayland is the main path;
             X11 uses portable mode.
           </p>
@@ -323,7 +322,7 @@
           <div class="setup-note">
             <h3>Set up once. Then just speak.</h3>
             <p>
-              Speech → Microphone → Shortcut → Practice. The microphone test stays on your computer. Online practice uploads only after consent. In the 0.5.0 candidate, local practice uses the downloaded model without a key or upload.
+              Speech → Microphone → Shortcut → Practice. The microphone test stays on your computer. Online practice uploads only after consent. In version 0.5.0, local practice uses the downloaded model without a key or upload.
             </p>
           </div>
         </div>
@@ -335,7 +334,7 @@
             Online transcription uses your provider account. The default is Groq
             <code>whisper-large-v3-turbo</code>, with optional Groq
             <code>openai/gpt-oss-20b</code> cleanup. You can also configure a
-            custom provider. In the beta, On this computer uses a model you download once and works offline without a provider key.
+            custom provider. In 0.5.0, On this computer uses a model you download once and works offline without a provider key.
           </p>
           <a
             class="text-link"
@@ -381,19 +380,23 @@
               Free and open source. No Caelum subscription.<br />Online mode uses your own provider account; provider charges may apply.
             </p>
             <p class="download-note">
-              Choose the x86-64 package for your distribution.
+              Choose the x86-64 package for your Linux distribution or the Windows x64 installer when available.
             </p>
             <p class="acceptance-note">
-              Desktop and Wayland acceptance testing is ongoing.
+              For changes and platform details,
               <a
                 href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/CHANGELOG.md"
-                >See known limitations.</a
+                >read the changelog.</a
               >
             </p>
           </div>
           <div class="download-box">
-            <p><a class="button primary" data-platform-download="appimage" hidden>Linux AppImage ↓</a>
-              <a class="button primary" data-platform-download="windows" hidden>Windows .exe ↓</a></p>
+            <div class="platform-downloads">
+              <a class="button secondary" data-platform-download="linux" href="#distro" hidden>Linux packages</a>
+              <a class="button secondary" data-platform-download="windows" hidden>Windows installer ↓</a>
+            </div>
+            <p id="windows-availability" hidden></p>
+            <p id="windows-checksum" hidden></p>
             <label for="distro">All downloads</label
             ><select id="distro" disabled>
               <option value="">Choose from published packages</option>
@@ -447,15 +450,13 @@
         <div><h2>A few useful details.</h2></div>
         <div class="faq-list">
           <details id="compatibility">
-            <summary>Which Linux desktops does Caelum support?</summary>
+            <summary>Which desktops does Caelum support?</summary>
             <p>
-              Caelum is a Linux app for GNOME, KDE, Hyprland, and other
-              desktops. On GNOME, KDE, and other desktops, use Record / Finish
+              Caelum supports Windows and Linux, including GNOME, KDE, Hyprland, and other desktops. On GNOME, KDE, and other desktops, use Record / Finish
               recording / Copy text. Portal shortcuts depend on desktop support.
               Hyprland also supports native hold-to-talk, the recording pill,
               and paste into the original app, with clipboard fallback if focus
-              changes. Wayland is the main path; X11 uses portable mode. Desktop
-              acceptance testing is ongoing. For source builds or NVIDIA Wayland
+              changes. X11 uses portable mode. For source builds or NVIDIA Wayland
               troubleshooting, see the
               <a
                 href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/docs/linux.md"
@@ -464,9 +465,15 @@
             </p>
           </details>
           <details>
+            <summary>How do I install Caelum on Windows?</summary>
+            <p>Use an x64 Windows PC with the WebView2 Runtime and a microphone. Local transcription also needs disk space and enough memory for the model you choose.</p>
+            <p>When the installer is available above, download it and compare its SHA256SUMS entry with the output of <code>Get-FileHash</code> in PowerShell. Run the installer for your user account. SmartScreen may show an unknown-publisher warning for an unsigned installer.</p>
+            <p>Use Ctrl + Windows or configure a hold or toggle shortcut. Download a local model for offline dictation, or use an online provider. Caelum stores Windows provider keys in Credential Manager.</p>
+          </details>
+          <details>
             <summary>Does Caelum work offline?</summary>
             <p>
-              Version 0.4.2 requires a network connection for transcription. In the 0.5.0 testing release, choose On this computer and download a compatible model once. You can then dictate offline without a provider key. The stable download selector shows the published version.
+              Version 0.4.2 requires a network connection for transcription. In version 0.5.0 on Linux or Windows, choose On this computer and download a compatible model once. You can then dictate offline without a provider key. The stable download selector shows the published version.
             </p>
           </details>
           <details>
@@ -503,7 +510,7 @@
               On GNOME, KDE, and other desktops, copy the completed text and
               paste it where you want it. Hyprland integration can paste into
               your original application; changing focus falls back to the
-              clipboard. App behavior can vary.
+              clipboard. On Windows, the shortcut can paste into a focused Edit or RichEdit control if focus stays there. In other apps, or after changing focus, press Ctrl+V where you want the text.
             </p>
           </details>
         </div>
@@ -512,7 +519,7 @@
     <footer class="wrap">
       <a class="brand" href="#main" aria-label="Caelum home"
         ><img src="./mark.svg" width="26" height="26" alt="" />caelum</a
-      ><span>Free and open source, for Linux.</span>
+      ><span>Open-source dictation for Linux and Windows.</span>
       <div>
         <a href="https://github.com/Parth-Jadhav-2004/caelum">Source</a
         ><a href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/LICENSE"

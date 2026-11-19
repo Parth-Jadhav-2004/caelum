@@ -42,6 +42,7 @@ def reader(missing=None, checksummed=True):
 def test_published_only():
     data = website.build_manifest(release(), reader())
     assert [item["id"] for item in data["packages"]] == ["ubuntu-2404"]
+    assert data["packages"][0]["sha256"] == "0" * 64
     assert data["version"] == "0.4.2"
 
 

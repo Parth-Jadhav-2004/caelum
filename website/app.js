@@ -1,4 +1,4 @@
-import { validateRelease } from "./release.js";
+import { validateRelease } from "./release.js?v=6";
 
 const menuButton = document.querySelector(".menu-toggle");
 const navigation = document.querySelector("#navigation");
@@ -111,15 +111,14 @@ function applyDistro(value) {
       release?.releaseUrl ||
       "https://github.com/Parth-Jadhav-2004/caelum/releases/latest";
     releaseLink.textContent = "View stable releases ↗";
-    distroInfo.textContent =
-      "No verified package for this distribution. See the release for available packages.";
+    distroInfo.textContent = "Choose a package to see its download and installation details.";
     installInstructions.hidden = true;
     installCommand.textContent = "";
     return;
   }
   distroInfo.textContent = `${distribution.name} · x86-64 · ${(distribution.size / 1_000_000).toFixed(1)} MB`;
   releaseLink.href = distribution.url;
-  releaseLink.textContent = `Download for ${distribution.name} ↓`;
+  releaseLink.textContent = `Download ${release.version} for ${distribution.name} ↓`;
   installCommand.textContent = distribution.command;
   installInstructions.hidden = !distribution.command;
 }
@@ -133,18 +132,46 @@ async function loadRelease() {
     });
     document.querySelector("#checksum-link").href = release.checksumsUrl;
     distroSelect.replaceChildren(
+      new Option("Choose a published package", ""),
       ...release.packages.map((item) => new Option(item.name, item.id)),
     );
     distroSelect.disabled = false;
+    const windows = release.packages.find((p) => p.id === "windows");
+    const linux = release.packages.find((p) => p.id === "appimage");
+    const os = navigator.userAgentData?.platform || navigator.userAgent;
+    const isWindows = /Windows|Win32/i.test(os);
+    const isLinux = /Linux/i.test(os) && !/Android|CrOS/i.test(navigator.userAgent);
     const requested = new URLSearchParams(location.search).get("download");
-    if (requested) distroSelect.value = requested;
+    distroSelect.value = requested ?? (isWindows && windows ? windows.id : isLinux && linux ? linux.id : "");
     applyDistro(distroSelect.value);
-    for (const link of document.querySelectorAll("[data-platform-download]")) {
-      const platform = release.packages.find((p) => p.id === link.dataset.platformDownload);
-      if (platform) {
-        link.href = platform.url;
-        link.hidden = false;
+
+    const linuxLink = document.querySelector('[data-platform-download="linux"]');
+    if (release.packages.some((p) => p.manager !== "exe")) {
+      linuxLink.hidden = false;
+      if (linux) {
+        linuxLink.href = linux.url;
+        linuxLink.textContent = `Linux AppImage ${release.version} ↓`;
+      } else {
+        linuxLink.textContent = `Linux packages ${release.version}`;
       }
+      if (isLinux) linuxLink.classList.replace("secondary", "primary");
+    }
+
+    if (windows) {
+      const link = document.querySelector('[data-platform-download="windows"]');
+      link.href = windows.url;
+      link.textContent = `Windows installer ${release.version} ↓`;
+      link.hidden = false;
+      if (isWindows) link.classList.replace("secondary", "primary");
+      const checksum = document.querySelector("#windows-checksum");
+      checksum.textContent = `Windows installer SHA256: ${windows.sha256}`;
+      checksum.hidden = false;
+    } else {
+      const status = document.querySelector("#windows-availability");
+      status.textContent = release.version === "0.5.0"
+        ? "Windows: coming in 0.5.1"
+        : `Windows installer unavailable in stable ${release.version}.`;
+      status.hidden = false;
     }
   } catch {
     distroSelect.disabled = true;

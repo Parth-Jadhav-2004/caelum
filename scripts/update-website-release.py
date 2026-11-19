@@ -57,11 +57,14 @@ def build_manifest(release, read=request):
     # Check the same published checksum file visitors will use.
     with read(asset_url("SHA256SUMS")) as response:
         sums = response.read().decode("utf-8")
-    checksummed = set()
+    checksummed = {}
     for line in sums.splitlines():
-        match = re.fullmatch(r"[a-fA-F0-9]{64}\s+\*?(.+)", line)
+        match = re.fullmatch(r"([a-fA-F0-9]{64})\s+\*?(.+)", line)
         if match:
-            checksummed.add(match[1].removeprefix("./"))
+            name = match[2].removeprefix("./")
+            if name in checksummed:
+                raise ValueError(f"Duplicate entry in SHA256SUMS: {name}")
+            checksummed[name] = match[1].lower()
     for name in ("update.json", "update.json.sig"):
         with read(asset_url(name), method="HEAD") as response:
             if response.status != 200:
@@ -92,7 +95,14 @@ def build_manifest(release, read=request):
         if not isinstance(size, int) or size <= 0:
             raise ValueError(f"Invalid package size: {name}")
         packages.append(
-            {"id": target, "name": label, "manager": manager, "file": name, "size": size}
+            {
+                "id": target,
+                "name": label,
+                "manager": manager,
+                "file": name,
+                "size": size,
+                "sha256": checksummed[name],
+            }
         )
     if not packages:
         raise ValueError("No reachable, checksummed Linux packages; refusing to publish")

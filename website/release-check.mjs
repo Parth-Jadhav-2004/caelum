@@ -47,6 +47,7 @@ test("missing, prerelease, mismatched, unsafe and ambiguous data fail closed", (
     { file: "../../package.deb" },
     { manager: "sh" },
     { size: 0 },
+    { sha256: "invalid" },
     { name: "" },
   ]) {
     assert.throws(() =>
@@ -68,7 +69,7 @@ test("published desktop assets use versioned filenames and platform install inst
     version: "0.5.0",
     releaseUrl: base + "/tag/v0.5.0",
     checksumsUrl: base + "/download/v0.5.0/SHA256SUMS",
-    packages: desktop.map((item) => ({ ...item, name: item.id, size: 123 })),
+    packages: desktop.map((item) => ({ ...item, name: item.id, size: 123, sha256: "a".repeat(64) })),
   });
   assert.equal(packages[0].command, `chmod +x ./${desktop[0].file} && ./${desktop[0].file}`);
   assert.equal(packages[1].command, null);

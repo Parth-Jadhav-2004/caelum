@@ -1139,3 +1139,18 @@ a:hover {
 .walkthrough details { border-bottom: 1px solid var(--line); padding: .85rem 0; }
 .walkthrough summary { cursor: pointer; }
 [data-platform-download][hidden] { display: none; }
+
+.platform-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.platform-downloads .button {
+  width: auto;
+  flex: 1 1 10rem;
+}
+#windows-checksum {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}

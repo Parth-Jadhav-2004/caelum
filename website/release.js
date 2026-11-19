@@ -24,6 +24,7 @@ export function validateRelease(data) {
       ids.has(item.id) ||
       typeof item.name !== "string" ||
       !item.name.trim() ||
+      !/^[0-9a-f]{64}$/.test(item.sha256) ||
       !Number.isSafeInteger(item.size) ||
       item.size <= 0 ||
       !["apt", "dnf", "pacman", "appimage", "exe"].includes(item.manager) ||
