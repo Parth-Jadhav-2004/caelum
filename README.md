@@ -1,6 +1,6 @@
 # Caelum Linux invite-only beta
 
-**Downloads are pending verification.** The [candidate build](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44458876385) is going through [protected testing promotion](https://github.com/Parth-Jadhav-2004/caelum/pull/27). Return to this page for the pinned package and checksum before installing.
+**Downloads are pending verification.** The [candidate build](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44459420720) is going through [protected testing promotion](https://github.com/Parth-Jadhav-2004/caelum/pull/27). Return to this page for the pinned package and checksum before installing.
 
 The beta targets x86-64 Ubuntu 24.04 and 26.04, Debian 12, Fedora 43 and Arch Linux. Use a disposable profile or back up your existing Caelum settings and history before installation.
 
