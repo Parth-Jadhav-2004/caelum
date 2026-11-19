@@ -64,7 +64,9 @@ def _secret(action, name, value=None):
         try:
             if action == "store":
                 win32cred.CredWrite({"Type": win32cred.CRED_TYPE_GENERIC, "TargetName": target,
-                                     "CredentialBlob": value.encode("utf-16-le"),
+                                     # pywin32's CredWrite takes text and encodes it;
+                                     # CredRead returns the native UTF-16LE bytes.
+                                     "CredentialBlob": value,
                                      "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE}, 0)
             elif action == "lookup":
                 output = win32cred.CredRead(target, win32cred.CRED_TYPE_GENERIC)["CredentialBlob"].decode("utf-16-le")
