@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-async def command(*args, data=None, timeout=3):
+async def command(*args, data=None, timeout=3, capture_output=True):
     process = await asyncio.create_subprocess_exec(
         *map(str, args),
         stdin=asyncio.subprocess.PIPE if data is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
     try:
@@ -27,7 +27,7 @@ async def command(*args, data=None, timeout=3):
         raise
     if process.returncode:
         raise RuntimeError(f"{Path(args[0]).name} failed")
-    return out.decode().strip()
+    return out.decode().strip() if out is not None else ""
 
 
 async def hypr_json(name):
@@ -80,7 +80,7 @@ async def notify(message, actions=False):
 
 
 async def insert(text, target):
-    await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode())
+    await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
     current = await hypr_json("activewindow")
     if (
         not target.address

@@ -263,3 +263,4 @@ async def test_history_off_clipboard_uses_stdin(monkeypatch, wayland):
     assert args[0] == ("wl-copy" if wayland else "xclip")
     assert "Private text" not in str(args)
     assert kwargs["data"] == b"Private text"
+    assert kwargs["capture_output"] is False
