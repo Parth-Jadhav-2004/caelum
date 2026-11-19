@@ -46,9 +46,7 @@ failure prevents publication rather than inventing download links.
 
 ## Product and design
 
-The design follows [`DESIGN.md`](../DESIGN.md): near-black canvas, a 240px desktop
-sidebar, neutral recording capsule, soft rows, and no gradients, glow, or surface
-shadows. The hero shows the installed Ubuntu 24.04 package from [candidate run 44309773651](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), artifact `smoke-ubuntu-24.04/native-smoke.png`, cropped to the 1100×780 window. This is real setup in WebKit/Xvfb, not a GNOME session or a recording. The social card uses that screenshot. The portable walkthrough uses native keyboard-operable disclosures with sample text; the product tour uses illustrative data. Neither records audio or touches the clipboard. Inter Variable is self-hosted under the SIL Open Font License in `fonts/`.
+The silent laptop scene shows the default shortcut, the Caelum pill, and the completed note when it scrolls into view. Reduced motion advances the same states without animated transitions or word-by-word captions. The download buttons and package label come from the shared desktop shadcn components via website/tools/render-controls.tsx.
 
 ## Publication and qualification
 
