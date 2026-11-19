@@ -308,6 +308,8 @@ class HUD:
                     x = 40 + 5 * i
                     win32gui.FillRect(dc, (x, 18-half, x+2, 18+half),
                                       win32gui.GetStockObject(win32con.WHITE_BRUSH))
+            elif state == "error" and self.message.get("error_code") == "clipboard":
+                label = "Retry to copy     ·     Cancel"
             else:
                 label = ERRORS.get(self.message.get("error_code"), LABELS.get(state, state))
             win32gui.DrawText(dc, label, -1, rect,

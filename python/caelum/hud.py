@@ -55,7 +55,6 @@ ERRORS = {
     "microphone": "Microphone unavailable",
     "network": "Connection lost",
     "insert": "Insert failed",
-    "clipboard": "Retry to copy     ·     Cancel",
     "capture": "Capture interrupted",
     "hud": "Feedback unavailable",
     "missing_model": "Model missing",
