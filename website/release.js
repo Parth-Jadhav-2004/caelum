@@ -30,7 +30,7 @@ export function validateRelease(data) {
       typeof item.file !== "string" ||
       !/^[a-zA-Z0-9_.-]+$/.test(item.file) ||
       !item.file.startsWith(
-        `${item.manager === "appimage" ? "Caelum" : "caelum"}${item.manager === "apt" ? "_" : "-"}${data.version}-`,
+        `caelum${item.manager === "apt" ? "_" : "-"}${data.version}-`,
       )
     ) {
       throw new Error("Invalid package entry");
@@ -39,7 +39,7 @@ export function validateRelease(data) {
       apt: "_amd64.deb",
       dnf: ".x86_64.rpm",
       pacman: "-x86_64.pkg.tar.zst",
-      exe: "-windows-x64.exe",
+      exe: "-x64-setup.exe",
       appimage: "-x86_64.AppImage",
     }[item.manager];
     if (!item.file.endsWith(extension))

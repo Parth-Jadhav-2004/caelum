@@ -2,19 +2,16 @@
 
 Release notes, newest first.
 
-## 0.4.4
+## 0.5.0
 
-- Fixed API key storage in Windows Credential Manager during Online setup.
-- New installs default to Ctrl + Win (Ctrl + Super on Linux). Windows uses the Win label in shortcut displays.
-- Linux desktops that require a non-modifier key explain how to choose a different global shortcut or use the recording controls.
+Changes since stable v0.4.2:
 
-## 0.4.3
-
-- Choose **On this computer** during onboarding to find, download and verify a compatible speech model. Local dictation and practice work offline after download, without a provider key. Online mode still supports your own provider and optional text refinement.
-- The redesigned setup walks through speech mode, microphone, shortcut and practice. Manage models and switch engines later in Settings.
-- Windows x64 now uses the same interface as Linux, with a bundled engine, global shortcuts, recording overlay, Credential Manager and focus-aware paste.
-- Downloads include Windows `.exe`, Linux AppImage and native packages for Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch. The x86-64 AppImage bundles Python and the local engine; it requires an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. Models download separately.
-- On supported native packages, use **Settings → System → Check updates** to upgrade from 0.4.2. AppImage users replace the file manually. Settings and history remain in the user profile.
+- Dictate offline with a downloaded speech model. Setup recommends models for your memory and language and verifies downloads. Online mode still supports your own provider.
+- New onboarding guides you through speech mode, microphone, shortcut and a practice dictation. Local practice works without a key or upload after the model download.
+- Fixed clipboard delivery when the Linux selection owner forks. On portable desktops, use Record and Finish recording, then paste in your editor. With history on, use Copy on the saved transcript.
+- Windows x64 adds an installer with the bundled engine, global shortcuts and focus-aware paste. Online setup saves validated API keys in Windows Credential Manager.
+- The Linux x86-64 AppImage bundles Python and the local engine. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. Native Arch, Debian, Ubuntu and Fedora packages remain available. Model weights download separately.
+- New setups default to Ctrl + Win on Windows and Ctrl + Super on Linux. On desktops that require a non-modifier key, select another shortcut or use the on-screen controls.
 
 ## 0.4.2
 

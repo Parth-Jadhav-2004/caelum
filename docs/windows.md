@@ -33,7 +33,7 @@ path with spaces, exercises the installed Python engine and checks WebView2
 frontend startup. A successful run uploads `Caelum-Windows-x64`. This is a
 development artifact; Authenticode signing and public release promotion require
 the release owner's configuration. The stable update signer includes a Windows
-installer when `caelum-<version>-windows-x64.exe` is present in the release
+installer when `caelum-<version>-x64-setup.exe` is present in the release
 directory. Windows rechecks its signed manifest and hash before opening it.
 
 ## Desktop behavior to verify on a Windows machine

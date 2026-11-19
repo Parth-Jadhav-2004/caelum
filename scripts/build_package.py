@@ -290,7 +290,7 @@ exec /usr/bin/python3 -m caelum.cli "$@"
                 "--desktop-file", applications / "io.caelum.Dictation.desktop",
                 "--icon-file", icons / "caelum.svg", "--plugin", "gtk",
                 env={**os.environ, "DEPLOY_GTK_VERSION": "3", "APPIMAGE_EXTRACT_AND_RUN": "1"})
-            destination = output / f"Caelum-{version}-x86_64.AppImage"
+            destination = output / f"caelum-{version}-x86_64.AppImage"
             run("appimagetool", stage, destination,
                 env={**os.environ, "ARCH": "x86_64", "APPIMAGE_EXTRACT_AND_RUN": "1"})
         else:

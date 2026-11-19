@@ -2,45 +2,25 @@
 
 Record your voice, finish, then copy the transcript into the app you’re using.
 
-<p align="center">
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=appimage#download"><img alt="Download Linux AppImage" src="https://img.shields.io/badge/Linux-AppImage-28735b?style=for-the-badge"></a>
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=windows#download"><img alt="Download Windows EXE" src="https://img.shields.io/badge/Windows-EXE-2265aa?style=for-the-badge"></a>
-</p>
-<p align="center">
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=ubuntu-2404#download"><img alt="Download Ubuntu 24.04" src="https://img.shields.io/badge/Ubuntu-24.04-ad4825?style=for-the-badge"></a>
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=ubuntu-2604#download"><img alt="Download Ubuntu 26.04" src="https://img.shields.io/badge/Ubuntu-26.04-ad4825?style=for-the-badge"></a>
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=debian-12#download"><img alt="Download Debian 12" src="https://img.shields.io/badge/Debian-12-a52145?style=for-the-badge"></a>
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=fedora#download"><img alt="Download Fedora 43" src="https://img.shields.io/badge/Fedora-43-315c99?style=for-the-badge"></a>
-  <a href="https://parth-jadhav-2004.github.io/caelum/?download=arch#download"><img alt="Download Arch Linux" src="https://img.shields.io/badge/Arch-Linux-167496?style=for-the-badge"></a>
-</p>
+## Download
 
-[Stable releases and checksums](https://github.com/Parth-Jadhav-2004/caelum/releases/latest) · [Development and testing builds](https://github.com/Parth-Jadhav-2004/caelum/releases) · [Windows guide](docs/windows.md) · [Linux troubleshooting](docs/linux.md)
-
-**0.4.4 development preview**
-
-Windows setup saves validated API keys in Credential Manager. New setups default to **Ctrl + Win** (**Ctrl + Super** on Linux). Windows and Hyprland support the chord globally. On Linux desktops that require a non-modifier key, choose another global shortcut or use **Record / Finish recording**.
-
-In setup, choose **On this computer** in setup to download a model for your memory and language, or **Online** to use your own provider. Test your microphone, choose a shortcut and try your first dictation. Local practice never uploads audio. [Privacy and storage](docs/privacy.md).
-
-Downloads are for x86-64. Run the Windows installer, or make the AppImage executable and open it. The AppImage bundles Python and the local inference engine; it needs an Ubuntu 24.04-compatible system with WebKitGTK 4.1 and PortAudio. For distro-managed dependencies and signed native updates, choose your distribution's package.
-
-Open Caelum, choose your speech mode, test the microphone, and complete practice. On portable desktops use **Record → Finish recording**. With history on, copy the result from History; with history off, paste directly from the clipboard. Paste into an editor to confirm delivery. A denied or unavailable global shortcut does not prevent the on-screen workflow. Hyprland adds native shortcuts, overlay and insertion. [Desktop qualification](docs/acceptance.md) is separate from package smoke tests.
-
-![Setup in the 0.5.0 candidate: choose a transcription mode](website/media/setup-0.5.0.png)
-
-*Actual Ubuntu 24.04 candidate package in [automated X11 smoke](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), not a GNOME/KDE qualification.*
-
-**Native 0.4.4 preview installation** — run just the command for your downloaded package:
+Get the package for your distribution and `SHA256SUMS` from [Latest stable (v0.4.2)](https://github.com/Parth-Jadhav-2004/caelum/releases/latest). In the download folder, verify that your package reports **OK**, then run its install command.
 
 ```sh
-sudo apt install ./caelum_0.4.4-1_ubuntu-24.04_amd64.deb
-sudo apt install ./caelum_0.4.4-1_ubuntu-26.04_amd64.deb
-sudo apt install ./caelum_0.4.4-1_debian-12_amd64.deb
-sudo dnf install ./caelum-0.4.4-1.fedora43.x86_64.rpm
-sudo pacman -U ./caelum-0.4.4-1-x86_64.pkg.tar.zst
+sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-For other builds, use the package filename on the corresponding release page. [Microphone, shortcut, tray, blank window and uninstall help](docs/linux.md#first-run-help).
+| Linux x86-64 | Install the downloaded package |
+| --- | --- |
+| Ubuntu 24.04 | `sudo apt install ./caelum_0.4.2-1_ubuntu-24.04_amd64.deb` |
+| Ubuntu 26.04 | `sudo apt install ./caelum_0.4.2-1_ubuntu-26.04_amd64.deb` |
+| Debian 12 | `sudo apt install ./caelum_0.4.2-1_debian-12_amd64.deb` |
+| Fedora 43 | `sudo dnf install ./caelum-0.4.2-1.fedora43.x86_64.rpm` |
+| Arch Linux | `sudo pacman -U ./caelum-0.4.2-1-x86_64.pkg.tar.zst` |
+
+Stable v0.4.2 uses an online provider. On GNOME, KDE and other Linux desktops, use the recording controls and paste the transcript into your editor. Portal shortcuts depend on your desktop. Hyprland also supports native hold-to-talk and insertion. [Linux setup and troubleshooting](docs/linux.md)
+
+**Testing 0.5.0.** Invited Linux testers can follow the [pinned RC instructions](https://github.com/Parth-Jadhav-2004/caelum/blob/beta-guide/README.md) for local models and guided practice. The next candidate also includes an AppImage and Windows x64 installer. [Changes since v0.4.2](CHANGELOG.md#050) · [Qualification issue #26](https://github.com/Parth-Jadhav-2004/caelum/issues/26)
 
 ## Development
 
@@ -165,11 +145,7 @@ Requests and responses use [shared runtime contracts](docs/ipc.md), bounded
 transport deadlines and explicit error states. Recording/transcription operations
 are never automatically replayed after a transport failure.
 
-Pull requests run fast checks. Dev-branch updates build native packages. Maintainers can publish **Development** prereleases. Maintainers promote a successful candidate
-to **Testing**, then after desktop acceptance and approval to signed **Production**.
-All channels use the same package bytes; production automatic updates only install
-signed stable releases. See [releasing.md](docs/releasing.md) for channel commands, candidate verification,
-resumable publication, immutable tags/assets, signing and recovery procedures.
+Pull requests run checks. Candidate builds stay in GitHub Actions until a maintainer selects one for Testing. Stable promotion verifies the same package bytes and signs the update metadata in the release environment. [Release procedure](docs/releasing.md)
 
 Caelum is [MIT licensed](LICENSE). Packages include third-party license texts,
 metadata, and corresponding MPL-2.0 crate sources under
@@ -280,7 +256,7 @@ for a new Python minor version. NVIDIA acceleration is attempted only when
 CTranslate2 reports support; missing CUDA libraries or a failed CUDA decode
 retry locally on CPU, never Online.
 
-The native builder also has an experimental `appimage` target, requiring
+The experimental `build_package.py appimage` target is separate from the candidate workflow’s Ubuntu-based `scripts/build-appimage.sh`. The experimental target requires
 linuxdeploy, its GTK plugin, and appimagetool. It targets **system Python 3.14**;
 GTK4/GI and desktop helpers are host prerequisites for the optional native HUD.
 It is not yet part of signed automated promotion. Clean-VM qualification and

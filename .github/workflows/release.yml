@@ -1,14 +1,17 @@
-name: Linux candidate
+name: Desktop candidate
 on:
   push:
-    branches: [dev]
+    branches: [main, dev]
     paths-ignore:
       - 'website/**'
+      - '.github/workflows/website.yml'
+      - 'scripts/update-website-release.py'
+      - 'tests/test_website_release.py'
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
-# Build only on dev; publish these exact bytes without rebuilding on testing or main.
+# Promotion selects this artifact and verifies the published RC before signing.
 concurrency:
   group: candidate-${{ github.sha }}
   cancel-in-progress: false
@@ -16,7 +19,7 @@ jobs:
   windows:
     uses: ./.github/workflows/windows.yml
   checks:
-    if: github.ref == 'refs/heads/dev'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     uses: ./.github/workflows/ci.yml
   package:
     name: Package ${{ matrix.target }}

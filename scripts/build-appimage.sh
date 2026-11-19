@@ -39,7 +39,7 @@ fetch https://github.com/AppImage/appimagetool/releases/download/continuous/appi
 fetch https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 runtime 617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46
 chmod +x tool
 version=$(node -p "require('$root/package.json').version")
-image="$root/dist/Caelum-$version-x86_64.AppImage"
+image="$root/dist/caelum-$version-x86_64.AppImage"
 ARCH=x86_64 ./tool --appimage-extract-and-run --runtime-file runtime AppDir "$image"
 "$image" --appimage-extract >/dev/null
 printf '%s\n' '{"v":1,"id":1,"method":"bootstrap"}' | squashfs-root/usr/bin/caelum-engine | python3 -c 'import json,sys; assert any("result" in json.loads(s) for s in sys.stdin)'

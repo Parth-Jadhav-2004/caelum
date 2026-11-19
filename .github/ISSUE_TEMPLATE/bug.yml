@@ -9,9 +9,9 @@ body:
     attributes:
       label: Release channel
       options:
-        - Production (stable)
+        - Stable (Latest)
         - Testing (release candidate)
-        - Development
+        - Development artifact
         - Source checkout / unsure
     validations:
       required: true
@@ -25,7 +25,7 @@ body:
     id: build
     attributes:
       label: GitHub release tag or source commit
-      description: For development/testing, paste the full release tag (including dev/rc suffix) or source SHA from the release page. Package version alone cannot distinguish preview builds.
+      description: Include the testing tag or the Actions run, attempt and source SHA for a development artifact. Package version alone cannot distinguish preview builds.
     validations:
       required: true
   - type: input

@@ -591,7 +591,7 @@ def test_release_signing_round_trip(release, tmp_path, monkeypatch):
     with pytest.raises(updates.WindowsPackageUnavailable):
         updates.verify_manifest((assets / "update.json").read_bytes(),
                                 (assets / "update.json.sig").read_bytes(), windows_info)
-    installer = assets / "caelum-0.3.0-windows-x64.exe"
+    installer = assets / "caelum-0.3.0-x64-setup.exe"
     installer.write_bytes(b"windows installer fixture")
     signer.sign(assets, release.private, now=release.now)
     _, windows_asset = updates.verify_manifest((assets / "update.json").read_bytes(),

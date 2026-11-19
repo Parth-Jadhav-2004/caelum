@@ -9,7 +9,11 @@ on:
         options: [testing, production]
         default: testing
       candidate_run_id:
-        description: Successful Linux candidate workflow run ID (from dev)
+        description: Successful candidate run ID from dev or main
+        required: true
+        type: string
+      rc_number:
+        description: RC number to publish or verify (1 for rc.1, 2 for rc.2)
         required: true
         type: string
       desktop_qualified:
@@ -20,6 +24,7 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: read
 concurrency:
   group: publication-${{ inputs.channel }}
   cancel-in-progress: false
@@ -71,7 +76,8 @@ jobs:
           CANDIDATE_SHA: ${{ needs.resolve.outputs.sha }}
           CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
           CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
-        run: python3 scripts/publish_prerelease.py testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT"
+          RC_NUMBER: ${{ inputs.rc_number }}
+        run: python3 scripts/publish_prerelease.py testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$RC_NUMBER"
   publish:
     name: Publish signed production release
     if: inputs.channel == 'production'
@@ -99,7 +105,8 @@ jobs:
           CANDIDATE_SHA: ${{ needs.resolve.outputs.sha }}
           CANDIDATE_RUN: ${{ needs.resolve.outputs.run_id }}
           CANDIDATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
-        run: python3 scripts/publish_prerelease.py verify-testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT"
+          RC_NUMBER: ${{ inputs.rc_number }}
+        run: python3 scripts/publish_prerelease.py verify-testing release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$RC_NUMBER"
       - name: Verify candidate, sign metadata, and resume or publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}

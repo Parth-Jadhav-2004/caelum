@@ -16,8 +16,8 @@ from pathlib import Path
 REPOSITORY = "Parth-Jadhav-2004/caelum"
 GITHUB = f"https://github.com/{REPOSITORY}"
 TARGETS = (
-    ("appimage", "Linux AppImage", "appimage", r"Caelum-{version}-x86_64\.AppImage"),
-    ("windows", "Windows x64", "exe", r"caelum-{version}-windows-x64\.exe"),
+    ("appimage", "Linux AppImage", "appimage", r"caelum-{version}-x86_64\.AppImage"),
+    ("windows", "Windows x64", "exe", r"caelum-{version}-x64-setup\.exe"),
     ("ubuntu-2404", "Ubuntu 24.04", "apt", r"caelum_{version}-\d+_ubuntu-24\.04_amd64\.deb"),
     ("ubuntu-2604", "Ubuntu 26.04", "apt", r"caelum_{version}-\d+_ubuntu-26\.04_amd64\.deb"),
     ("debian-12", "Debian 12", "apt", r"caelum_{version}-\d+_debian-12_amd64\.deb"),
