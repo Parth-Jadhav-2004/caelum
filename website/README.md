@@ -46,7 +46,7 @@ failure prevents publication rather than inventing download links.
 
 ## Product and design
 
-The demo is an HTML notebook with a looping shortcut, listening, and insertion sequence. The clock pauses offscreen or in a background tab and resumes at the same point. Visitors can pause it; reduced-motion visitors start with the completed note.
+The notebook illustrates native hold-to-talk on Hyprland. Holding the configured shortcut starts recording and shows the Listening pill. Releasing it stops capture and shows Processing. The full sentence then appears at once in the notebook, which kept focus throughout. The clock pauses offscreen or in a background tab and resumes at the same point. Visitors can pause it with the keyboard. With reduced motion or JavaScript disabled, the notebook starts with the completed sentence.
 
 “At your desk” uses native radio controls and a paper crossfade to switch examples. The FAQ starts with grouped native disclosures and enhances them with keyboard-operable buttons and panels that expand and contract together. Download buttons and the package label come from the shared desktop shadcn components via `website/tools/render-controls.tsx`.
 
