@@ -1,47 +1,63 @@
 {
-  "version": "0.4.2",
-  "releaseUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.4.2",
-  "checksumsUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/download/v0.4.2/SHA256SUMS",
+  "version": "0.5.0",
+  "releaseUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0",
+  "checksumsUrl": "https://github.com/Parth-Jadhav-2004/caelum/releases/download/v0.5.0/SHA256SUMS",
   "packages": [
+    {
+      "id": "appimage",
+      "name": "Linux AppImage",
+      "manager": "appimage",
+      "file": "caelum-0.5.0-x86_64.AppImage",
+      "size": 66066936,
+      "sha256": "fb5a7fa56ee1617d8ee2401fc48c040a777867f10afb9a7b3a527fb2a0aa788b"
+    },
+    {
+      "id": "windows",
+      "name": "Windows x64",
+      "manager": "exe",
+      "file": "caelum-0.5.0-x64-setup.exe",
+      "size": 94825974,
+      "sha256": "022482cf59f2e889c5d99bd0cbc171483495395f02cc150bc7b7da6d3ce50ce8"
+    },
     {
       "id": "ubuntu-2404",
       "name": "Ubuntu 24.04",
       "manager": "apt",
-      "file": "caelum_0.4.2-1_ubuntu-24.04_amd64.deb",
-      "size": 22350176,
-      "sha256": "6158f1fa070584fb22d3ac75ac42a8a081d9bf58033c5cbfb42cad502bca4d99"
+      "file": "caelum_0.5.0-1_ubuntu-24.04_amd64.deb",
+      "size": 37653520,
+      "sha256": "fa9b97595d70eb38b50d3b10f376115906ef83bfc66898addd4dd3f75366816c"
     },
     {
       "id": "ubuntu-2604",
       "name": "Ubuntu 26.04",
       "manager": "apt",
-      "file": "caelum_0.4.2-1_ubuntu-26.04_amd64.deb",
-      "size": 22346448,
-      "sha256": "a2de6148ba36b34a0d5416db61a487e8edeb3212be945ed6b6b034092dca0c00"
+      "file": "caelum_0.5.0-1_ubuntu-26.04_amd64.deb",
+      "size": 37641482,
+      "sha256": "4228e38f41623cb6d94509177485279e5492227db6d73c542159681c7246696a"
     },
     {
       "id": "debian-12",
       "name": "Debian 12",
       "manager": "apt",
-      "file": "caelum_0.4.2-1_debian-12_amd64.deb",
-      "size": 22495242,
-      "sha256": "2a6a92580c51b7ffc383b9537a88080005cedd09065af6ac45e16b489b35d22e"
+      "file": "caelum_0.5.0-1_debian-12_amd64.deb",
+      "size": 37790272,
+      "sha256": "b16781a1777638cf664d7b5ca0212e239cefe2f610b7bd7d4594df1b791dfd31"
     },
     {
       "id": "arch",
       "name": "Arch Linux",
       "manager": "pacman",
-      "file": "caelum-0.4.2-1-x86_64.pkg.tar.zst",
-      "size": 15997672,
-      "sha256": "e9484033678754132c5f0dea59b6d8cd980416b2a27d191deb16de20db350443"
+      "file": "caelum-0.5.0-1-x86_64.pkg.tar.zst",
+      "size": 27874618,
+      "sha256": "c76038812b65515283dd31f9c772a239b0b1a51a7ff4b00076060803c20df796"
     },
     {
       "id": "fedora",
       "name": "Fedora 43",
       "manager": "dnf",
-      "file": "caelum-0.4.2-1.fedora43.x86_64.rpm",
-      "size": 16319086,
-      "sha256": "6b5e1c19d80f7c0a543a9dca64d51a6151e0ce498594be9477fa9eba29815204"
+      "file": "caelum-0.5.0-1.fedora43.x86_64.rpm",
+      "size": 28202974,
+      "sha256": "fb10879f005798cb6ecb2d3ea926e277a5461e3238e66816728a6912b3a9e451"
     }
   ]
 }

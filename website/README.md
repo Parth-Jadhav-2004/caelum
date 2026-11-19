@@ -52,4 +52,4 @@ shadows. The hero shows the installed Ubuntu 24.04 package from [candidate run 4
 
 ## Publication and qualification
 
-The selector and no-JavaScript link lead to published stable packages. Keep testing releases separately labeled. Product copy distinguishes 0.4.2’s online-only transcription from the 0.5.0 candidate’s local and online modes. Never infer stable availability from a branch or draft. A website-only PR can land on main during the application hold. Include `website/`, the manifest generator, its Python tests and the Pages workflow. Verify the deployment and every download after promotion. Site checks are not desktop qualification.
+The selector and no-JavaScript link lead to the published stable release. Pages regenerates its inventory from Latest after publication. Check the deployed version, download buttons and checksums before updating the checked-in manifest.

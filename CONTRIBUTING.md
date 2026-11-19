@@ -1,6 +1,6 @@
 # Contributing to Caelum
 
-Open short-lived branches against `main`. While [#26](https://github.com/Parth-Jadhav-2004/caelum/issues/26) holds main, send application changes to `dev` and keep website-only changes independent. After acceptance, main can fast-forward to the tested commit and development can return to trunk.
+Use short-lived feature branches off `dev` and open pull requests back into `dev` for integration. `main` holds the stable release. Promote a tested integration commit through a release pull request after the required checks pass. Bring any independent website or maintenance changes on `main` back into `dev` before building the next candidate.
 
 Stable is GitHub Latest (`vX.Y.Z`). Testing releases use `vX.Y.Z-rc.N`. Ordinary builds stay in Actions. Include user-visible changes in the next version’s CHANGELOG section.
 

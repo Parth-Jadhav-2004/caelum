@@ -2,19 +2,19 @@
 
 ## Branches and release channels
 
-Use short-lived branches off `main`. While [issue #26](https://github.com/Parth-Jadhav-2004/caelum/issues/26) holds application changes to main, target `dev` for integration. Site-only changes can go to main. Bring any such changes into dev **before building the RC** so main can later fast-forward to the accepted tree.
+Develop on short-lived branches and integrate through pull requests to `dev`. Keep `main` stable. Before building an RC, bring any changes from `main` into `dev` so the release can fast-forward to the tested commit.
 
 | Channel | GitHub release | Installation |
 | --- | --- | --- |
 | Testing | Prerelease such as `v0.5.0-rc.1`, then `v0.5.0-rc.2` | Explicit manual download |
-| Stable | Latest, such as `v0.4.2` | Native package or signed stable updater |
+| Stable | Latest, such as `v0.5.0` | Native package or signed stable updater |
 
-Both channels use the same candidate package bytes. Development builds are Actions artifacts. The `testing` and `release` GitHub Environments control publication permissions. Allow the testing environment to deploy from dev and main during the transition, then main alone. Restrict release to main and keep the Ed25519 signing secrets and approval there.
+Both channels use the same candidate package bytes. Development builds are Actions artifacts. The `testing` and `release` GitHub Environments control publication permissions. The `testing` environment accepts deployments from `dev` and `main`. The `release` environment accepts only `main` and holds the signing secrets and production approval.
 
 ## Build once
 
 1. Set the package version in npm, Python, Rust, Tauri, their lockfiles and the Arch recipe. Add a `## X.Y.Z` section to CHANGELOG.md describing changes since the previous stable. Both release bodies use this section.
-2. A push to dev or main builds a candidate. For a site-only commit, dispatch `gh workflow run release.yml --ref dev` (or `--ref main` on trunk) if packages are needed. Inspect the seven downloads and smoke evidence. Record the successful run ID, attempt and full source SHA. The candidate is eligible for seven days. Actions retains its artifacts for fourteen.
+2. A push to dev or main builds a candidate. For a site-only commit, dispatch `gh workflow run release.yml --ref dev` (or `--ref main` for a candidate on stable) if packages are needed. Inspect the seven downloads and smoke evidence. Record the successful run ID, attempt and full source SHA. The candidate is eligible for seven days. Actions retains its artifacts for fourteen.
 3. Choose the next unused RC number for this version, starting at 1. The existing `v0.5.0-rc.44462311027` remains the invite-only RC of record in #26. Run IDs from the previous convention do not reserve the new sequence.
 
 ## Publish a selected RC
@@ -25,13 +25,13 @@ Dispatch from the branch whose current tree matches the candidate. For example, 
 gh workflow run publish.yml --ref dev -f channel=testing -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=false
 ```
 
-Use `--ref main` on trunk. The publisher checks the run, attempt, tree, hashes and locks, then attaches the packages, `SHA256SUMS` and `provenance.zip`. The archive contains `candidate.json` and the five `build-info-*.json` records. Testers can check their download with `sha256sum --check --ignore-missing SHA256SUMS`. Back up settings and history or use a disposable profile. Include the tag, run, attempt, SHA, filename and hash with a bug report.
+Use `--ref main` for a candidate on `main`. The publisher checks the run, attempt, tree, hashes and locks, then attaches the packages, `SHA256SUMS` and `provenance.zip`. The archive contains `candidate.json` and the five `build-info-*.json` records. Testers can check their download with `sha256sum --check --ignore-missing SHA256SUMS`. Back up settings and history or use a disposable profile. Include the tag, run, attempt, SHA, filename and hash with a bug report.
 
 ## Promote the accepted bytes to Stable
 
-Complete [desktop acceptance](acceptance.md) on the selected RC and have the evidence reviewed in #26. This includes GNOME Wayland, Plasma Wayland, X11, physical microphones, provider and offline practice, first paste, lifecycle and a disposable signed upgrade/restart and recovery. Follow the issue for the full checklist. If any bytes change, publish and qualify a new RC. Close the hold only after the evidence is accepted.
+Complete [desktop acceptance](acceptance.md) on the selected RC and record the results with its commit, run and attempt. The [0.5.0 qualification issue](https://github.com/Parth-Jadhav-2004/caelum/issues/26) records the Linux desktop and signed-upgrade checklist. A change to the candidate bytes requires a new RC.
 
-Once released from the hold, fast-forward main to the accepted dev commit. In trunk-only operation, select a tested main candidate. Dispatch from main at the matching tree using the **same run and RC**:
+Open a pull request to `main` from a short-lived `release/vX.Y.Z` branch pointing to the exact tested `dev` commit. GitHub can then delete the merged PR branch automatically while `dev` stays available for integration. After required checks pass, fast-forward `main` to the reviewed SHA. Verify the remote commit matches the candidate, then dispatch from `main` with the same run and RC number.
 
 ```sh
 gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=true
