@@ -16,7 +16,7 @@ Dictate with a downloaded speech model or an online provider, then paste the tra
 | Fedora 43 | `sudo dnf install ./caelum-0.5.0-1.fedora43.x86_64.rpm` |
 | Arch Linux | `sudo pacman -U ./caelum-0.5.0-1-x86_64.pkg.tar.zst` |
 
-For the AppImage, run `chmod +x ./caelum-0.5.0-x86_64.AppImage` and launch it from the download folder. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio.
+For the AppImage, run `chmod +x ./caelum-0.5.0-x86_64.AppImage` and launch it from the download folder. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. For the native Hyprland overlay, install GTK 4, gtk4-layer-shell and their introspection typelibs. The AppImage includes the matching Python GI and Cairo bindings.
 
 On GNOME, KDE and other Linux desktops, use Record and Finish recording, then copy and paste into your editor. Portal shortcut support depends on the desktop. Hyprland also supports native hold-to-talk and insertion. On Windows, a configurable shortcut can paste into a supported Edit or RichEdit field that retains focus. Use Ctrl+V in other applications. [Linux setup](docs/linux.md) · [Changes since 0.4.2](CHANGELOG.md#050)
 
