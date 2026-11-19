@@ -177,7 +177,8 @@ class Providers:
             if revision != self.local_activity or self.local_engine is not engine:
                 return
             await engine.unload()
-            if revision == self.local_activity and self.local_engine is engine:
+            # Activity can cancel the timer, but cannot undo a completed unload.
+            if self.local_engine is engine:
                 self.local_state = "unloaded"
 
         def expire():

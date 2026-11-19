@@ -169,19 +169,32 @@ async def test_successful_switch_commits_only_after_candidate_load(tmp_path):
         await provider.aclose()
 
 
-async def test_idle_unload_and_next_dictation_reload(monkeypatch):
+@pytest.mark.parametrize("during_unload", [False, True])
+async def test_idle_unload_and_next_dictation_reload(during_unload):
     config = Config()
     config.stt.engine, config.stt.local_model = "local", "parakeet-v3"
     config.stt.local_idle_seconds = 0.01
     provider = Providers(config, client=AsyncMock())
-    engine = SimpleNamespace(unload=AsyncMock(), aclose=AsyncMock())
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def unload():
+        entered.set()
+        await finish.wait()
+
+    engine = SimpleNamespace(unload=AsyncMock(side_effect=unload), aclose=AsyncMock())
     provider.local_engine, provider.local_state = engine, "ready"
     provider.local_signature = provider.signature(config)
     try:
         provider.arm_idle()
-        await asyncio.sleep(0.03)
+        await asyncio.wait_for(entered.wait(), 1)
         engine.unload.assert_awaited_once()
-        assert provider.local_state == "unloaded"
+        if during_unload:
+            # stt() starts immediately and waits for the in-flight unload.
+            asyncio.get_running_loop().call_soon(finish.set)
+        else:
+            finish.set()
+            await provider.idle_task
+            assert provider.local_state == "unloaded"
         new = SimpleNamespace(transcribe=AsyncMock(return_value=Transcript("Hello", [], language="en")),
                               decode_ms=1, aclose=AsyncMock())
         provider.prepare_local = AsyncMock(return_value=new)
@@ -189,6 +202,7 @@ async def test_idle_unload_and_next_dictation_reload(monkeypatch):
         assert provider.local_engine is new
         assert provider.metrics["language"] == "en"
     finally:
+        finish.set()
         await provider.aclose()
 
 
