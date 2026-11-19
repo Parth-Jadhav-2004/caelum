@@ -1,5 +1,7 @@
 # Caelum Linux invite-only beta
 
+**Qualification hold for X11 with history off.** This candidate can copy successfully but show Awaiting retry. Paste once into your editor and discard the retained recording. A replacement is being tested.
+
 **[Download Caelum 0.5.0 testing candidate](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0-rc.44459420720)** · `v0.5.0-rc.44459420720`
 
 [Candidate run 44459420720, attempt 1](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44459420720) built commit `e60d658b12a60509be5938b3157f423866d3e9aa`. These packages are for invited testers on x86-64 Linux. Use a disposable login or back up your existing Caelum settings and history.
