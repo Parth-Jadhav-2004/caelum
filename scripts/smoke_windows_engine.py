@@ -5,9 +5,61 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+
+async def online_setup():
+    """Run Continue against a local model list and the actual Windows vault."""
+    from caelum import credentials
+    from caelum.config import Config, config_path, save
+    from caelum.providers import ProviderError
+    from caelum.sidecar import Backend
+
+    config = Config()
+    key_name = "CAELUM_TEST_" + uuid.uuid4().hex.upper()
+    config.stt.key_env = config.cleanup.key_env = key_name
+    key = uuid.uuid4().hex
+
+    class Models(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_GET(self):
+            if self.path != "/v1/models" or self.headers.get("Authorization") != f"Bearer {key}":
+                self.send_error(401)
+                return
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"data": [{"id": config.stt.model}]}).encode())
+
+    with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+        "APPDATA": folder, "LOCALAPPDATA": folder, "NO_PROXY": "127.0.0.1",
+    }), ThreadingHTTPServer(("127.0.0.1", 0), Models) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        config.stt.base_url = f"http://127.0.0.1:{server.server_port}/v1"
+        save(config, config_path())
+        backend = Backend(config_path())
+        try:
+            try:
+                await backend.dispatch("setup.validate", {"consent": True, "keys": {key_name: "invalid"}})
+            except ProviderError as exc:
+                assert exc.kind == "invalid_key"
+            else:
+                raise AssertionError("Invalid key passed onboarding")
+            assert credentials.get(key_name) is None
+            result = await backend.dispatch("setup.validate", {"consent": True, "keys": {key_name: key}})
+            assert result["storage"][key_name] == "keyring"
+            assert credentials.get(key_name) == key
+            assert key not in config_path().with_name("credentials.json").read_text()
+        finally:
+            server.shutdown()
+            credentials.delete(key_name)
+            await backend.models.aclose()
 
 
 async def desktop_delivery():
@@ -67,4 +119,5 @@ if __name__ == "__main__":
     import asyncio
 
     asyncio.run(desktop_delivery())
+    asyncio.run(online_setup())
     main()
