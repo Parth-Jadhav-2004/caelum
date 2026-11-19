@@ -1,5 +1,9 @@
 # Contributing to Caelum
 
+Open short-lived branches against `main`. While [#26](https://github.com/Parth-Jadhav-2004/caelum/issues/26) holds main, send application changes to `dev` and keep website-only changes independent. After acceptance, main can fast-forward to the tested commit and development can return to trunk.
+
+Stable is GitHub Latest (`vX.Y.Z`). Testing releases use `vX.Y.Z-rc.N`. Ordinary builds stay in Actions. Include user-visible changes in the next version’s CHANGELOG section.
+
 Use the pinned Node/Rust toolchains, locked npm/Python/Cargo dependencies, and the
 commands in [README.md](README.md) and [docs/releasing.md](docs/releasing.md).
 Run relevant tests before opening a change. For IPC changes, regenerate both

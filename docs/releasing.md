@@ -1,49 +1,49 @@
 # Building and promoting Caelum releases
 
-## Release channels: dev → testing → main
+## Branches and release channels
 
-1. Commit a unique base version to `dev` (Python, npm, Rust, Tauri, locks and Arch recipe), with reviewed CHANGELOG notes. `Checks` runs on PRs and all three branches; `Linux candidate` builds on dev only. A push changing only website files needs a manual `gh workflow run release.yml --ref dev` if it is to be packaged. Each of five native packages must install, pass IPC, simulated audio and native WebKit bootstrap; inspect the smoke artifacts. These checks do not qualify physical desktops.
-2. Optional manual development publication: `gh workflow run development.yml --ref dev -f candidate_run_id=RUN`. All preview installs share stable profile paths and replace the installed package. Back up settings/history or use a disposable account. Dev tags use `vVERSION-dev.RUN.ATTEMPT`.
-3. Open a **dev → testing** PR only after the successful dev build; require source, native and promotion-route checks. Use a merge commit to retain the source SHA. The accepted tree must match the candidate exactly. Then `gh workflow run publish.yml --ref testing -f channel=testing -f candidate_run_id=RUN -f desktop_qualified=false`. This publishes `vVERSION-rc.RUN` without rebuilding. Verify all assets anonymously against SHA256SUMS. Rerunning the same dispatch resumes/verifies existing bytes.
-4. On that RC, complete [manual acceptance](acceptance.md), including GNOME Wayland, Plasma Wayland, X11, physical capture with both engines, lifecycle and staged signed upgrade/recovery. Record SHA, run/attempt, package hash, environment, tester and outcomes. Failed checks require a new dev candidate. Do not open the **testing → main** promotion until this evidence is accepted. Require independent review of the qualification evidence. Merge only the tested tree.
-5. After merge, dispatch `gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id=RUN -f desktop_qualified=true`. The protected `release` environment requires maintainer approval; only this environment holds signing keys. Verification binds the successful dev build to the promotion tree and rehashes all published testing assets before signing. Production alone becomes Latest and enters stable updates. Pages deploys from main and regenerates the stable inventory.
+Use short-lived branches off `main`. While [issue #26](https://github.com/Parth-Jadhav-2004/caelum/issues/26) holds application changes to main, target `dev` for integration. Site-only changes can go to main. Bring any such changes into dev **before building the RC** so main can later fast-forward to the accepted tree.
 
-Restrict development, testing and release environments to their respective **dev**, **testing** and **main** branch (no tags). Protect testing/main from direct pushes including administrator bypass, force pushes and deletions. Require `source`, `native`, `promotion-route` on both; require main PR approval. Do not authorize a production deployment to rehearse an upgrade. Artifacts and smoke logs last 14 days, but candidate eligibility expires after seven days. If the gate expires, build and qualify a fresh dev run.
+| Channel | GitHub release | Installation |
+| --- | --- | --- |
+| Testing | Prerelease such as `v0.5.0-rc.1`, then `v0.5.0-rc.2` | Explicit manual download |
+| Stable | Latest, such as `v0.4.2` | Native package or signed stable updater |
 
-## Reporting preview bugs
+Both channels use the same candidate package bytes. Development builds are Actions artifacts. The `testing` and `release` GitHub Environments control publication permissions. Allow the testing environment to deploy from dev and main during the transition, then main alone. Restrict release to main and keep the Ed25519 signing secrets and approval there.
 
-Use the GitHub bug-report form and choose Development, Testing, or Production.
-Include the full release tag, package filename, source SHA, distro/session and
-reproduction steps. The same package version may have multiple development builds;
-the base version alone cannot identify a regression. Never attach keys, audio,
-transcripts or unredacted provider responses. Fixes need a new commit/candidate;
-never replace an existing release asset with repaired bytes.
+## Build once
+
+1. Set the package version in npm, Python, Rust, Tauri, their lockfiles and the Arch recipe. Add a `## X.Y.Z` section to CHANGELOG.md describing changes since the previous stable. Both release bodies use this section.
+2. A push to dev or main builds a candidate. For a site-only commit, dispatch `gh workflow run release.yml --ref dev` (or `--ref main` on trunk) if packages are needed. Inspect the seven downloads and smoke evidence. Record the successful run ID, attempt and full source SHA. The candidate is eligible for seven days. Actions retains its artifacts for fourteen.
+3. Choose the next unused RC number for this version, starting at 1. The existing `v0.5.0-rc.44462311027` remains the invite-only RC of record in #26. Run IDs from the previous convention do not reserve the new sequence.
+
+## Publish a selected RC
+
+Dispatch from the branch whose current tree matches the candidate. For example, after reviewing run `$RUN` and selecting RC number `$RC`:
+
+```sh
+gh workflow run publish.yml --ref dev -f channel=testing -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=false
+```
+
+Use `--ref main` on trunk. The publisher checks the run, attempt, tree, hashes and locks, then attaches the packages, `SHA256SUMS` and `provenance.zip`. The archive contains `candidate.json` and the five `build-info-*.json` records. Testers can check their download with `sha256sum --check --ignore-missing SHA256SUMS`. Back up settings and history or use a disposable profile. Include the tag, run, attempt, SHA, filename and hash with a bug report.
+
+## Promote the accepted bytes to Stable
+
+Complete [desktop acceptance](acceptance.md) on the selected RC and have the evidence reviewed in #26. This includes GNOME Wayland, Plasma Wayland, X11, physical microphones, provider and offline practice, first paste, lifecycle and a disposable signed upgrade/restart and recovery. Follow the issue for the full checklist. If any bytes change, publish and qualify a new RC. Close the hold only after the evidence is accepted.
+
+Once released from the hold, fast-forward main to the accepted dev commit. In trunk-only operation, select a tested main candidate. Dispatch from main at the matching tree using the **same run and RC**:
+
+```sh
+gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=true
+```
+
+The release job downloads the candidate and verifies every public RC asset against it before signing update metadata. Only this job can mark the stable tag Latest. The stable updater reads signed metadata from Latest. Pages regenerates its download inventory from the published stable assets.
 
 ## Interrupted releases and recovery
 
-Rerun `Promote to testing or production` with the same channel and successful run ID. Signing uses the
-candidate creation time, so update metadata and signatures are deterministic.
-Identical uploaded assets are preserved; no upload uses `--clobber`.
-For a failed development publication, rerun `Publish development release`, or
-dispatch `development.yml` with the original `candidate_run_id`. Do not rebuild a
-successful candidate merely to retry an upload.
-If GitHub leaves a draft asset in an incomplete upload state, inspect it and
-remove only that failed draft upload before retrying. Never delete/replace a
-published stable asset or force a published tag. Ship a new patch instead.
-When a candidate expires, build a fresh candidate with a new version if a draft
-already contains different bytes; do not mutate the old version's assets.
-Candidates must be promoted within seven days; GitHub artifacts/smoke evidence
-are retained for fourteen days. Rerunning a candidate build changes its attempt
-and can change bytes: use a new workflow run before publishing a new RC rather
-than trying to reuse its old `-rc.<run-id>` tag.
+Retry the same dispatch with the same run, attempt and RC number. Publication resumes a matching draft and checks an already-published release. Existing uploads must match exactly. For an incomplete draft upload, inspect the failed asset before removing it in GitHub. Rebuilding or rerunning the build can produce different bytes and requires a fresh RC number and acceptance.
 
-On a failed release after tag creation, the tag still identifies the candidate
-commit; its existence does not imply a published release. The updater follows
-published stable releases, not candidate artifacts or draft tags.
-
-A stable updater rollback is not automatic. Keep older immutable release assets
-available for an explicit maintainer-guided package downgrade after checking
-configuration/database compatibility. Never point the latest feed backward.
+Signing uses the candidate creation time. An expired candidate needs a fresh build, even if Actions still retains the artifact. A tag alone is insufficient evidence of publication. Keep older stable assets available for explicit, maintainer-guided recovery after checking data compatibility.
 
 ## Signing key rotation
 

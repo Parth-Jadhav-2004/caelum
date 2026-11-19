@@ -65,7 +65,7 @@ def source_identity():
 
 
 def desktop_assets(value):
-    return {f"Caelum-{value}-x86_64.AppImage", f"caelum-{value}-windows-x64.exe"}
+    return {f"caelum-{value}-x86_64.AppImage", f"caelum-{value}-x64-setup.exe"}
 
 
 def record(directory, target):

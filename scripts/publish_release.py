@@ -3,10 +3,13 @@
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from zipfile import ZipFile, ZipInfo
 
 from release_candidate import ROOT, digest, verify
 from sign_release import sign
@@ -96,8 +99,28 @@ class GitHub:
         subprocess.run(["gh", "release", "edit", tag, "--draft=false", "--latest"], check=True)
 
 
-def release_files(directory):
-    return {path.name: digest(path) for path in directory.iterdir()}
+@contextmanager
+def public_assets(directory, manifest):
+    """Stage verified package bytes and deterministic public provenance for either channel."""
+    with tempfile.TemporaryDirectory(dir=directory.parent) as work:
+        stage = Path(work)
+        with ZipFile(stage / "provenance.zip", "w") as archive:
+            for name in sorted([*manifest["files"], "candidate.json"]):
+                if name.endswith(".json"):
+                    # Fixed timestamp and attributes keep the archive identical across retries.
+                    archive.writestr(ZipInfo(name), (directory / name).read_bytes())
+                else:
+                    os.link(directory / name, stage / name)
+        yield stage
+
+
+def checksummed_files(directory):
+    entries = {path.name: digest(path) for path in directory.iterdir()}
+    (directory / "SHA256SUMS").write_text(
+        "".join(f"{info['sha256']}  {name}\n" for name, info in sorted(entries.items()))
+    )
+    entries["SHA256SUMS"] = digest(directory / "SHA256SUMS")
+    return entries
 
 
 def reconcile(github, tag, directory, expected, release):
@@ -123,27 +146,33 @@ def reconcile(github, tag, directory, expected, release):
     return set(names)
 
 
-def release_notes(version):
+def release_notes(manifest):
+    version = manifest["version"]
     changelog = ROOT / "CHANGELOG.md"
     text = changelog.read_text() if changelog.is_file() else ""
     match = re.search(rf"^## {re.escape(version)}\s*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     if not match or not match[1].strip():
         raise ValueError(f"Reviewed release notes are required in CHANGELOG.md for {version}")
-    return f"# Caelum {version}\n\n{match[1].strip()}\n"
+    return (
+        f"{match[1].strip()}\n\n"
+        f"Candidate run `{manifest['run_id']}`, attempt `{manifest['run_attempt']}`, "
+        f"source `{manifest['sha']}`. See `provenance.zip` for the candidate and build records.\n"
+    )
 
 
 def publish(directory, sha, run_id, run_attempt, private_key, github=None, legacy_private_key=None):
     manifest = verify(directory, sha, run_id, run_attempt)
+    notes = release_notes(manifest)
+    with public_assets(directory, manifest) as stage:
+        # The candidate's creation time makes signed metadata repeatable across retries.
+        sign(stage, private_key, now=manifest["created"], legacy_private_key=legacy_private_key)
+        publish_stable(stage, manifest, notes, github)
+
+
+def publish_stable(directory, manifest, notes, github):
     tag = "v" + manifest["version"]
-    notes = release_notes(manifest["version"])
-    # Candidate creation time makes signing deterministic across publisher reruns.
-    sign(directory, private_key, now=manifest["created"], legacy_private_key=legacy_private_key)
-    checksums = directory / "SHA256SUMS"
-    entries = {path.name: digest(path) for path in directory.iterdir() if path != checksums}
-    checksums.write_text(
-        "".join(f"{info['sha256']}  {name}\n" for name, info in sorted(entries.items()))
-    )
-    expected = release_files(directory)
+    sha = manifest["sha"]
+    expected = checksummed_files(directory)
     github = github or GitHub()
     latest = github.latest_version()
     if latest is not None and tuple(map(int, manifest["version"].split("."))) < latest:
@@ -159,6 +188,10 @@ def publish(directory, sha, run_id, run_attempt, private_key, github=None, legac
         release = github.release(tag)
     if release is None:
         raise ValueError("Draft creation could not be verified")
+    if release.get("prerelease"):
+        raise ValueError("Expected a stable release")
+    if release["draft"] and (release.get("body") or "").rstrip() != notes.rstrip():
+        raise ValueError("Draft belongs to another candidate or its release notes changed")
     present = reconcile(github, tag, directory, expected, release)
     if not release["draft"]:
         print(f"{tag} already published with identical verified assets")

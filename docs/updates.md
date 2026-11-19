@@ -8,11 +8,8 @@ check manually. Manual checks also look for testing releases, including newer
 candidates with the same package version. A testing build gets a separate
 **Download testing build** action opening its GitHub release page for explicit
 package-manager installation. It is never staged as an unsigned automatic update.
-Development prereleases (`-dev.<run>.<attempt>`) are available on GitHub for manual
-installation and never appear as testing candidates or production updates. Testing
-uses `-rc.<candidate-run-id>`; production uses `v<version>`. Manual testing discovery
-checks up to 100 releases so development releases do not hide testing on page one;
-if it reaches that bound without a usable candidate it reports an error instead of claiming no update.
+Development builds stay in Actions. Testing uses numbered `vX.Y.Z-rc.N` prereleases.
+Stable uses `vX.Y.Z`. Manual testing discovery checks up to 100 releases.
 Use **View releases** to browse the full history. Maintainers promote identical
 packages through the channels; see [releasing.md](releasing.md).
 Official packages record the source commit and source date so the check can
@@ -101,13 +98,13 @@ tag publishing fails closed rather than producing unsigned updater metadata.
    paste it into chat, logs, build artifacts, or version control. Restrict who can
    alter release tags, workflow code, environment approvals, and secrets.
 4. Bump all version manifests together to a new stable version. A main push builds
-   a development prerelease; `publish.yml` with channel `testing` publishes an RC.
+   a candidate artifact; `publish.yml` with channel `testing` publishes an RC.
    Test the exact candidate, then select `production` with manual acceptance completed.
    Tags are created by the publisher; do not push or move a release tag yourself.
 5. CI builds Ubuntu 24.04/26.04, Debian 12, Arch, and Fedora 43 packages and smoke-installs
    them. Production requires that identical candidate to be published to testing.
    After release-environment approval, it verifies the testing assets, signs the
-   five-target manifest, checks that the private key matches the committed public
+   native update manifest, checks that the private key matches the committed public
    key, uploads all files to a **draft**, then publishes it as latest stable.
    Development/testing jobs never receive the production signing key. PRs never publish.
 

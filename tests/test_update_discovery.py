@@ -14,6 +14,8 @@ def discovery(monkeypatch):
 
     def serve(releases, status=200, source_date="2026-11-16T10:00:00Z", latest=None):
         def respond(request):
+            if "/git/ref/tags/v" in request.url.path:
+                return httpx.Response(200, json={"object": {"type": "commit", "sha": "a" * 40}})
             if "/git/commits/" in request.url.path:
                 return httpx.Response(200, json={
                     "sha": request.url.path.rsplit("/", 1)[1],
@@ -62,6 +64,23 @@ def test_chooses_candidate_number_instead_of_api_order(discovery):
     _, serve = discovery
     serve([preview("v0.4.1-rc.2"), preview("v0.4.1-rc.10"), preview("v0.3.9-rc.99")])
     assert updates.check_testing()["version"] == "0.4.1-rc.10"
+
+
+def test_numbered_rc_takes_precedence_over_legacy_run_id(discovery):
+    _, serve = discovery
+    numbered = preview("v0.5.0-rc.1")
+    numbered["assets"].append({"name": "provenance.zip"})
+    serve([preview("v0.5.0-rc.44462311027"), numbered])
+    assert updates.check_testing()["version"] == "0.5.0-rc.1"
+
+
+def test_windows_discovers_numbered_rc_without_standalone_candidate_json(discovery):
+    info, serve = discovery
+    info.update(version="0.5.0", target="windows-x64", source="b" * 40, source_date=1)
+    numbered = preview("v0.5.0-rc.1", source="dev")
+    numbered["assets"] = [{"name": "provenance.zip"}, {"name": "caelum-0.5.0-x64-setup.exe"}]
+    serve([numbered])
+    assert updates.check_testing() == {"version": "0.5.0-rc.1", "installed": False}
 
 
 def test_development_builds_do_not_hide_or_replace_testing(discovery):

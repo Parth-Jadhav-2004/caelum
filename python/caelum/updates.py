@@ -340,15 +340,23 @@ def testing_source(release, version):
     source = release.get("target_commitish")
     with network_client(30) as client:
         if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
-            provenance = json.loads(fetch(
-                client, f"{RELEASES}/download/{release['tag_name']}/candidate.json", 65536,
-            ))
-            source = provenance["sha"]
-            if (
-                provenance.get("schema") != 1 or provenance.get("version") != version
-                or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)
-            ):
-                raise ValueError("Invalid testing source provenance")
+            tag = release["tag_name"]
+            if any(isinstance(asset, dict) and asset.get("name") == "provenance.zip"
+                   for asset in release.get("assets", [])):
+                # New releases bind the tag to the source SHA. Resolve it without unpacking a ZIP.
+                ref = json.loads(fetch(
+                    client, f"https://api.github.com/repos/{REPOSITORY}/git/ref/tags/{tag}", 65536,
+                ))
+                if ref["object"]["type"] != "commit":
+                    raise ValueError("Invalid testing source tag")
+                source = ref["object"]["sha"]
+            else:
+                provenance = json.loads(fetch(client, f"{RELEASES}/download/{tag}/candidate.json", 65536))
+                if provenance.get("schema") != 1 or provenance.get("version") != version:
+                    raise ValueError("Invalid testing source provenance")
+                source = provenance["sha"]
+            if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
+                raise ValueError("Invalid testing source commit")
         commit = json.loads(fetch(
             client, f"https://api.github.com/repos/{REPOSITORY}/git/commits/{source}", 65536,
         ))
@@ -411,8 +419,11 @@ def check_testing():
             elif release.get("prerelease") is True:
                 match = re.fullmatch(r"v(\d+\.\d+\.\d+)-rc\.([1-9]\d*)", tag)
                 if match:
-                    candidates.append((version_tuple(match[1]), int(match[2]), release))
-        for version, _, release in sorted(candidates, key=lambda item: item[:2], reverse=True):
+                    # Per-version RC numbering restarted at 1 after the run-ID series.
+                    numbered = any(isinstance(asset, dict) and asset.get("name") == "provenance.zip"
+                                   for asset in release.get("assets", []))
+                    candidates.append((version_tuple(match[1]), numbered, int(match[2]), release))
+        for version, _, _, release in sorted(candidates, key=lambda item: item[:3], reverse=True):
             if version < version_tuple(info["version"]) or version <= stable:
                 continue
             source = release.get("target_commitish")
@@ -434,8 +445,11 @@ def check_testing():
                 else f"caelum-{base_version}-1.fedora43.x86_64.rpm" if target == "fedora-43"
                 else f"caelum_{base_version}-1_{target}_amd64.deb"
             )
+            names = {name}
+            if target == "windows-x64":
+                names.add(f"caelum-{base_version}-x64-setup.exe")
             if not any(
-                isinstance(asset, dict) and asset.get("name") == name
+                isinstance(asset, dict) and asset.get("name") in names
                 for asset in release.get("assets", [])
             ):
                 continue
