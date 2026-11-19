@@ -81,6 +81,8 @@ def release_candidate(tmp_path, monkeypatch):
             },
         }
         (assets / f"build-info-{target}.json").write_text(json.dumps(info))
+    for name in candidate.desktop_assets(value):
+        (assets / name).write_bytes(name.encode())
     candidate.assemble(assets)
     return assets, identity, key
 

@@ -13,6 +13,8 @@ concurrency:
   group: candidate-${{ github.sha }}
   cancel-in-progress: false
 jobs:
+  windows:
+    uses: ./.github/workflows/windows.yml
   checks:
     if: github.ref == 'refs/heads/dev'
     uses: ./.github/workflows/ci.yml
@@ -94,6 +96,9 @@ jobs:
         run: python3 scripts/smoke_desktop.py / --screenshot dist/native-smoke.png
       - name: Record build provenance
         run: python3 scripts/release_candidate.py record dist '${{ matrix.target }}'
+      - name: Build and exercise the Linux AppImage
+        if: matrix.target == 'ubuntu-24.04'
+        run: bash scripts/build-appimage.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -108,12 +113,13 @@ jobs:
           path: |
             dist/*.deb
             dist/*.rpm
+            dist/*.AppImage
             dist/*.pkg.tar.zst
             dist/build-info-*.json
           if-no-files-found: error
           retention-days: 14
   assemble:
-    needs: package
+    needs: [package, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -125,6 +131,10 @@ jobs:
           pattern: caelum-*
           path: release-assets
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: Caelum-Windows-x64
+          path: release-assets
       - run: python3 scripts/release_candidate.py assemble release-assets
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

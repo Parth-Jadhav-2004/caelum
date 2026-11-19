@@ -121,7 +121,7 @@ function applyDistro(value) {
   releaseLink.href = distribution.url;
   releaseLink.textContent = `Download for ${distribution.name} ↓`;
   installCommand.textContent = distribution.command;
-  installInstructions.hidden = false;
+  installInstructions.hidden = !distribution.command;
 }
 async function loadRelease() {
   try {
@@ -139,7 +139,16 @@ async function loadRelease() {
       ...release.packages.map((item) => new Option(item.name, item.id)),
     );
     distroSelect.disabled = false;
+    const requested = new URLSearchParams(location.search).get("download");
+    if (requested) distroSelect.value = requested;
     applyDistro(distroSelect.value);
+    for (const link of document.querySelectorAll("[data-platform-download]")) {
+      const platform = release.packages.find((p) => p.id === link.dataset.platformDownload);
+      if (platform) {
+        link.href = platform.url;
+        link.hidden = false;
+      }
+    }
   } catch {
     distroSelect.disabled = true;
     applyDistro("");

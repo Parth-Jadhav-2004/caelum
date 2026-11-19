@@ -11,6 +11,14 @@ test("every published package has a matching version, architecture, URL and inst
   assert.equal(release.packages.length, manifest.packages.length);
   for (const item of release.packages) {
     assert.ok(item.url.includes(`/v${release.version}/${item.file}`));
+    if (item.manager === "exe") {
+      assert.equal(item.command, null);
+      continue;
+    }
+    if (item.manager === "appimage") {
+      assert.equal(item.command, `chmod +x ./${item.file} && ./${item.file}`);
+      continue;
+    }
     assert.ok(item.command.startsWith(`sudo ${item.manager} `));
     assert.ok(item.command.endsWith(item.file));
     assert.ok(item.manager === "pacman" || item.command.includes("install ./"));

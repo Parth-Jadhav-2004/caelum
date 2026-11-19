@@ -64,6 +64,10 @@ def source_identity():
     }
 
 
+def desktop_assets(value):
+    return {f"Caelum-{value}-x86_64.AppImage", f"caelum-{value}-windows-x64.exe"}
+
+
 def record(directory, target):
     metadata = {
         **source_identity(),
@@ -89,8 +93,9 @@ def assemble(directory):
     names = set(package_names(identity["version"]).values()) | {
         f"build-info-{target}.json" for target in TARGETS
     }
+    names |= desktop_assets(identity["version"])
     if {path.name for path in directory.iterdir()} != names:
-        raise ValueError("Candidate requires exactly all five packages and provenance files")
+        raise ValueError("Candidate requires all seven downloads and native package provenance")
     manifest = {
         "schema": 1,
         **identity,
@@ -123,6 +128,7 @@ def verify(directory, sha, run_id=None, run_attempt=None, now=None):
         raise ValueError("Candidate is expired or dated in the future; build a fresh candidate")
     names = package_names(manifest["version"])
     expected = set(names.values()) | {f"build-info-{target}.json" for target in TARGETS}
+    expected |= desktop_assets(manifest["version"])
     if set(manifest["files"]) != expected:
         raise ValueError("Incomplete or unexpected candidate asset set")
     # Only final publication metadata may be present beside the candidate files.

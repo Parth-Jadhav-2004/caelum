@@ -26,11 +26,11 @@ export function validateRelease(data) {
       !item.name.trim() ||
       !Number.isSafeInteger(item.size) ||
       item.size <= 0 ||
-      !["apt", "dnf", "pacman"].includes(item.manager) ||
+      !["apt", "dnf", "pacman", "appimage", "exe"].includes(item.manager) ||
       typeof item.file !== "string" ||
       !/^[a-zA-Z0-9_.-]+$/.test(item.file) ||
       !item.file.startsWith(
-        `caelum${item.manager === "apt" ? "_" : "-"}${data.version}-`,
+        `${item.manager === "appimage" ? "Caelum" : "caelum"}${item.manager === "apt" ? "_" : "-"}${data.version}-`,
       )
     ) {
       throw new Error("Invalid package entry");
@@ -39,6 +39,8 @@ export function validateRelease(data) {
       apt: "_amd64.deb",
       dnf: ".x86_64.rpm",
       pacman: "-x86_64.pkg.tar.zst",
+      exe: "-windows-x64.exe",
+      appimage: "-x86_64.AppImage",
     }[item.manager];
     if (!item.file.endsWith(extension))
       throw new Error("Unexpected package architecture");
@@ -47,6 +49,8 @@ export function validateRelease(data) {
       ...item,
       url: base + item.file,
       command:
+        item.manager === "exe" ? null :
+        item.manager === "appimage" ? `chmod +x ./${item.file} && ./${item.file}` :
         item.manager === "pacman"
           ? `sudo pacman -U ${item.file}`
           : `sudo ${item.manager} install ./${item.file}`,

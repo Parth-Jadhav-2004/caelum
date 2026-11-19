@@ -2,11 +2,13 @@
 
 Release notes, newest first.
 
-## 0.5.0
+## 0.4.3
 
-Choose **Online** with your own provider key or **On this computer** with a separately downloaded model in setup and settings. Local practice does not send speech or vocabulary to a provider. Online sends speech and vocabulary; optional cleanup sends text. Model licenses and hardware requirements vary. Portable desktops use Record, Finish and copy; native Hyprland integration is optional.
-
-This candidate targets the same five x86-64 packages as 0.4.2. Previews share stable profile paths: back up settings and history or use a disposable account. Previews are manually installed, not signed stable updates. See [acceptance](docs/acceptance.md) and [release promotion](docs/releasing.md) for hardware, lifecycle and signed-upgrade gates. [Changes since stable](https://github.com/Parth-Jadhav-2004/caelum/compare/v0.4.2...dev).
+- Choose **On this computer** during onboarding to find, download and verify a compatible speech model. Local dictation and practice work offline after download, without a provider key. Online mode still supports your own provider and optional text refinement.
+- The redesigned setup walks through speech mode, microphone, shortcut and practice. Manage models and switch engines later in Settings.
+- Windows x64 now uses the same interface as Linux, with a bundled engine, global shortcuts, recording overlay, Credential Manager and focus-aware paste.
+- Downloads include Windows `.exe`, Linux AppImage and native packages for Ubuntu 24.04/26.04, Debian 12, Fedora 43 and Arch. The x86-64 AppImage bundles Python and the local engine; it requires an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. Models download separately.
+- On supported native packages, use **Settings → System → Check updates** to upgrade from 0.4.2. AppImage users replace the file manually. Settings and history remain in the user profile.
 
 ## 0.4.2
 

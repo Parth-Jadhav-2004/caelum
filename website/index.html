@@ -8,11 +8,11 @@
       name="description"
       content="Dictate on Linux. Record, finish, then copy the transcript into your app. Free and open source."
     />
-    <title>Caelum — Dictate on your Linux desktop.</title>
+    <title>Caelum — Dictate on Windows and Linux.</title>
     <link rel="canonical" href="https://parth-jadhav-2004.github.io/caelum/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Caelum" />
-    <meta property="og:title" content="Caelum — Dictate on your Linux desktop." />
+    <meta property="og:title" content="Caelum — Dictate on Windows and Linux." />
     <meta
       property="og:description"
       content="Record on your Linux desktop, then copy the transcript into your app."
@@ -32,7 +32,7 @@
       content="Caelum 0.5.0 candidate setup screen and the words Record, finish, copy and paste."
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Caelum — Dictate on your Linux desktop." />
+    <meta name="twitter:title" content="Caelum — Dictate on Windows and Linux." />
     <meta
       name="twitter:description"
       content="Dictate on Linux. Record, finish, copy and paste."
@@ -91,13 +91,13 @@
           ><span data-release-label>Caelum · Stable release</span
           ><span aria-hidden="true">↗</span></a
         >
-        <h1>Dictate on your Linux desktop.</h1>
+        <h1>Dictate on Windows and Linux.</h1>
         <p class="hero-description">
           Record your voice. Finish recording. Copy your words into any app.
         </p>
         <div class="hero-actions">
           <a class="button primary" href="#download"
-            ><span aria-hidden="true">↓</span> Download for Linux</a
+            ><span aria-hidden="true">↓</span> Downloads</a
           ><a class="button secondary" href="#demo">Try the walkthrough</a>
         </div>
         <p>Invited to test? <a href="https://github.com/Parth-Jadhav-2004/caelum/blob/beta-guide/README.md">Install the exact Linux beta and try your first dictation</a>.</p>
@@ -323,7 +323,7 @@
           <div class="setup-note">
             <h3>Set up once. Then just speak.</h3>
             <p>
-              Speech → Microphone → Shortcut → Practice. The microphone test stays on your computer. Online practice uploads only after consent. In the 0.5.0 candidate, local practice uses the downloaded model without a key or upload.
+              Speech → Microphone → Shortcut → Practice. The microphone test stays on your computer. Online practice uploads only after consent. In 0.4.3, local practice uses the downloaded model without a key or upload.
             </p>
           </div>
         </div>
@@ -381,8 +381,7 @@
               Free and open source. No Caelum subscription.<br />Online mode uses your own provider account; provider charges may apply.
             </p>
             <p class="download-note">
-              Linux x86-64 packages. No ARM package.<br />Check for signed
-              updates in Settings → System.
+              Windows and Linux · x86-64. Choose a download below.
             </p>
             <p class="acceptance-note">
               Desktop and Wayland acceptance testing is ongoing.
@@ -393,7 +392,9 @@
             </p>
           </div>
           <div class="download-box">
-            <label for="distro">Your Linux distribution</label
+            <p><a class="button primary" data-platform-download="appimage" hidden>Linux AppImage ↓</a>
+              <a class="button primary" data-platform-download="windows" hidden>Windows .exe ↓</a></p>
+            <label for="distro">All downloads</label
             ><select id="distro" disabled>
               <option value="">Choose from published packages</option>
             </select>
@@ -465,7 +466,7 @@
           <details>
             <summary>Does Caelum work offline?</summary>
             <p>
-              Version 0.4.2 requires a network connection for transcription. Starting with the 0.5.0 candidate, choose On this computer and download a compatible model once. You can then dictate offline without a provider key. The stable download selector shows the published version. Preview builds are listed separately on the <a href="https://github.com/Parth-Jadhav-2004/caelum/releases">releases page</a>.
+              Version 0.4.2 requires a network connection for transcription. Starting with 0.4.3, choose On this computer and download a compatible model once. You can then dictate offline without a provider key. The stable download selector shows the published version. Preview builds are listed separately on the <a href="https://github.com/Parth-Jadhav-2004/caelum/releases">releases page</a>.
             </p>
           </details>
           <details>
@@ -511,7 +512,7 @@
     <footer class="wrap">
       <a class="brand" href="#main" aria-label="Caelum home"
         ><img src="./mark.svg" width="26" height="26" alt="" />caelum</a
-      ><span>Free and open source, for Linux.</span>
+      ><span>Free and open source, for Windows and Linux.</span>
       <div>
         <a href="https://github.com/Parth-Jadhav-2004/caelum">Source</a
         ><a href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/LICENSE"

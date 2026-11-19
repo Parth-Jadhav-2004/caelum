@@ -1138,3 +1138,4 @@ a:hover {
 .walkthrough { text-align: left; }
 .walkthrough details { border-bottom: 1px solid var(--line); padding: .85rem 0; }
 .walkthrough summary { cursor: pointer; }
+[data-platform-download][hidden] { display: none; }
