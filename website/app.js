@@ -131,9 +131,6 @@ async function loadRelease() {
     document.querySelectorAll("[data-release-label]").forEach((item) => {
       item.textContent = `Caelum ${release.version} · Stable release`;
     });
-    document.querySelectorAll("[data-release-link]").forEach((item) => {
-      item.href = release.releaseUrl;
-    });
     document.querySelector("#checksum-link").href = release.checksumsUrl;
     distroSelect.replaceChildren(
       ...release.packages.map((item) => new Option(item.name, item.id)),
