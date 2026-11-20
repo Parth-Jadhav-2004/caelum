@@ -57,8 +57,10 @@ class HUD:
 
 
 class Orchestrator:
-    def __init__(self, config, provider, hud, bindings):
+    def __init__(self, config, provider, hud, bindings, *, in_app_notifications=False):
         self.config, self.provider, self.hud, self.bindings = config, provider, hud, bindings
+        self.in_app_notifications = in_app_notifications
+        self.notice = None
         self.session = None
         self.state = "hidden"
         self.sequence = 0
@@ -87,6 +89,12 @@ class Orchestrator:
         self.feedback = {}
         self.media = RecordingMedia()
 
+    async def notify(self, message):
+        if self.in_app_notifications:
+            self.notice = message
+        else:
+            await notify(message)
+
     async def event(self, state=None, error_code=""):
         if state:
             self.state = state
@@ -114,9 +122,12 @@ class Orchestrator:
         # Native model staging can hold the control lock for seconds. Status is
         # read-only and must remain available to the sidecar throughout loading.
         if action == "status":
-            return {"feedback": self.feedback, "paused": self.paused, "state": self.state,
-                    "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
-                    "metrics": self.recent_metrics[-1:]}
+            return {
+                "feedback": self.feedback, "paused": self.paused, "state": self.state,
+                "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
+                "metrics": self.recent_metrics[-1:],
+                **({"notice": self.notice} if self.notice else {}),
+            }
         async with self.control_lock:
             if self.stopping and action != "status":
                 return
@@ -144,6 +155,7 @@ class Orchestrator:
                     await self.bindings.active(False)
                     return
                 self.session = uuid.uuid4().hex
+                self.notice = None
                 self.sequence = 0
                 self.token = token
                 self.started = time.monotonic()
@@ -162,7 +174,9 @@ class Orchestrator:
                     await self.abort_capture()
                     await self.event("error", "microphone")
                     await self.bindings.active(False)
-                    await notify(
+                    await self.notify(
+                        "Microphone unavailable. Choose a microphone in Caelum Settings and test it."
+                        if self.in_app_notifications else
                         "Microphone unavailable. Run caelum devices and caelum doctor; check microphone configuration."
                     )
                     return
@@ -191,6 +205,7 @@ class Orchestrator:
                 # Reserve the retry before scheduling work: two queued UI clicks
                 # must not create concurrent finalization tasks.
                 self.state = "processing"
+                self.notice = None
                 if self.expiry:
                     self.expiry.cancel()
                 self.work = asyncio.create_task(self.finalize(self.session))
@@ -199,15 +214,6 @@ class Orchestrator:
                 self.paused = True
             elif action == "resume":
                 self.paused = False
-            elif action == "status":
-                return {
-                    "feedback": self.feedback,
-                    "paused": self.paused,
-                    "state": self.state,
-                    "pending_audio": self.pcm is not None,
-                    "error_kind": self.error_kind,
-                    "metrics": self.recent_metrics[-1:],
-                }
 
     async def poll(self):
         try:
@@ -219,7 +225,7 @@ class Orchestrator:
                         self.chunker.cancel()
                     await self.event("error", "capture")
                     await self.bindings.active(False)
-                    await notify(
+                    await self.notify(
                         "Capture interrupted; no text inserted. Check the microphone and record again."
                     )
                     return
@@ -227,7 +233,7 @@ class Orchestrator:
                     async with self.control_lock:
                         if self.capture:
                             await self.release()
-                    await notify("Recording reached its configured limit and was finalized.")
+                    await self.notify("Recording reached its configured limit and was finalized.")
                     return
                 if self.chunker:
                     self.chunker.feed(capture.snapshot, capture.size // 2)
@@ -235,7 +241,7 @@ class Orchestrator:
                 await asyncio.sleep(1 / 30)
         except (RuntimeError, BrokenPipeError, TimeoutError, ConnectionError):
             await self.cancel(feedback=False)
-            await notify(
+            await self.notify(
                 "Recording stopped because the feedback pill is unavailable. Restart Caelum."
             )
 
@@ -333,7 +339,7 @@ class Orchestrator:
                         self.pcm = self.chunker = self.failed_at = None
                         await self.bindings.active(False)
                         await self.event("copied")
-                        await notify("Text copied. Paste manually; history saving is off.")
+                        await self.notify("Text copied. Paste manually; history saving is off.")
                         return
                     if not self.on_completed:
                         raise RuntimeError("History storage is required for portable delivery")
@@ -383,7 +389,9 @@ class Orchestrator:
                             session, text, self.metrics.copy(), refined, not dispatched
                         )
                 if not dispatched:
-                    await notify(
+                    await self.notify(
+                        "Your transcript was copied to the clipboard. Switch to the intended app and press Ctrl+V."
+                        if self.in_app_notifications else
                         "Text copied. Paste manually in the intended application."
                     )
         except asyncio.CancelledError:
@@ -406,21 +414,23 @@ class Orchestrator:
             self.error_kind = error.kind if isinstance(error, ProviderError) else "unavailable"
             if isinstance(error, ProviderError):
                 with suppress(RuntimeError, OSError, TimeoutError):
-                    await notify(str(error))
+                    await self.notify(str(error))
             remaining = self.config.app.retry_expiry_seconds - (time.monotonic() - self.failed_at)
             self.expiry = asyncio.create_task(self.expire(session, max(0, remaining)))
-            self.recovery_task = asyncio.create_task(
-                recovery_notification(self, session, max(0, remaining))
-            )
+            if not self.in_app_notifications:  # The dashboard already offers Retry and Discard.
+                self.recovery_task = asyncio.create_task(
+                    recovery_notification(self, session, max(0, remaining))
+                )
 
     async def expire(self, session, seconds):
         await asyncio.sleep(seconds)
         async with self.control_lock:
             if session == self.session and self.pcm is not None:
                 await self.cancel()
-                await notify("Retry window expired. Pending audio discarded; record again.")
+                await self.notify("Retry window expired. Pending audio discarded; record again.")
 
     async def cancel(self, feedback=True):
+        self.notice = None
         self.session = uuid.uuid4().hex  # invalidate every late callback
         current = asyncio.current_task()
         for task in (self.work, self.poll_task, self.expiry, self.recovery_task):

@@ -19,6 +19,7 @@ export interface Status {
   paused: boolean;
   pending_audio?: boolean;
   storage_error?: boolean;
+  notice?: string;
   backend?: string;
   feedback?: Feedback;
   engine?: {

@@ -62,6 +62,7 @@ STATUS = obj(
         "paused": BOOL,
         "pending_audio": BOOL,
         "storage_error": BOOL,
+        "notice": STRING,
         "backend": STRING,
         "engine": obj({
             "kind": {"enum": ["online", "local"]}, "model": union(STRING, NULL),
@@ -72,7 +73,7 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "feedback", "engine"),
+    optional=("pending_audio", "storage_error", "notice", "backend", "feedback", "engine"),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})
