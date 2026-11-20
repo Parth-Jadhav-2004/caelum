@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
 import { Setup } from "./setup";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ipc } from "@/lib/ipc";
 import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
@@ -24,6 +25,7 @@ beforeEach(() => {
         },
       };
     if (method === "devices") return [];
+    if (method === "shortcut.check") return { state: "available", message: "Available" };
     if (method === "setup.validate") return { storage: {} };
     if (method === "practice")
       return { text: "A little less typing.", refined: true };
@@ -41,7 +43,7 @@ function mount(initialConfig = testConfig) {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <StatefulSetup />
+      <TooltipProvider><StatefulSetup /></TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -177,6 +179,24 @@ it("completes six steps with one upload consent and real practice results", asyn
     enabled: false,
   });
   expect(ipc).toHaveBeenCalledWith("setup.finish", {});
+});
+it("offers manual recording without claiming an unsupported shortcut is ready", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method, params) =>
+    method === "shortcut.check"
+      ? Promise.resolve({ state: "manual", message: "Shortcut inactive: a non-modifier key is required." })
+      : original(method, params)) as typeof ipc);
+  mount();
+  await connect();
+  await screen.findByText("We hear you ✓");
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Shortcut inactive");
+  await userEvent.click(screen.getByRole("button", { name: "Use Record / Finish recording" }));
+  expect(ipc).toHaveBeenCalledWith("shortcut.check", { accept_manual: true });
+  expect(screen.queryByText(/or use your shortcut/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Record practice" }));
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(await screen.findByText("Record / Finish recording")).toBeVisible();
 });
 it("requires a new practice run after revisiting the service and microphone checks", async () => {
   mount();

@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config
@@ -52,7 +52,31 @@ async def test_absent_portal_keeps_manual_controls(monkeypatch):
     await bindings.install()
     assert bindings.mode == "manual"
     assert bindings.bus is None
-    assert "Record" in bindings.description
+    assert "Shortcut inactive" in bindings.description and "Record / Finish" in bindings.description
+
+
+@pytest.mark.parametrize("approved", [True, False])
+async def test_portal_binds_factory_trigger_or_reports_fallback(monkeypatch, approved):
+    monkeypatch.delenv("HYPRLAND_INSTANCE_SIGNATURE", raising=False)
+    bindings = Bindings(Config().app.hotkey)
+    bus = Mock()
+    monkeypatch.setattr("caelum.portable.MessageBus", lambda: SimpleNamespace(connect=AsyncMock(return_value=bus)))
+    bindings.call = AsyncMock(return_value=[":1.7"])
+    shortcuts = [["dictate", {"trigger_description": Variant("s", "Custom binding")}]] if approved else []
+    bindings.request = AsyncMock(side_effect=[
+        {"session_handle": Variant("s", "/session/test")},
+        {"shortcuts": Variant("a(sa{sv})", shortcuts)},
+    ])
+    await bindings.install()
+    method, _, arguments, _ = bindings.request.await_args.args
+    assert method == "BindShortcuts"
+    assert arguments[1][0][1]["preferred_trigger"].value == "LOGO+ALT+V"
+    assert bindings.installed == approved
+    if approved:
+        assert bindings.mode == "portal" and bindings.description == "Custom binding"
+    else:
+        assert bindings.mode == "manual" and "Record / Finish recording" in bindings.description
+        bus.disconnect.assert_called_once()
 
 
 async def test_modifier_only_never_requests_portal():
@@ -176,7 +200,12 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
     )
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     monkeypatch.setenv(config.stt.key_env, "unused-test-credential")
-    monkeypatch.setattr("caelum.portable.Bindings.install", AsyncMock())
+    # Even a desktop permission dialog that stays open must not block manual recording.
+    permission = asyncio.Event()
+    async def install(bindings):
+        await permission.wait()
+        bindings.mode = "manual"
+    monkeypatch.setattr("caelum.portable.Bindings.install", install)
     monkeypatch.setattr("caelum.portable.session_locked", AsyncMock(return_value=False))
     monkeypatch.setattr("caelum.portable.HUD.emit", AsyncMock())
 
@@ -226,7 +255,8 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
                 if service.done():
                     service.result()
                 await asyncio.sleep(0.01)
-        assert (await control("status"))["backend"] == "portable"
+        status = await control("status")
+        assert (status["backend"], status["shortcut_mode"]) == ("portable", "pending")
         await control("pause")
         assert (await control("status"))["paused"]
         await control("toggle")
