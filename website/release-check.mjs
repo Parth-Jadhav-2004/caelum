@@ -6,6 +6,17 @@ import { menuChoices, packageChoices, unsupportedPlatform } from "./downloads.js
 const manifest = JSON.parse(
   readFileSync(new URL("./release.json", import.meta.url)),
 );
+// Selection depends on the package ID and manager. The published inventory
+// can legitimately omit any target whose download could not be verified.
+const selectionPackages = [
+  { id: "appimage", manager: "appimage" },
+  { id: "windows", manager: "exe" },
+  { id: "ubuntu-2404", manager: "apt" },
+  { id: "ubuntu-2604", manager: "apt" },
+  { id: "debian-12", manager: "apt" },
+  { id: "arch", manager: "pacman" },
+  { id: "fedora", manager: "dnf" },
+];
 
 for (const [platform, agent, expected] of [
   ["Linux x86_64", "Ubuntu", "appimage"],
@@ -21,7 +32,7 @@ for (const [platform, agent, expected] of [
   ["Linux armv8l", "Linux; Android", null],
 ]) {
   test(`package selection and compact menu for ${agent}`, () => {
-    const packages = manifest.packages;
+    const packages = selectionPackages;
     const matches = packageChoices(packages, platform, agent);
     const expectedIds = expected ? [expected] : [];
     assert.deepEqual(matches.map(p => p.id), expectedIds);
@@ -116,6 +127,6 @@ test("known unsupported platforms are named without recommending an installer", 
     ["", "", null],
   ]) {
     assert.equal(unsupportedPlatform(platform, agent), expected);
-    assert.deepEqual(packageChoices(manifest.packages, platform, agent), []);
+    assert.deepEqual(packageChoices(selectionPackages, platform, agent), []);
   }
 });
