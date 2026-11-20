@@ -34,7 +34,12 @@ frontend startup. A successful run uploads `Caelum-Windows-x64`. This is a
 development artifact; Authenticode signing and public release promotion require
 the release owner's configuration. The stable update signer includes a Windows
 installer when `caelum-<version>-x64-setup.exe` is present in the release
-directory. Windows rechecks its signed manifest and hash before opening it.
+directory. For in-app updates, Caelum verifies the release manifest signature
+and checks the installer against its SHA-256 hash. The `.exe` itself is not
+Authenticode-signed, so Windows SmartScreen may prompt when the installer opens.
+Caelum closes so the installer can replace its files. Reopen Caelum after setup:
+it confirms the update from the version now running. If setup was cancelled or
+blocked, use **Settings → System → Open installer** to retry the staged download.
 
 ## Desktop behavior to verify on a Windows machine
 
@@ -46,7 +51,9 @@ directory. Windows rechecks its signed manifest and hash before opening it.
   For other controls or a focus change, wait for **Copied**, then use **Ctrl+V**
   in the intended field. If a field truncates the text, the clipboard changed, or copying failed,
   choose **Retry** to copy the finished transcript before the retry window expires.
-  This also works with history saving off.
+  This also works with history saving off. With automatic clipboard copy off,
+  unsupported or failed insertions leave your clipboard untouched. Use **Copy
+  transcript** on Home before starting another recording.
 - Cancel with Escape, lock during capture, change input devices and test
   retry after a network interruption. Check tray hide/show and quit.
 - Check light, dark and high-contrast appearances, the history calendar,
