@@ -456,6 +456,8 @@ fn main() {
                     let app = app.clone();
                     match event.id.as_ref() {
                         "open" => show(&app),
+                        // No engine started, so there is no recording to confirm.
+                        "quit" if app.state::<Desktop>().engine.is_err() => app.exit(0),
                         "quit" => {
                             show(&app);
                             let _ = app.emit("desktop:quit", ());
@@ -531,7 +533,7 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<Desktop>();
-                if !state.quitting.load(Ordering::SeqCst) {
+                if state.engine.is_ok() && !state.quitting.load(Ordering::SeqCst) {
                     api.prevent_close();
                     if state.tray_available.load(Ordering::SeqCst) {
                         let _ = window.hide();
