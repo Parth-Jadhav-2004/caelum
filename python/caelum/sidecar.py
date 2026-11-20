@@ -442,7 +442,7 @@ class Backend:
                 if previous.app.microphone != config.app.microphone:
                     self.setup_checks.discard("microphone")
                     self.setup_checks.discard("practice")
-                if previous.app.hotkey != config.app.hotkey:
+                if previous.app.hotkey != config.app.hotkey or previous.app.backend != config.app.backend:
                     self.setup_checks.discard("shortcut")
             return {"saved": True, **({"warning": warning} if warning else {})}
         elif method == "providers.check":
@@ -513,7 +513,10 @@ class Backend:
                 await asyncio.gather(validation, return_exceptions=True)
         elif method == "shortcut.check":
             result = await check_shortcut(config)
-            self.setup_checks.add("shortcut")
+            if result["state"] == "manual" and not params.get("accept_manual"):
+                self.setup_checks.discard("shortcut")
+            else:
+                self.setup_checks.add("shortcut")
             return result
         elif method in {"microphone.test", "practice"}:
             interactive = method == "practice" and params.get("interactive") is True

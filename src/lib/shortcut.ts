@@ -6,6 +6,7 @@ export function portalShortcutStatus(status: Status | null): string | undefined 
     return `Active shortcut: ${status.shortcut_description}`;
   if (status.shortcut_mode === "manual")
     return `No active portal shortcut. ${status.shortcut_description}`;
+  if (status.shortcut_mode === "pending") return status.shortcut_description;
 }
 
 const windowsLabels: Record<string, string> = {

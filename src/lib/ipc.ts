@@ -71,6 +71,10 @@ export interface Device {
 export interface Ack {
   ok: boolean;
 }
+export interface ShortcutCheck {
+  state: "available" | "pending" | "manual";
+  message: string;
+}
 export interface ModelProgress {
   id: string;
   state:
@@ -170,7 +174,7 @@ interface Methods {
     { consent: boolean; keys?: Record<string, string> },
     { storage: Record<string, string> },
   ];
-  "shortcut.check": [Record<string, never>, string];
+  "shortcut.check": [{ accept_manual?: boolean }, ShortcutCheck];
   "setup.finish": [{ skip_practice?: boolean }, Ack];
   "setup.stage": [{ stage: number }, Ack];
   "setup.skip": [Record<string, never>, Ack];

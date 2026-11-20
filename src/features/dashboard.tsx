@@ -164,7 +164,11 @@ export function Dashboard({ config }: { config: Config }) {
             </Button>
           )}
         </div>
-        {portalStatus && <p className="text-meta text-muted-foreground">{portalStatus}</p>}
+        {portalStatus && (
+          <p className="text-meta text-muted-foreground" role={status?.shortcut_mode === "manual" ? "alert" : "status"}>
+            {portalStatus}
+          </p>
+        )}
         <div
           aria-label="Today’s activity"
           aria-busy={summary.isPending}

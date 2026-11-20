@@ -34,7 +34,7 @@ beforeEach(() => {
       return { saved: true };
     }
     if (method === "devices") return [];
-    if (method === "shortcut.check") return "Available";
+    if (method === "shortcut.check") return { state: "available", message: "Available" };
     if (method === "setup.validate") return { storage: {} };
     if (method === "practice") return { text: "Hello Caelum", refined: false };
     return { ok: true };

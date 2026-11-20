@@ -177,7 +177,8 @@ method(
     obj({"consent": BOOL, "keys": STRINGS}, optional=("keys",)),
     obj({"storage": STRINGS}),
 )
-method("shortcut.check", result=STRING)
+method("shortcut.check", obj({"accept_manual": BOOL}, optional=("accept_manual",)),
+       obj({"state": {"enum": ["available", "pending", "manual"]}, "message": STRING}))
 method("setup.finish", obj({"skip_practice": BOOL}, optional=("skip_practice",)))
 method("setup.stage", obj({"stage": {"enum": [0, 1, 2, 3]}}))
 method("setup.skip")

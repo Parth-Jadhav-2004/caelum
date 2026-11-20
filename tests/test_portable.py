@@ -52,7 +52,31 @@ async def test_absent_portal_keeps_manual_controls(monkeypatch):
     await bindings.install()
     assert bindings.mode == "manual"
     assert bindings.bus is None
-    assert "Record" in bindings.description
+    assert "Shortcut inactive" in bindings.description and "Record / Finish" in bindings.description
+
+
+@pytest.mark.parametrize("approved", [True, False])
+async def test_portal_binds_factory_trigger_or_reports_fallback(monkeypatch, approved):
+    monkeypatch.delenv("HYPRLAND_INSTANCE_SIGNATURE", raising=False)
+    bindings = Bindings(Config().app.hotkey)
+    bus = Mock()
+    monkeypatch.setattr("caelum.portable.MessageBus", lambda: SimpleNamespace(connect=AsyncMock(return_value=bus)))
+    bindings.call = AsyncMock(return_value=[":1.7"])
+    shortcuts = [["dictate", {"trigger_description": Variant("s", "Custom binding")}]] if approved else []
+    bindings.request = AsyncMock(side_effect=[
+        {"session_handle": Variant("s", "/session/test")},
+        {"shortcuts": Variant("a(sa{sv})", shortcuts)},
+    ])
+    await bindings.install()
+    method, _, arguments, _ = bindings.request.await_args.args
+    assert method == "BindShortcuts"
+    assert arguments[1][0][1]["preferred_trigger"].value == "LOGO+ALT+V"
+    assert bindings.installed == approved
+    if approved:
+        assert bindings.mode == "portal" and bindings.description == "Custom binding"
+    else:
+        assert bindings.mode == "manual" and "Record / Finish recording" in bindings.description
+        bus.disconnect.assert_called_once()
 
 
 async def test_modifier_only_never_requests_portal():
@@ -270,7 +294,8 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
                 await asyncio.sleep(0.01)
         await asyncio.wait_for(prompt.wait(), 2)
         status = await control("status")
-        assert status["backend"] == "portable" and "Waiting" in status["shortcut_description"]
+        assert (status["backend"], status["shortcut_mode"]) == ("portable", "pending")
+        assert "Waiting" in status["shortcut_description"]
         settings = asdict(config)
         settings["app"]["hotkey"] = "CTRL + ALT + D"
         await control("settings", config=settings)

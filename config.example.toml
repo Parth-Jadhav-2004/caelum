@@ -1,8 +1,9 @@
 # ~/.config/caelum/config.toml; credentials belong in environment variables.
 [app]
 backend = "auto" # auto, hyprland, or portable (GNOME/KDE/X11/manual copy)
-hotkey = "CTRL + SUPER"
-# Windows and Hyprland support this chord in either order. Other desktops may require a letter.
+# Omit hotkey for the desktop default: CTRL + SUPER on Windows/Hyprland,
+# SUPER + ALT + V on portal desktops. Uncomment to choose a fixed shortcut.
+# hotkey = "SUPER + ALT + V"
 recording_mode = "hold" # "hold" or "toggle" (press once to start, again to stop)
 strategy = "single" # "chunked" is experimental; benchmark before enabling
 max_recording_seconds = 180

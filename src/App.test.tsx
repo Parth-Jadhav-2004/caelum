@@ -459,6 +459,13 @@ it("separates a saved portal preference from the binding reported before and aft
   expect(invoke).toHaveBeenCalledWith("restart_app", { discard: false });
 
   act(() => useApp.setState({ status: {
+    ...session, hotkey: config.app.hotkey, shortcut_mode: "pending",
+    shortcut_description: "Waiting for desktop shortcut approval.",
+  } }));
+  expect(screen.getByText("Waiting for desktop shortcut approval.")).toBeInTheDocument();
+  expect(screen.queryByText(/Active shortcut:/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Restart Caelum" })).not.toBeInTheDocument();
+  act(() => useApp.setState({ status: {
     ...session, hotkey: config.app.hotkey, shortcut_description: "Meta+D",
   } }));
   expect(screen.getByText("Active shortcut: Meta+D")).toBeInTheDocument();
