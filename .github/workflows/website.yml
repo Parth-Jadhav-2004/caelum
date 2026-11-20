@@ -29,9 +29,39 @@ jobs:
       contents: read
     runs-on: ubuntu-24.04
     steps:
-      - name: Direct pull requests to dev
+      - name: Require the repository's dev branch
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          echo "::error::Target dev. Only fast-forward main when promoting a qualified release."
+          if [[ "$HEAD_REPO" != "$GITHUB_REPOSITORY" || "$GITHUB_HEAD_REF" != dev ]]; then
+            echo "::error::Target dev. Only a dev-to-main release promotion belongs here."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the proposed merge against a published Testing RC
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse "$HEAD_SHA^{tree}")" ]]; then
+            echo "::error::The proposed merge changes the candidate tree. Sync main into dev first."
+            exit 1
+          fi
+          version=$(jq -er .version package.json)
+          prefix="v$version-rc."
+          tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.prerelease and (.draft | not)) | .tag_name')
+          while IFS= read -r tag; do
+            [[ "$tag" == "$prefix"* && "${tag#"$prefix"}" =~ ^[1-9][0-9]*$ ]] || continue
+            if [[ "$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}")" == "$HEAD_SHA" ]]; then
+              echo "Verified published Testing release $tag at $HEAD_SHA."
+              exit 0
+            fi
+          done <<< "$tags"
+          echo "::error::Publish a Testing RC for this exact dev commit, then rerun this check."
           exit 1
   deploy:
     if: github.event_name != 'pull_request'

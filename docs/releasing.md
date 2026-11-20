@@ -2,7 +2,7 @@
 
 ## Branches and release channels
 
-Develop on short-lived branches and integrate through pull requests to `dev`. Keep `main` stable. Before building an RC, bring any changes from `main` into `dev` so the release can fast-forward to the tested commit.
+Develop on short-lived branches and integrate through pull requests to `dev`. Keep `main` stable. Before building an RC, reconcile any changes from `main` into `dev` so promotion preserves the tested tree.
 
 | Channel | GitHub release | Installation |
 | --- | --- | --- |
@@ -31,7 +31,9 @@ Use `--ref main` for a candidate on `main`. The publisher checks the run, attemp
 
 Complete [desktop acceptance](acceptance.md) on the selected RC and record the results with its commit, run and attempt. The [0.5.0 qualification issue](https://github.com/Parth-Jadhav-2004/caelum/issues/26) records the Linux desktop and signed-upgrade checklist. A change to the candidate bytes requires a new RC.
 
-All pull requests target `dev`. After required checks and desktop acceptance pass, verify that the candidate SHA is still the tip of `dev` and that `main` is its ancestor. Fast-forward `main` to that exact SHA without a force push. Verify the remote commit matches the candidate, then dispatch from `main` with the same run and RC number.
+Open a release PR from the repository's `dev` branch to `main`. The `promotion-route` check verifies that a published, numbered RC for this version points to the exact PR head and that the proposed merge has the same tree. If the PR was opened before Testing publication, rerun the failed job once the RC is public. Keep unrelated work off `dev` until promotion finishes.
+
+After desktop acceptance and all required checks pass, use **Create a merge commit**. Fetch `main` and compare `git rev-parse 'origin/main^{tree}'` with `git rev-parse "$CANDIDATE_SHA^{tree}"`; the trees must match even though the merge commit has a different SHA. Dispatch from `main` with the original candidate run and RC number. The publisher tags the candidate SHA, not the merge commit.
 
 ```sh
 gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=true
