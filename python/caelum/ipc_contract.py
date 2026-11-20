@@ -180,9 +180,12 @@ method(
 method("updates.check", result=union(obj({"version": STRING}), NULL))
 method("updates.testing", result=union(obj({"version": STRING, "installed": BOOL}), NULL))
 method("updates.stage", result=STRING)
-method("updates.apply", result=BOOL)
+method("updates.apply", result={"enum": ["installed", "installer_launched", "no_update"]})
 method("updates.discard")
-method("updates.pending", result=BOOL)
+method("updates.pending", result=union(
+    NULL, obj({"state": {"enum": ["unverified"]}, "version": NULL}),
+    obj({"state": {"enum": ["queued", "installed"]}, "version": STRING}),
+))
 method("shutdown", obj({"discard": BOOL}, optional=("discard",)))
 
 MODEL_PROGRESS = obj({

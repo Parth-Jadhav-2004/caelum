@@ -158,6 +158,18 @@ export default function App() {
     initialized.current = true;
     draft.current = bootstrap.data.config;
     setConfig(bootstrap.data.config);
+    // This is a local version check, even when online update checks are off.
+    if (/Windows/i.test(navigator.userAgent))
+      void ipc("updates.pending", {})
+        .then((pending) => {
+          if (pending?.state === "installed")
+            toast.success(`Update confirmed: Caelum ${pending.version} is running.`);
+          else if (pending?.state === "queued") {
+            setUpdateAvailable(true);
+            toast.info(`Caelum ${pending.version} is not installed yet. Open the installer from Settings to retry.`);
+          }
+        })
+        .catch(() => {});
     if (!bootstrap.data.setup.complete) navigate("setup");
     else {
       void action(() => ipc("service.start", {}));

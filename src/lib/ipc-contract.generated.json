@@ -1264,7 +1264,11 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "enum": [
+          "installed",
+          "installer_launched",
+          "no_update"
+        ]
       }
     },
     "updates.discard": {
@@ -1297,7 +1301,48 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "unverified"
+                ]
+              },
+              "version": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "queued",
+                  "installed"
+                ]
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "shutdown": {

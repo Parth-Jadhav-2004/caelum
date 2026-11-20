@@ -166,20 +166,13 @@ impl Engine {
 }
 
 struct Desktop {
-    #[cfg(windows)]
-    installer_started: AtomicBool,
     engine: Engine,
     quitting: AtomicBool,
     tray_available: AtomicBool,
 }
 #[tauri::command]
 async fn backend(method: String, params: Value, state: tauri::State<'_, Desktop>) -> Reply {
-    let result = state.engine.call(&method, params).await;
-    #[cfg(windows)]
-    if method == "updates.apply" && matches!(&result, Ok(Value::Bool(true))) {
-        state.installer_started.store(true, Ordering::SeqCst);
-    }
-    result
+    state.engine.call(&method, params).await
 }
 #[tauri::command]
 async fn restart_app(
@@ -198,11 +191,6 @@ async fn restart_app(
     }
     state.quitting.store(true, Ordering::SeqCst);
     state.engine.close(shutdown_complete).await;
-    #[cfg(windows)]
-    if state.installer_started.load(Ordering::SeqCst) {
-        app.exit(0);
-        return Ok(());
-    }
     app.restart();
 }
 #[tauri::command]
@@ -401,8 +389,6 @@ fn main() {
             let handle = app.handle().clone();
             let engine = tauri::async_runtime::block_on(Engine::spawn(handle.clone()))?;
             app.manage(Desktop {
-                #[cfg(windows)]
-                installer_started: AtomicBool::new(false),
                 engine,
                 quitting: AtomicBool::new(false),
                 tray_available: AtomicBool::new(false),
