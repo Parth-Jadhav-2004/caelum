@@ -53,6 +53,10 @@ directory. Windows rechecks its signed manifest and hash before opening it.
   export, dictionary, model switching, and Start Menu/startup shortcuts.
 
 Config and setup metadata use `%APPDATA%\Caelum`; transcripts, models and the
-update cache use `%LOCALAPPDATA%\Caelum`. Provider secrets are stored in Windows
-Credential Manager. The GUI-owned service uses an in-process control channel;
+update cache use `%LOCALAPPDATA%\Caelum`. Setup shows where each provider key
+is saved. Caelum prefers Windows Credential Manager; if it cannot save there,
+it encrypts the key for your Windows account using DPAPI before writing it to
+`credentials.json`. Older plaintext entries are encrypted on first access. If
+Windows cannot protect a key, Caelum reports the failure rather than saving a
+plaintext copy. The GUI-owned service uses an in-process control channel;
 Linux compositor, portal and Unix-socket CLI integrations are Linux-specific.

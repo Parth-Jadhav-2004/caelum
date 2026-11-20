@@ -56,6 +56,17 @@ async def online_setup():
             assert result["storage"][key_name] == "keyring"
             assert credentials.get(key_name) == key
             assert key not in config_path().with_name("credentials.json").read_text()
+            assert "Windows Credential Manager" in credentials.describe(key_name)["description"]
+            # Only fail the vault write: exercise real current-user DPAPI in
+            # both the embedded runtime and the installed application.
+            import pywintypes
+
+            replacement = uuid.uuid4().hex
+            with patch("win32cred.CredWrite", side_effect=pywintypes.error(1312, "CredWrite", "offline")):
+                assert credentials.store(key_name, replacement) == "dpapi"
+            assert replacement not in config_path().with_name("credentials.json").read_text()
+            assert credentials.get(key_name) == replacement
+            assert credentials.describe(key_name)["storage"] == "dpapi"
         finally:
             server.shutdown()
             credentials.delete(key_name)

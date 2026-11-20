@@ -291,6 +291,18 @@ it("keeps the structured file-storage warning visible after microphone success",
   );
 });
 
+it("identifies Windows-protected storage after saving during a vault outage", async () => {
+  const original = vi.mocked(ipc).getMockImplementation()!;
+  vi.mocked(ipc).mockImplementation(((method: string, params: unknown) =>
+    method === "setup.validate"
+      ? Promise.resolve({ storage: { GROQ_API_KEY: "dpapi" } })
+      : original(method as never, params as never)) as typeof ipc);
+  mount();
+  await connect();
+  await screen.findByText(/GROQ_API_KEY: Key encrypted for your Windows account/);
+  expect(screen.queryByText(/stored without encryption/)).not.toBeInTheDocument();
+});
+
 it("waits for a changed microphone to finish saving before checking it", async () => {
   const original = vi.mocked(ipc).getMockImplementation()!;
   vi.mocked(ipc).mockImplementation(((method, params) =>
