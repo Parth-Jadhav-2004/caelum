@@ -34,7 +34,12 @@ frontend startup. A successful run uploads `Caelum-Windows-x64`. This is a
 development artifact; Authenticode signing and public release promotion require
 the release owner's configuration. The stable update signer includes a Windows
 installer when `caelum-<version>-x64-setup.exe` is present in the release
-directory. Windows rechecks its signed manifest and hash before opening it.
+directory. For in-app updates, Caelum verifies the release manifest signature
+and checks the installer against its SHA-256 hash. The `.exe` itself is not
+Authenticode-signed, so Windows SmartScreen may prompt when the installer opens.
+Caelum closes so the installer can replace its files. Reopen Caelum after setup:
+it confirms the update from the version now running. If setup was cancelled or
+blocked, use **Settings → System → Open installer** to retry the staged download.
 
 ## Desktop behavior to verify on a Windows machine
 

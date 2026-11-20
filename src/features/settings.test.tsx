@@ -256,7 +256,7 @@ it("shows help on screen and focuses the selected group without repeated heading
   mount({ description: "Saved", storage: "keyring" });
   await userEvent.click(screen.getByRole("button", { name: "System" }));
   expect(
-    await screen.findByText("Automatic updates use signed stable releases."),
+    await screen.findByText("Caelum verifies updates against a signed release manifest."),
   ).toBeVisible();
   expect(screen.getByRole("region", { name: "System" })).toHaveFocus();
   expect(
@@ -316,7 +316,7 @@ it("reports a failed testing check while keeping a signed stable update availabl
   );
 });
 
-it.each([true, false])(
+it.each(["installed", "no_update"])(
   "restarts only when an update was installed (%s)",
   async (applied) => {
     vi.mocked(invoke).mockClear();
@@ -324,7 +324,7 @@ it.each([true, false])(
     let queued = true;
     const original = vi.mocked(ipc).getMockImplementation()!;
     vi.mocked(ipc).mockImplementation(((method, params) => {
-      if (method === "updates.pending") return Promise.resolve(queued);
+      if (method === "updates.pending") return Promise.resolve(queued ? { state: "queued", version: "0.4.3" } : null);
       if (method === "updates.apply") {
         queued = false;
         return Promise.resolve(applied);
@@ -343,22 +343,47 @@ it.each([true, false])(
     await waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
-    if (applied) expect(invoke).toHaveBeenCalledWith("restart_app");
+    if (applied === "installed") expect(invoke).toHaveBeenCalledWith("restart_app");
     else {
       expect(invoke).not.toHaveBeenCalledWith("restart_app");
       expect(screen.getByRole("status")).toHaveTextContent(
-        "already up to date",
+        "No update is queued",
       );
     }
   },
 );
+
+it("explains SmartScreen before handing off to the Windows installer and quitting", async () => {
+  const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT");
+  try {
+    vi.mocked(invoke).mockClear();
+    mount({ description: "Saved", storage: "keyring" });
+    const original = vi.mocked(ipc).getMockImplementation()!;
+    vi.mocked(ipc).mockImplementation(((method, params) =>
+      method === "updates.pending" ? Promise.resolve({ state: "queued", version: "0.4.3" })
+      : method === "updates.apply" ? Promise.resolve("installer_launched")
+      : original(method, params)) as typeof ipc);
+    await userEvent.click(screen.getByRole("button", { name: "System" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Open installer" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("signed release manifest");
+    expect(dialog).toHaveTextContent("not Authenticode-signed");
+    expect(dialog).toHaveTextContent("SmartScreen");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open installer" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("quit_app", { discard: false }));
+    expect(invoke).not.toHaveBeenCalledWith("restart_app");
+    expect(ipc).not.toHaveBeenCalledWith("updates.stage", {});
+  } finally {
+    agent.mockRestore();
+  }
+});
 
 it("retains a queued update after failure and shows its installation error", async () => {
   mount({ description: "Saved", storage: "keyring" });
   let queued = false;
   const original = vi.mocked(ipc).getMockImplementation()!;
   vi.mocked(ipc).mockImplementation(((method, params) => {
-    if (method === "updates.pending") return Promise.resolve(queued);
+    if (method === "updates.pending") return Promise.resolve(queued ? { state: "queued", version: "0.4.3" } : null);
     if (method === "updates.check")
       return Promise.resolve({ version: "0.4.3" });
     if (method === "updates.stage") {
