@@ -1,14 +1,55 @@
-"""Owner-only credential metadata; secrets go to Secret Service where available."""
+"""Provider credentials in the OS key store, with platform-specific file fallbacks."""
 
+import base64
 import json
 import os
 import re
 import stat
 import subprocess
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
+from threading import Lock
 
 from .config import config_path
+
+_WINDOWS = os.name == "nt"
+# Reads may upgrade legacy records; serialize these with sidecar worker writes.
+_lock = Lock() if _WINDOWS else nullcontext()
+_CRYPTPROTECT_UI_FORBIDDEN = 1
+
+
+class _MigrationError(RuntimeError):
+    pass
+
+
+def _dpapi():
+    try:
+        import pywintypes
+        import win32crypt
+
+        return win32crypt, pywintypes.error
+    except ImportError:
+        raise RuntimeError("Windows data protection is unavailable") from None
+
+
+def _protect(value):
+    crypt, api_error = _dpapi()
+    try:
+        # Current user (no LOCAL_MACHINE flag); never prompt from the sidecar.
+        blob = crypt.CryptProtectData(value.encode(), Flags=_CRYPTPROTECT_UI_FORBIDDEN)
+        return base64.b64encode(blob).decode("ascii")
+    except (api_error, ValueError):
+        raise RuntimeError("Windows could not protect the key for this user; key not saved") from None
+
+
+def _unprotect(value):
+    crypt, api_error = _dpapi()
+    try:
+        blob = base64.b64decode(value, validate=True)
+        return crypt.CryptUnprotectData(blob, Flags=_CRYPTPROTECT_UI_FORBIDDEN)[1].decode()
+    except (api_error, ValueError):
+        raise RuntimeError("Cannot unlock the saved key; use the original Windows account or replace the key") from None
 
 
 def _path():
@@ -30,17 +71,36 @@ def _read():
         data = json.loads(path.read_text())
         if not isinstance(data, dict) or any(
             not isinstance(record, dict)
-            or record.get("storage") not in ("file", "keyring", "deleted")
-            or (record.get("storage") == "file" and not isinstance(record.get("value"), str))
+            or record.get("storage") not in ("file", "dpapi", "keyring", "deleted")
+            or (record.get("storage") in ("file", "dpapi") and not isinstance(record.get("value"), str))
             for record in data.values()
         ):
             raise ValueError("Invalid credential metadata")
-        return data
     except (ValueError, OSError):
         raise RuntimeError("Could not read saved credentials") from None
+    return data
+
+
+def _read_protected():
+    with _lock:
+        data = _read()
+        if _WINDOWS and any(r["storage"] == "file" for r in data.values()):
+            try:
+                _write(data)
+            except (RuntimeError, OSError):
+                raise _MigrationError(
+                    "Older key file is still unencrypted; restore Windows data protection "
+                    "and write access to the credential file, then retry"
+                ) from None
+        return data
 
 
 def _write(data):
+    if _WINDOWS:
+        # Upgrade *all* old file records before opening even the temporary file.
+        for record in data.values():
+            if record["storage"] == "file":
+                record.update(storage="dpapi", value=_protect(record["value"]))
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".credentials-")
@@ -55,9 +115,14 @@ def _write(data):
 
 
 def _secret(action, name, value=None):
-    if os.name == "nt":
-        import pywintypes
-        import win32cred
+    if _WINDOWS:
+        try:
+            import pywintypes
+            import win32cred
+        except ImportError:
+            if action == "lookup":
+                raise RuntimeError("Windows Credential Manager is unavailable") from None
+            return None
 
         target = f"Caelum/{name}"
         output = ""
@@ -73,7 +138,9 @@ def _secret(action, name, value=None):
             else:
                 win32cred.CredDelete(target, win32cred.CRED_TYPE_GENERIC)
         except pywintypes.error as exc:
-            if exc.winerror != 1168 or action == "store":
+            if action == "store" or (action == "clear" and exc.winerror != 1168):
+                return None
+            if exc.winerror != 1168:
                 raise RuntimeError("Windows Credential Manager is unavailable") from None
             if action == "lookup":
                 return None
@@ -97,12 +164,14 @@ def _secret(action, name, value=None):
 
 
 def get(name):
-    record = _read().get(name)
+    record = _read_protected().get(name)
     if record:
         if record["storage"] == "deleted":
             return None
         if record["storage"] == "file":
             return record["value"]
+        if record["storage"] == "dpapi":
+            return _unprotect(record["value"])
         result = _secret("lookup", name)
         return result.stdout.strip() if result and result.returncode == 0 else None
     return os.environ.get(name)
@@ -113,6 +182,11 @@ def store(name, value):
         raise ValueError("Credential name must be an uppercase environment variable")
     if not value or any(char.isspace() for char in value):
         raise ValueError("Enter a nonempty key without spaces or line breaks")
+    with _lock:
+        return _store(name, value)
+
+
+def _store(name, value):
     data = _read()
     result = _secret("store", name, value)
     storage = "keyring" if result and result.returncode == 0 else "file"
@@ -125,15 +199,22 @@ def store(name, value):
     if storage == "file":
         data[name]["value"] = value
     _write(data)
-    return storage
+    return data[name]["storage"]
 
 
 def delete(name):
+    with _lock:
+        _delete(name)
+
+
+def _delete(name):
     data = _read()
     result = _secret("clear", name)
     if (
         data.get(name, {}).get("storage") == "keyring" or data.get(name, {}).get("keyring_copy")
     ) and (not result or result.returncode != 0):
+        if _WINDOWS:
+            raise RuntimeError("Restore access to Windows Credential Manager and try deleting the key again")
         raise RuntimeError("Unlock your desktop keyring and try deleting the key again")
     # A tombstone prevents a legacy environment key from silently returning.
     data[name] = {"storage": "deleted"}
@@ -143,10 +224,12 @@ def delete(name):
 
 def describe(name):
     try:
-        record = _read().get(name, {})
+        record = _read_protected().get(name, {})
         storage = record.get("storage")
         if storage == "keyring":
-            description = "key saved in desktop keyring"
+            description = "key saved in Windows Credential Manager" if _WINDOWS else "key saved in desktop keyring"
+        elif storage == "dpapi":
+            description = "key encrypted for your Windows account (DPAPI)"
         elif storage == "file":
             description = "key saved in private file (not encrypted)"
         elif storage == "deleted":
@@ -158,8 +241,13 @@ def describe(name):
             storage = "missing"
             description = "key missing; open setup to add a key"
         return {"description": description, "storage": storage}
-    except RuntimeError:
+    except _MigrationError as exc:
+        return {"description": str(exc), "storage": "unavailable"}
+    except (OSError, RuntimeError):
         return {
-            "description": "saved key unavailable; check credential file permissions",
+            "description": (
+                "saved key unavailable; check Windows credential protection and file permissions"
+                if _WINDOWS else "saved key unavailable; check credential file permissions"
+            ),
             "storage": "unavailable",
         }

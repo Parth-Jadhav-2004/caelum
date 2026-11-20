@@ -88,7 +88,7 @@ export function Setup({
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [micPassed, setMicPassed] = useState(false);
-  const [keyStoredInFile, setKeyStoredInFile] = useState(false);
+  const [savedStorage, setSavedStorage] = useState<Record<string, string>>({});
   const [micAttempt, setMicAttempt] = useState(0);
   const [practice, setPractice] = useState(""),
     [remove, setRemove] = useState(false);
@@ -321,7 +321,7 @@ export function Setup({
         });
         setKeys({});
         await bootstrap.refetch();
-        setKeyStoredInFile(Object.values(result.storage).includes("file"));
+        setSavedStorage(result.storage);
         if (manageKeys) openSettings("Transcription");
         else setStep(2);
       } else if (step === 2 && micPassed) setStep(3);
@@ -533,12 +533,9 @@ export function Setup({
                     </Button>
                   </div>
                   <p className="text-meta text-muted-foreground">
-                    {typeof credential === "object" &&
-                    ["keyring", "file", "environment"].includes(
-                      credential.storage,
-                    )
-                      ? "Your key is saved"
-                      : "Add a key to get started"}
+                    {typeof credential === "string"
+                      ? credential
+                      : (credential?.description ?? "Add a key to get started")}
                   </p>
                 </div>
                 {config.stt.base_url.startsWith("https://api.groq.com/") && (
@@ -797,11 +794,23 @@ export function Setup({
               Try it later
             </Button>
           )}
-          {keyStoredInFile && (
-            <p role="alert" className="text-body">
-              Key stored without encryption. Review Settings after setup.
-            </p>
-          )}
+          {step > 1 &&
+            Object.entries(savedStorage).map(([keyName, storage]) => {
+              const saved = bootstrap.data?.credentials[keyName];
+              const description =
+                storage === "file"
+                  ? "Key stored without encryption. Review Settings after setup."
+                  : storage === "dpapi"
+                    ? "Key encrypted for your Windows account (DPAPI)."
+                    : typeof saved === "object" && saved.storage === storage
+                      ? saved.description
+                      : "Key saved in the system key store.";
+              return (
+                <p key={keyName} role={storage === "file" ? "alert" : "status"} className="text-body">
+                  {keyName}: {description}
+                </p>
+              );
+            })}
           <div className="flex shrink-0 justify-between gap-3">
             {manageKeys ? (
               <Button
