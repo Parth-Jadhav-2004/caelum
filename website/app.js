@@ -1,5 +1,5 @@
 import "./demo.js?v=16";
-import { packageChoices, populateDownloads } from "./downloads.js?v=15";
+import { packageChoices, populateDownloads, unsupportedPlatform } from "./downloads.js?v=16";
 import { validateRelease } from "./release.js";
 
 const distroSelect = document.querySelector("#distro");
@@ -36,13 +36,22 @@ async function loadRelease() {
       item.textContent = `Caelum ${release.version} · Stable release`;
     });
     document.querySelector("#checksum-link").href = release.checksumsUrl;
-    distroSelect.replaceChildren(
-      new Option("Choose a published package", ""),
-      ...release.packages.map((item) => new Option(item.name, item.id)),
-    );
+    distroSelect.replaceChildren(new Option("Choose a published package", ""));
+    const groups = new Map();
+    for (const item of release.packages) {
+      const os = item.manager === "exe" ? "Windows" : "Linux";
+      if (!groups.has(os)) {
+        const group = document.createElement("optgroup");
+        group.label = os;
+        groups.set(os, group);
+        distroSelect.append(group);
+      }
+      groups.get(os).append(new Option(item.name, item.id));
+    }
     distroSelect.disabled = false;
-    const matches = packageChoices(release.packages, navigator.userAgentData?.platform || navigator.platform, navigator.userAgent);
-    populateDownloads(release, matches);
+    const platform = navigator.userAgentData?.platform || navigator.platform;
+    const matches = packageChoices(release.packages, platform, navigator.userAgent);
+    populateDownloads(release, matches, unsupportedPlatform(platform, navigator.userAgent));
     const requested = new URLSearchParams(location.search).get("download");
     distroSelect.value = requested ?? (matches.length === 1 ? matches[0].id : "");
     applyDistro(distroSelect.value);
