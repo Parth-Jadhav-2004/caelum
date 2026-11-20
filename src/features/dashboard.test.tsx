@@ -52,6 +52,19 @@ beforeEach(() => {
   }) as typeof ipc);
 });
 describe("recording controls", () => {
+  it("flags an inactive portal shortcut alongside the usable Record button", () => {
+    useApp.setState({
+      status: {
+        ...useApp.getState().status!,
+        backend: "portable",
+        shortcut_mode: "manual",
+        shortcut_description: "Shortcut inactive. Use Record / Finish recording.",
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Shortcut inactive. Use Record / Finish recording.");
+    expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
+  });
   it("starts and finishes recording through the typed boundary", async () => {
     const user = userEvent.setup();
     mount(<Dashboard config={config} />);

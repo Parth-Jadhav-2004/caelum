@@ -80,6 +80,20 @@ async def test_onboarding_requires_all_checks_and_upload_consent(backend, monkey
     assert (await backend.dispatch("bootstrap", {}))["setup"]["complete"]
 
 
+async def test_portable_modifier_only_setup_requires_manual_choice(backend, monkeypatch):
+    config = load(backend.path)
+    config.app.backend, config.app.hotkey = "portable", "CTRL + SUPER"
+    save(config, backend.path)
+    backend.setup_checks.update({"provider", "microphone", "practice"})
+    monkeypatch.setattr(backend, "start", AsyncMock())
+    assert (await backend.dispatch("shortcut.check", {}))["state"] == "manual"
+    with pytest.raises(ValueError, match="shortcut"):
+        await backend.dispatch("setup.finish", {})
+    await backend.dispatch("shortcut.check", {"accept_manual": True})
+    await backend.dispatch("setup.finish", {})
+    assert (await backend.dispatch("bootstrap", {}))["setup"]["complete"]
+
+
 async def test_credentials_validated_before_persistence(backend, monkeypatch):
     monkeypatch.setattr("caelum.providers.Providers.models", AsyncMock(return_value=[]))
     store = AsyncMock()
