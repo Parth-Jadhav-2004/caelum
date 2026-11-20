@@ -18,9 +18,9 @@ Dictate with a downloaded speech model or an online provider, then paste the tra
 
 For the AppImage, run `chmod +x ./caelum-0.5.0-x86_64.AppImage` and launch it from the download folder. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. For the native Hyprland overlay, install GTK 4, gtk4-layer-shell and their introspection typelibs. The AppImage includes the matching Python GI and Cairo bindings.
 
-On GNOME, KDE and other supported Linux desktops in portable mode, choose **Record** on Home, then **Finish recording**. After processing, copy the transcript from History and paste it into your editor. With history off, Caelum copies it to the clipboard automatically. These controls work even when a desktop portal shortcut is unavailable.
+On GNOME, KDE and other supported Linux desktops in portable mode, choose **Record** on Home, then **Finish recording**. After processing, you can copy a saved transcript from History and paste it into your editor. If Caelum shows **Copied**, just paste, even with history off. These controls work even when a desktop portal shortcut is unavailable.
 
-On native Hyprland and Windows, press and hold your configured hold-to-talk shortcut to start recording and show the pill. Release to stop capture. The complete transcript appears once processing finishes. Hyprland can insert it into the original window if it keeps focus. Windows can paste it into a supported Edit or RichEdit control that keeps focus. If the target changes or direct paste is unavailable, paste from the clipboard. [Linux setup](docs/linux.md) · [Windows shortcut behavior](docs/windows.md) · [Changes since 0.4.2](CHANGELOG.md#050)
+On native Hyprland and Windows, press and hold your configured hold-to-talk shortcut to start recording and show the pill. Release to stop capture. The complete transcript appears once processing finishes. Hyprland can insert it into the original window if it keeps focus. Windows can paste it into a supported Edit or RichEdit control that keeps focus. If Caelum shows **Copied** instead, paste into the intended app yourself. [Linux setup](docs/linux.md) · [Windows shortcut behavior](docs/windows.md) · [Changes since 0.4.2](CHANGELOG.md#050)
 
 ## Development
 
