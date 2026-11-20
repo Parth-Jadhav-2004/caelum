@@ -201,6 +201,9 @@
                   "history_enabled": {
                     "type": "boolean"
                   },
+                  "auto_copy": {
+                    "type": "boolean"
+                  },
                   "check_updates": {
                     "type": "boolean"
                   },
@@ -225,6 +228,7 @@
                 },
                 "required": [
                   "history_enabled",
+                  "auto_copy",
                   "check_updates",
                   "theme",
                   "color_theme",
@@ -330,6 +334,9 @@
             "type": "boolean"
           },
           "pending_audio": {
+            "type": "boolean"
+          },
+          "can_copy": {
             "type": "boolean"
           },
           "storage_error": {
@@ -769,6 +776,9 @@
                   "history_enabled": {
                     "type": "boolean"
                   },
+                  "auto_copy": {
+                    "type": "boolean"
+                  },
                   "check_updates": {
                     "type": "boolean"
                   },
@@ -879,7 +889,8 @@
               "cancel",
               "retry",
               "pause",
-              "resume"
+              "resume",
+              "copy"
             ]
           },
           "discard": {
@@ -1273,7 +1284,11 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "enum": [
+          "installed",
+          "installer_launched",
+          "no_update"
+        ]
       }
     },
     "updates.discard": {
@@ -1306,7 +1321,48 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "unverified"
+                ]
+              },
+              "version": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "queued",
+                  "installed"
+                ]
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "shutdown": {
@@ -1808,6 +1864,9 @@
         "type": "boolean"
       },
       "pending_audio": {
+        "type": "boolean"
+      },
+      "can_copy": {
         "type": "boolean"
       },
       "storage_error": {

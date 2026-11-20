@@ -415,7 +415,7 @@ class Backend:
             action = params.get("action")
             if self.sample_lock.locked() and action in {"start", "retry"}:
                 raise RuntimeError("Finish the microphone test first")
-            if action not in {"start", "stop", "retry", "cancel", "pause", "resume"}:
+            if action not in {"start", "stop", "retry", "cancel", "pause", "resume", "copy"}:
                 raise ValueError("Unknown recording action")
             if action == "pause" and not params.get("discard"):
                 await self.idle()
@@ -536,7 +536,7 @@ class Backend:
                 target = None
                 if method == "practice" and params.get("insert") is True:
                     from .portable import backend_name
-                    if backend_name(config) == "hyprland":
+                    if backend_name(config) == "hyprland" and config.desktop.auto_copy:
                         from .linux import target_at_press
                         target = await target_at_press()
                         # Setup only inserts into the desktop window that owns this sidecar.

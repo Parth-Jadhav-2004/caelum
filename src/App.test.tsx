@@ -13,6 +13,7 @@ import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { ipc, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+import { toast } from "sonner";
 import { testModels } from "@/test-models";
 import { testConfig } from "@/test-config";
 vi.mock("@tauri-apps/api/core", () => ({
@@ -82,6 +83,29 @@ it("starts the service after setup without automatically recording", async () =>
   await waitFor(() => expect(ipc).toHaveBeenCalledWith("service.start", {}));
   expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
   expect(document.documentElement.dataset.reducedMotion).toBe("true");
+});
+it.each(["queued", "installed"])("reconciles a %s Windows update without an online check", async (state) => {
+  const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT");
+  const confirmed = vi.spyOn(toast, "success");
+  const reminder = vi.spyOn(toast, "info");
+  try {
+    const original = vi.mocked(ipc).getMockImplementation()!;
+    vi.mocked(ipc).mockImplementation(((method, params) => method === "updates.pending"
+      ? Promise.resolve({ state, version: "0.5.1" }) : original(method, params)) as typeof ipc);
+    mount();
+    if (state === "installed")
+      await waitFor(() => expect(confirmed).toHaveBeenCalledWith("Update confirmed: Caelum 0.5.1 is running."));
+    else {
+      await waitFor(() => expect(reminder).toHaveBeenCalledWith(expect.stringContaining("0.5.1 is not installed yet")));
+      expect(confirmed).not.toHaveBeenCalled();
+    }
+    expect(ipc).not.toHaveBeenCalledWith("updates.check", {});
+    expect(ipc).not.toHaveBeenCalledWith("updates.apply", {});
+  } finally {
+    agent.mockRestore();
+    confirmed.mockRestore();
+    reminder.mockRestore();
+  }
 });
 it("collapses the sidebar and persists the preference", async () => {
   mount();
@@ -191,7 +215,7 @@ it("shows stable update results beside the update controls and links to releases
     method === "updates.check"
       ? Promise.resolve(null)
       : method === "updates.pending"
-        ? Promise.resolve(false)
+        ? Promise.resolve(null)
         : implementation(method as never, params as never)) as typeof ipc);
   mount();
   await screen.findByRole("heading", { name: /Record, finish/ });

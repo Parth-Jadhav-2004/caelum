@@ -35,7 +35,7 @@ async def prepare_update(core, stop):
             or core.work
             and not core.work.done()
             or core.state
-            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech",
+            not in {"hidden", "success", "unrefined", "saved", "copied", "ready_to_copy", "error", "no_speech",
                     "success_fallback_online", "success_fallback_local", "model_ready", "model_failed"}
         ):
             raise RuntimeError("Finish dictation or discard pending audio before updating")
@@ -92,7 +92,7 @@ async def safety_monitor(core):
 
 async def lock_monitor(core, locked=session_locked):
     while True:
-        if core.capture or core.pcm is not None:
+        if core.capture or core.pcm is not None or core.manual_result is not None:
             try:
                 is_locked = await locked()
             except (OSError, RuntimeError, TimeoutError):
@@ -284,6 +284,7 @@ async def serve(config, config_path=None):
                 "toggle",
                 "cancel",
                 "retry",
+                "copy",
                 "status",
                 "reload",
                 "settings",

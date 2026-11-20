@@ -1,7 +1,7 @@
 import asyncio
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config
@@ -328,6 +328,47 @@ async def test_portable_history_off_copies_once_without_storage(core, monkeypatc
     await core.handle("retry")
     copy.assert_awaited_once_with("Private spoken words.")
     assert "Private spoken words" not in str(core.hud.events) + str(core.recent_metrics)
+
+
+@pytest.mark.parametrize("backend", ["hyprland", "portable", "windows-failed", "windows-inserted"])
+@pytest.mark.parametrize("history", [True, False])
+async def test_auto_copy_off_preserves_clipboard_and_manual_delivery(core, monkeypatch, backend, history):
+    core.config.desktop.auto_copy = False
+    core.config.desktop.history_enabled = history
+    core.on_completed = Mock()
+    clipboard = AsyncMock()
+    monkeypatch.setattr("caelum.portable.copy_private_result", clipboard)
+    # Exercise the actual Hyprland insertion path: it must not run wl-copy or dispatch paste.
+    command = AsyncMock()
+    monkeypatch.setattr("caelum.linux.command", command)
+    if backend == "portable":
+        core.bindings.save_only = True
+    elif backend.startswith("windows"):
+        core.bindings.insert = AsyncMock(return_value=True, side_effect=(
+            RuntimeError("Incomplete insertion") if backend == "windows-failed" else None
+        ))
+        core.bindings.copy_result = clipboard
+
+    await core.finalize(core.session)
+    status = await core.handle("status")
+    command.assert_not_awaited()
+    clipboard.assert_not_awaited()
+    if backend.startswith("windows"):
+        core.bindings.insert.assert_awaited_once_with("Private spoken words.", core.target, auto_copy=False)
+    assert core.state == ("success" if backend == "windows-inserted" else "ready_to_copy")
+    assert core.pcm is None
+    assert "Private spoken words." not in str(status) + str(core.hud.events)
+    if history:
+        core.on_completed.assert_called_once_with(core.session, "Private spoken words.", core.metrics, True, False)
+    else:
+        core.on_completed.assert_not_called()
+    if not history or backend != "windows-inserted":
+        assert status["can_copy"]
+        await core.handle("copy")
+        clipboard.assert_awaited_once_with("Private spoken words.")
+        core.provider.stt.assert_awaited_once()
+        await core.handle("pause")
+        assert not (await core.handle("status"))["can_copy"]
 
 
 async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, monkeypatch):

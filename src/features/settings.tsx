@@ -582,6 +582,16 @@ export function Settings({
               <p className="mb-4 text-meta text-muted-foreground">
                 Text only, stored on this device
               </p>
+              <Row
+                title="Copy transcripts to clipboard automatically"
+                detail="Turn off to keep your clipboard unchanged, including when Caelum can’t insert text into your app."
+              >
+                <Switch
+                  aria-label="Copy transcripts to clipboard automatically"
+                  checked={config.desktop.auto_copy}
+                  onCheckedChange={(v) => set("desktop", "auto_copy", v)}
+                />
+              </Row>
               <Row title="Save dictation history">
                 <Switch
                   aria-label="Save dictation history"

@@ -22,7 +22,12 @@ downloads, or opens authorization dialogs by itself.
 Omarchy uses the Arch package target when its system Python minor version matches
 the package. Other derivative distribution IDs are not automatically accepted.
 
-Choose **Update & restart** when an update is available to approve the download.
+On Windows, choose **Open installer**. Caelum verifies the installer against the
+signed release manifest and exits when the installer opens. SmartScreen may prompt
+because the installer is not Authenticode-signed. Caelum checks the running version
+on next launch; if setup was cancelled, retry from Settings without downloading again.
+
+On Linux, choose **Update & restart** when an update is available to approve the download.
 **Later** leaves the application unchanged. Accepted downloads go to `$XDG_DATA_HOME/caelum/updates/pending`
 (normally `~/.local/share/caelum/updates/pending`), not the installation directory.
 After download and verification, Caelum requests administrator authorization through
