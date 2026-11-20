@@ -1,101 +1,6 @@
-import { validateRelease } from "./release.js?v=6";
-
-const menuButton = document.querySelector(".menu-toggle");
-const navigation = document.querySelector("#navigation");
-function closeMenu(returnFocus = false) {
-  navigation.classList.remove("open");
-  menuButton.setAttribute("aria-expanded", "false");
-  menuButton.setAttribute("aria-label", "Open navigation");
-  if (returnFocus) menuButton.focus();
-}
-menuButton.addEventListener("click", () => {
-  const open = menuButton.getAttribute("aria-expanded") !== "true";
-  menuButton.setAttribute("aria-expanded", String(open));
-  menuButton.setAttribute(
-    "aria-label",
-    open ? "Close navigation" : "Open navigation",
-  );
-  navigation.classList.toggle("open", open);
-});
-navigation
-  .querySelectorAll("a")
-  .forEach((link) => link.addEventListener("click", () => closeMenu()));
-document.addEventListener("keydown", (event) => {
-  if (
-    event.key === "Escape" &&
-    menuButton.getAttribute("aria-expanded") === "true"
-  )
-    closeMenu(true);
-});
-document.addEventListener("click", (event) => {
-  if (!navigation.contains(event.target) && !menuButton.contains(event.target))
-    closeMenu();
-});
-window
-  .matchMedia("(min-width: 601px)")
-  .addEventListener("change", () => closeMenu());
-
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-const tourContent = document.querySelector("#tour-content");
-const tourPanel = document.querySelector("#tour-panel");
-const tourTabs = [...document.querySelectorAll("[data-tab]")];
-const panels = {
-  home: '<h3>Home</h3><p class="app-subtitle">Record, finish, then copy your transcript.</p><div class="today-totals"><span><strong>248</strong> Words today</span><span><strong>142</strong> Words/min</span><span><strong>3</strong> Day streak</span></div><div class="recent-heading"><h4>Recent dictations</h4><span>Today</span></div><div class="history-item"><p>Let’s make something that feels natural to use.</p><span>10:42 · 9 words</span></div><div class="history-item"><p>I’ll send the updated notes over this afternoon.</p><span>09:18 · 8 words</span></div>',
-  history:
-    '<h3>History</h3><p class="app-subtitle">Search, revisit, and copy your saved dictations.</p><div class="sample-search">Search dictations</div><div class="history-item"><p>Let’s make something that feels natural to use.</p><span>Today, 10:42 · 9 words</span></div><div class="history-item"><p>A reminder to slow down and follow the interesting idea.</p><span>Today, 09:18 · 10 words</span></div><div class="history-item"><p>I’ll send the updated notes over this afternoon.</p><span>Yesterday, 16:35 · 8 words</span></div><p class="sample-muted">History on · Keep for 30 days</p>',
-  dictionary:
-    '<h3>Dictionary</h3><p class="app-subtitle">Your spoken terms, written the way you want.</p><div class="dictionary-row"><span>When you say</span><span>Replace with</span></div><div class="dictionary-row"><span>kay lum</span><strong>Caelum</strong></div><div class="dictionary-row"><span>hyper land</span><strong>Hyprland</strong></div><p class="sample-muted">Sample spoken-term replacements.</p>',
-  insights:
-    '<h3>Insights</h3><p class="app-subtitle">Your dictation activity at a glance.</p><div class="insight-totals"><div><strong>1,284</strong><span>Words this week</span></div><div><strong>12 min</strong><span>Recording time</span></div></div><div class="sample-chart" role="img" aria-label="Sample word totals Monday through Sunday: 115, 179, 230, 141, 294, 192, 133"><span style="--size:39%"></span><span style="--size:61%"></span><span style="--size:78%"></span><span style="--size:48%"></span><span style="--size:100%"></span><span style="--size:65%"></span><span style="--size:45%"></span></div><div class="chart-days" aria-hidden="true"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>',
-  settings:
-    '<h3>Settings</h3><p class="app-subtitle">Appearance</p><div class="settings-row"><span>Theme</span><span class="settings-value">Dark · Light · System</span></div><div class="settings-row"><span>Accent</span><span class="settings-value">Mint · Iris · Ochre</span></div><div class="settings-row"><span>Transcription</span><span class="settings-value">Groq · whisper-large-v3-turbo</span></div><div class="settings-row"><span>Text cleanup</span><span class="settings-value">Optional · openai/gpt-oss-20b</span></div><div class="settings-row"><span>System</span><span class="settings-value">Check for signed updates</span></div>',
-};
-let tourAnimation;
-function selectTab(tab, focus = false) {
-  if (tourContent.dataset.activeTab === tab.dataset.tab) {
-    if (focus) tab.focus();
-    return;
-  }
-  tourTabs.forEach((item) => {
-    const selected = item === tab;
-    item.setAttribute("aria-selected", String(selected));
-    item.tabIndex = selected ? 0 : -1;
-  });
-  tourPanel.setAttribute("aria-labelledby", tab.id);
-  const changing = Boolean(tourContent.dataset.activeTab);
-  tourContent.dataset.activeTab = tab.dataset.tab;
-  tourContent.innerHTML = panels[tab.dataset.tab];
-  tourAnimation?.cancel();
-  if (changing && !reducedMotion.matches) {
-    tourAnimation = tourContent.animate([{ opacity: 0.4 }, { opacity: 1 }], {
-      duration: 160,
-    });
-  }
-  document
-    .querySelectorAll("[data-side]")
-    .forEach((item) =>
-      item.classList.toggle("selected", item.dataset.side === tab.dataset.tab),
-    );
-  if (focus) tab.focus();
-}
-tourTabs.forEach((tab, index) => {
-  tab.addEventListener("click", () => selectTab(tab));
-  tab.addEventListener("keydown", (event) => {
-    let next;
-    if (["ArrowRight", "ArrowDown"].includes(event.key))
-      next = (index + 1) % tourTabs.length;
-    if (["ArrowLeft", "ArrowUp"].includes(event.key))
-      next = (index + tourTabs.length - 1) % tourTabs.length;
-    if (event.key === "Home") next = 0;
-    if (event.key === "End") next = tourTabs.length - 1;
-    if (next !== undefined) {
-      event.preventDefault();
-      selectTab(tourTabs[next], true);
-    }
-  });
-});
-selectTab(tourTabs[0]);
+import "./demo.js?v=16";
+import { packageChoices, populateDownloads, unsupportedPlatform } from "./downloads.js?v=16";
+import { validateRelease } from "./release.js";
 
 const distroSelect = document.querySelector("#distro");
 const releaseLink = document.querySelector("#release-link");
@@ -131,48 +36,26 @@ async function loadRelease() {
       item.textContent = `Caelum ${release.version} · Stable release`;
     });
     document.querySelector("#checksum-link").href = release.checksumsUrl;
-    distroSelect.replaceChildren(
-      new Option("Choose a published package", ""),
-      ...release.packages.map((item) => new Option(item.name, item.id)),
-    );
+    distroSelect.replaceChildren(new Option("Choose a published package", ""));
+    const groups = new Map();
+    for (const item of release.packages) {
+      const os = item.manager === "exe" ? "Windows" : "Linux";
+      if (!groups.has(os)) {
+        const group = document.createElement("optgroup");
+        group.label = os;
+        groups.set(os, group);
+        distroSelect.append(group);
+      }
+      groups.get(os).append(new Option(item.name, item.id));
+    }
     distroSelect.disabled = false;
-    const windows = release.packages.find((p) => p.id === "windows");
-    const linux = release.packages.find((p) => p.id === "appimage");
-    const os = navigator.userAgentData?.platform || navigator.userAgent;
-    const isWindows = /Windows|Win32/i.test(os);
-    const isLinux = /Linux/i.test(os) && !/Android|CrOS/i.test(navigator.userAgent);
+    const platform = navigator.userAgentData?.platform || navigator.platform;
+    const matches = packageChoices(release.packages, platform, navigator.userAgent);
+    populateDownloads(release, matches, unsupportedPlatform(platform, navigator.userAgent));
     const requested = new URLSearchParams(location.search).get("download");
-    distroSelect.value = requested ?? (isWindows && windows ? windows.id : isLinux && linux ? linux.id : "");
+    distroSelect.value = requested ?? (matches.length === 1 ? matches[0].id : "");
     applyDistro(distroSelect.value);
 
-    const linuxLink = document.querySelector('[data-platform-download="linux"]');
-    if (release.packages.some((p) => p.manager !== "exe")) {
-      linuxLink.hidden = false;
-      if (linux) {
-        linuxLink.href = linux.url;
-        linuxLink.textContent = `Linux AppImage ${release.version} ↓`;
-      } else {
-        linuxLink.textContent = `Linux packages ${release.version}`;
-      }
-      if (isLinux) linuxLink.classList.replace("secondary", "primary");
-    }
-
-    if (windows) {
-      const link = document.querySelector('[data-platform-download="windows"]');
-      link.href = windows.url;
-      link.textContent = `Windows installer ${release.version} ↓`;
-      link.hidden = false;
-      if (isWindows) link.classList.replace("secondary", "primary");
-      const checksum = document.querySelector("#windows-checksum");
-      checksum.textContent = `Windows installer SHA256: ${windows.sha256}`;
-      checksum.hidden = false;
-    } else {
-      const status = document.querySelector("#windows-availability");
-      status.textContent = release.version === "0.5.0"
-        ? "Windows: coming in 0.5.1"
-        : `Windows installer unavailable in stable ${release.version}.`;
-      status.hidden = false;
-    }
   } catch {
     distroSelect.disabled = true;
     applyDistro("");
@@ -192,11 +75,3 @@ document.querySelector("#copy-install").addEventListener("click", async () => {
   }
 });
 void loadRelease();
-// A compatibility anchor opens its disclosure before the browser scrolls to it.
-document.querySelectorAll('a[href="#compatibility"]').forEach((link) =>
-  link.addEventListener("click", () => {
-    document.querySelector("#compatibility").open = true;
-  }),
-);
-if (location.hash === "#compatibility")
-  document.querySelector("#compatibility").open = true;

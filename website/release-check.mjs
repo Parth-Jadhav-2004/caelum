@@ -2,9 +2,49 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { validateRelease } from "./release.js";
+import { menuChoices, packageChoices, unsupportedPlatform } from "./downloads.js";
 const manifest = JSON.parse(
   readFileSync(new URL("./release.json", import.meta.url)),
 );
+// Selection depends on the package ID and manager. The published inventory
+// can legitimately omit any target whose download could not be verified.
+const selectionPackages = [
+  { id: "appimage", manager: "appimage" },
+  { id: "windows", manager: "exe" },
+  { id: "ubuntu-2404", manager: "apt" },
+  { id: "ubuntu-2604", manager: "apt" },
+  { id: "debian-12", manager: "apt" },
+  { id: "arch", manager: "pacman" },
+  { id: "fedora", manager: "dnf" },
+];
+
+for (const [platform, agent, expected] of [
+  ["Linux x86_64", "Ubuntu", "appimage"],
+  ["Linux x86_64", "Ubuntu/22.04", "appimage"],
+  ["Linux x86_64", "Ubuntu/24.04", "ubuntu-2404"],
+  ["Linux x86_64", "Ubuntu/26.04", "ubuntu-2604"],
+  ["Linux x86_64", "Linux", "appimage"],
+  ["Linux x86_64", "Debian", "debian-12"],
+  ["Linux x86_64", "Fedora", "fedora"],
+  ["Linux x86_64", "Arch Linux", "arch"],
+  ["Win32", "Windows NT 10.0", "windows"],
+  ["MacIntel", "Macintosh", null],
+  ["Linux armv8l", "Linux; Android", null],
+]) {
+  test(`package selection and compact menu for ${agent}`, () => {
+    const packages = selectionPackages;
+    const matches = packageChoices(packages, platform, agent);
+    const expectedIds = expected ? [expected] : [];
+    assert.deepEqual(matches.map(p => p.id), expectedIds);
+
+    const { ordered, preferred } = menuChoices(packages, matches);
+    assert.deepEqual([...preferred], expectedIds);
+    const compactUbuntu = expected === "ubuntu-2404" ? "ubuntu-2404" : "ubuntu-2604";
+    const otherIds = packages.map(p => p.id).filter(id =>
+      id !== expected && (!id.startsWith("ubuntu-") || id === compactUbuntu));
+    assert.deepEqual(ordered.map(p => p.id), [...expectedIds, ...otherIds]);
+  });
+}
 
 test("every published package has a matching version, architecture, URL and install command", () => {
   const release = validateRelease(manifest);
@@ -73,4 +113,20 @@ test("published desktop assets use versioned filenames and platform install inst
   });
   assert.equal(packages[0].command, `chmod +x ./${desktop[0].file} && ./${desktop[0].file}`);
   assert.equal(packages[1].command, null);
+});
+
+test("known unsupported platforms are named without recommending an installer", () => {
+  for (const [platform, agent, expected] of [
+    ["macOS", "", "macOS"],
+    ["MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "macOS"],
+    ["Linux armv8l", "Mozilla/5.0 (Linux; Android 15)", "Android"],
+    ["iPhone", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "iOS"],
+    ["iPad", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "iPadOS"],
+    ["Linux x86_64", "Mozilla/5.0 (X11; CrOS x86_64)", "ChromeOS"],
+    ["FreeBSD", "", null],
+    ["", "", null],
+  ]) {
+    assert.equal(unsupportedPlatform(platform, agent), expected);
+    assert.deepEqual(packageChoices(selectionPackages, platform, agent), []);
+  }
 });

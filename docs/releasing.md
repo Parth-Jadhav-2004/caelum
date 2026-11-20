@@ -15,7 +15,7 @@ Both channels use the same candidate package bytes. Development builds are Actio
 
 1. Set the package version in npm, Python, Rust, Tauri, their lockfiles and the Arch recipe. Add a `## X.Y.Z` section to CHANGELOG.md describing changes since the previous stable. Both release bodies use this section.
 2. A push to dev or main builds a candidate. For a site-only commit, dispatch `gh workflow run release.yml --ref dev` (or `--ref main` for a candidate on stable) if packages are needed. Inspect the seven downloads and smoke evidence. Record the successful run ID, attempt and full source SHA. The candidate is eligible for seven days. Actions retains its artifacts for fourteen.
-3. Choose the next unused RC number for this version, starting at 1. The existing `v0.5.0-rc.44462311027` remains the invite-only RC of record in #26. Run IDs from the previous convention do not reserve the new sequence.
+3. Choose the next unused RC number for this version, starting at 1. Run IDs from the previous convention do not reserve the new sequence.
 
 ## Publish a selected RC
 
@@ -31,7 +31,7 @@ Use `--ref main` for a candidate on `main`. The publisher checks the run, attemp
 
 Complete [desktop acceptance](acceptance.md) on the selected RC and record the results with its commit, run and attempt. The [0.5.0 qualification issue](https://github.com/Parth-Jadhav-2004/caelum/issues/26) records the Linux desktop and signed-upgrade checklist. A change to the candidate bytes requires a new RC.
 
-Open a pull request to `main` from a short-lived `release/vX.Y.Z` branch pointing to the exact tested `dev` commit. GitHub can then delete the merged PR branch automatically while `dev` stays available for integration. After required checks pass, fast-forward `main` to the reviewed SHA. Verify the remote commit matches the candidate, then dispatch from `main` with the same run and RC number.
+All pull requests target `dev`. After required checks and desktop acceptance pass, verify that the candidate SHA is still the tip of `dev` and that `main` is its ancestor. Fast-forward `main` to that exact SHA without a force push. Verify the remote commit matches the candidate, then dispatch from `main` with the same run and RC number.
 
 ```sh
 gh workflow run publish.yml --ref main -f channel=production -f candidate_run_id="$RUN" -f rc_number="$RC" -f desktop_qualified=true

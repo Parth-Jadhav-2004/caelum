@@ -38,17 +38,17 @@ cryptographically authenticate the packages itself; the user verifies the
 checksum, and the app verifies signed update metadata during an update.
 
 Pages runs this generator before deployment on website changes, a published
-release, or a successful **Promote to testing or production** workflow (needed because
-releases created using GITHUB_TOKEN do not trigger release workflows). It checks
+release, or an explicit dispatch from successful production publication (needed
+because releases created using GITHUB_TOKEN do not trigger release workflows). It checks
 out `main` for the site and updates the deployment artifact without committing
 back to the repository. The workflow can also be run manually. A generation
 failure prevents publication rather than inventing download links.
 
 ## Product and design
 
-The design follows [`DESIGN.md`](../DESIGN.md): near-black canvas, a 240px desktop
-sidebar, neutral recording capsule, soft rows, and no gradients, glow, or surface
-shadows. The hero shows the installed Ubuntu 24.04 package from [candidate run 44309773651](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/44309773651), artifact `smoke-ubuntu-24.04/native-smoke.png`, cropped to the 1100×780 window. This is real setup in WebKit/Xvfb, not a GNOME session or a recording. The social card uses that screenshot. The portable walkthrough uses native keyboard-operable disclosures with sample text; the product tour uses illustrative data. Neither records audio or touches the clipboard. Inter Variable is self-hosted under the SIL Open Font License in `fonts/`.
+The notebook illustrates native hold-to-talk on Hyprland. Holding the configured shortcut starts recording and shows the Listening pill. Releasing it stops capture and shows Processing. The full sentence then appears at once in the notebook, which kept focus throughout. The clock pauses offscreen or in a background tab and resumes at the same point. Visitors can pause it with the keyboard. With reduced motion or JavaScript disabled, the notebook starts with the completed sentence.
+
+“At your desk” uses native radio controls and a paper crossfade to switch examples. The FAQ starts with grouped native disclosures and enhances them with keyboard-operable buttons and panels that expand and contract together. Download buttons and the package label come from the shared desktop shadcn components via `website/tools/render-controls.tsx`.
 
 ## Publication and qualification
 
