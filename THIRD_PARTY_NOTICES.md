@@ -10,6 +10,11 @@ The complete SIL Open Font License 1.1 is distributed in
 `public/licenses/Inter-OFL-1.1.txt`, copied to `licenses/Inter-OFL-1.1.txt`
 in the built frontend, and included with native application resources.
 
+The website uses [`inter-latin-wght-normal.woff2`](website/fonts/inter-latin-wght-normal.woff2)
+from `@fontsource-variable/inter` 5.3.0 for headings and body text. The OFL
+permits embedding and redistribution with the copyright notice and license;
+both are published alongside the font in [`website/fonts/OFL.txt`](website/fonts/OFL.txt).
+
 ## Optional local speech runtimes and models
 
 Native packages include sherpa-onnx by default. Python extras and the optional
