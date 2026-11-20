@@ -5,8 +5,8 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex as StdMutex,
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex, MutexGuard,
     },
     time::Duration,
 };
@@ -170,16 +170,37 @@ pub async fn read_frame<R: AsyncBufRead + Unpin>(
     Ok(Some(bytes))
 }
 
-struct Shared {
-    pending: StdMutex<HashMap<u64, oneshot::Sender<Reply>>>,
-    alive: AtomicBool,
+#[derive(Default)]
+struct Connection {
+    pending: HashMap<u64, oneshot::Sender<Reply>>,
+    failure: Option<EngineError>,
 }
-impl Shared {
-    fn fail(&self, error: EngineError) {
-        self.alive.store(false, Ordering::SeqCst);
-        for (_, sender) in self.pending.lock().unwrap().drain() {
-            let _ = sender.send(Err(error.clone()));
+impl Connection {
+    fn check(&self) -> Result<(), EngineError> {
+        match &self.failure {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
         }
+    }
+    fn fail(&mut self, error: EngineError) {
+        let cause = self.failure.get_or_insert(error);
+        for (_, sender) in self.pending.drain() {
+            let _ = sender.send(Err(cause.clone()));
+        }
+    }
+}
+
+#[derive(Default)]
+struct Shared(StdMutex<Connection>);
+impl Shared {
+    fn lock(&self) -> MutexGuard<'_, Connection> {
+        self.0.lock().unwrap_or_else(|poison| {
+            // Recover only to close the connection and notify its waiters.
+            let mut state = poison.into_inner();
+            state.fail(disconnected());
+            self.0.clear_poison();
+            state
+        })
     }
 }
 struct Pending {
@@ -188,7 +209,7 @@ struct Pending {
 }
 impl Drop for Pending {
     fn drop(&mut self) {
-        self.shared.pending.lock().unwrap().remove(&self.id);
+        self.shared.lock().pending.remove(&self.id);
     }
 }
 struct Writing {
@@ -198,7 +219,7 @@ struct Writing {
 impl Drop for Writing {
     fn drop(&mut self) {
         if !self.complete {
-            self.shared.fail(disconnected());
+            self.shared.lock().fail(disconnected());
         }
     }
 }
@@ -213,29 +234,30 @@ impl<W: AsyncWrite + Unpin> Requests<W> {
     pub fn new(input: W) -> Self {
         Self {
             input: Mutex::new(input),
-            shared: Arc::new(Shared {
-                pending: StdMutex::new(HashMap::new()),
-                alive: AtomicBool::new(true),
-            }),
+            shared: Arc::default(),
             slots: Semaphore::new(64),
             sequence: AtomicU64::new(1),
         }
     }
     pub fn alive(&self) -> bool {
-        self.shared.alive.load(Ordering::SeqCst)
+        self.shared.lock().failure.is_none()
     }
     pub fn fail(&self, error: EngineError) {
-        self.shared.fail(error);
+        self.shared.lock().fail(error);
     }
-    pub fn resolve(&self, id: u64, result: Reply) {
-        if let Some(sender) = self.shared.pending.lock().unwrap().remove(&id) {
+    pub fn resolve(&self, id: u64, result: Reply) -> Result<(), EngineError> {
+        let mut state = self.shared.lock();
+        state.check()?;
+        if let Some(sender) = state.pending.remove(&id) {
             let _ = sender.send(result);
         }
+        Ok(())
     }
     pub async fn finish_input(&self) {
         let _ = self.input.lock().await.shutdown().await;
     }
     pub async fn call(&self, method: &str, params: Value, budget: Duration) -> Reply {
+        self.shared.lock().check()?;
         let _slot = self.slots.try_acquire().map_err(|_| {
             EngineError::new(
                 "busy",
@@ -243,9 +265,6 @@ impl<W: AsyncWrite + Unpin> Requests<W> {
                 true,
             )
         })?;
-        if !self.alive() {
-            return Err(disconnected());
-        }
         let id = self.sequence.fetch_add(1, Ordering::Relaxed);
         let frame = format!(
             "{}\n",
@@ -258,19 +277,21 @@ impl<W: AsyncWrite + Unpin> Requests<W> {
                 false,
             ));
         }
-        let (sender, receiver) = oneshot::channel();
-        self.shared.pending.lock().unwrap().insert(id, sender);
+        let (sender, mut receiver) = oneshot::channel();
+        {
+            let mut state = self.shared.lock();
+            state.check()?;
+            state.pending.insert(id, sender);
+        }
         let _pending = Pending {
             shared: self.shared.clone(),
             id,
         };
         // One deadline includes lock acquisition, writing and awaiting the reply.
         match tokio::time::timeout(budget, async {
-            {
+            let write = async {
                 let mut input = self.input.lock().await;
-                if !self.alive() {
-                    return Err(disconnected());
-                }
+                self.shared.lock().check()?;
                 let mut writing = Writing {
                     shared: self.shared.clone(),
                     complete: false,
@@ -280,6 +301,14 @@ impl<W: AsyncWrite + Unpin> Requests<W> {
                     .await
                     .map_err(|_| disconnected())?;
                 writing.complete = true;
+                Ok::<(), EngineError>(())
+            };
+            // A fatal reader error must also wake callers queued on stdin or
+            // blocked in a partial write, regardless of their method deadline.
+            tokio::select! {
+                biased;
+                reply = &mut receiver => return reply.unwrap_or_else(|_| Err(disconnected())),
+                sent = write => sent?,
             }
             receiver.await.unwrap_or_else(|_| Err(disconnected()))
         })
@@ -386,7 +415,7 @@ mod tests {
             .await;
         assert_eq!(result.unwrap_err().code, "timeout");
         assert!(!requests.alive());
-        assert!(requests.shared.pending.lock().unwrap().is_empty());
+        assert!(requests.shared.lock().pending.is_empty());
     }
     #[tokio::test]
     async fn timeout_after_complete_write_does_not_replay_or_poison() {
@@ -408,7 +437,7 @@ mod tests {
         let mut bytes = vec![0; 4096];
         let n = child.read(&mut bytes).await.unwrap();
         assert_eq!(bytes[..n].iter().filter(|b| **b == b'\n').count(), 1);
-        assert!(requests.shared.pending.lock().unwrap().is_empty());
+        assert!(requests.shared.lock().pending.is_empty());
     }
     #[tokio::test]
     async fn abort_removes_pending_and_admission_is_bounded() {
@@ -434,9 +463,81 @@ mod tests {
             .await
         });
         tokio::task::yield_now().await;
-        assert_eq!(requests.shared.pending.lock().unwrap().len(), 1);
+        assert_eq!(requests.shared.lock().pending.len(), 1);
         task.abort();
         let _ = task.await;
-        assert!(requests.shared.pending.lock().unwrap().is_empty());
+        assert!(requests.shared.lock().pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn poisoned_map_disconnects_waiters_and_rejects_new_calls() {
+        let (input, child) = duplex(4096);
+        let mut reader = BufReader::new(child);
+        let requests = Arc::new(Requests::new(input));
+        let start_call = || {
+            let copy = requests.clone();
+            tokio::spawn(async move { copy.call("status", json!({}), deadline("status")).await })
+        };
+        let (first, second) = (start_call(), start_call());
+        for _ in 0..2 {
+            read_frame(&mut reader, MAX_REQUEST).await.unwrap().unwrap();
+        }
+
+        let shared = requests.shared.clone();
+        assert!(std::thread::spawn(move || {
+            let _guard = shared.0.lock().unwrap();
+            panic!("simulate panic under the pending map lock");
+        })
+        .join()
+        .is_err());
+        assert_eq!(
+            requests.resolve(1, Ok(Value::Null)).unwrap_err().code,
+            "disconnected"
+        );
+        for call in [first, second] {
+            assert_eq!(call.await.unwrap().unwrap_err().code, "disconnected");
+        }
+        assert!(requests.shared.lock().pending.is_empty());
+        assert_eq!(
+            requests
+                .call("status", json!({}), deadline("status"))
+                .await
+                .unwrap_err()
+                .code,
+            "disconnected"
+        );
+    }
+
+    #[tokio::test]
+    async fn failure_wakes_blocked_writer_and_queued_calls_with_original_cause() {
+        let (input, mut child) = duplex(1);
+        let requests = Requests::new(input);
+        let first = requests.call("practice", json!({}), deadline("practice"));
+        let second = requests.call("status", json!({}), deadline("status"));
+        tokio::pin!(first, second);
+        tokio::select! {
+            biased;
+            _ = &mut first => panic!("partial write should block"),
+            _ = &mut second => panic!("stdin should be locked"),
+            byte = child.read_u8() => assert_eq!(byte.unwrap(), b'{'),
+        }
+        assert_eq!(requests.shared.lock().pending.len(), 2);
+        requests.fail(protocol());
+        let (first, second) = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(first, second)
+        })
+        .await
+        .expect("transport failure must wake both calls before their method deadlines");
+        for result in [first, second] {
+            assert_eq!(result.unwrap_err().code, "protocol");
+        }
+        assert_eq!(
+            requests
+                .call("status", json!({}), deadline("status"))
+                .await
+                .unwrap_err()
+                .code,
+            "protocol"
+        );
     }
 }
