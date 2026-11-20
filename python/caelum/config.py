@@ -8,12 +8,25 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 DEFAULT_HOTKEY = "CTRL + SUPER"
+PORTAL_HOTKEY = "SUPER + ALT + V"
+
+
+def resolve_backend(backend="auto"):
+    if os.name == "nt":
+        return "windows"
+    if backend != "auto":
+        return backend
+    return "hyprland" if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") else "portable"
+
+
+def default_hotkey(backend="auto"):
+    return PORTAL_HOTKEY if resolve_backend(backend) == "portable" else DEFAULT_HOTKEY
 
 
 @dataclass
 class App:
     backend: str = "auto"
-    hotkey: str = DEFAULT_HOTKEY
+    hotkey: str = field(default_factory=default_hotkey)
     recording_mode: str = "hold"
     strategy: str = "single"
     max_recording_seconds: int = 180
@@ -97,6 +110,8 @@ def load(path=None):
     config = Config()
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
         values = data.get(section, {}).copy()
+        if section == "app" and "hotkey" not in values:
+            values["hotkey"] = default_hotkey(values.get("backend", "auto"))
         if section == "stt":
             # Ignore retired preview settings when upgrading; never execute them.
             for retired in ("local_binary", "local_model_path"):

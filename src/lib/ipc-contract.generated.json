@@ -338,6 +338,12 @@
           "backend": {
             "type": "string"
           },
+          "shortcut_mode": {
+            "type": "string"
+          },
+          "shortcut_description": {
+            "type": "string"
+          },
           "engine": {
             "type": "object",
             "properties": {
@@ -1080,12 +1086,33 @@
     "shortcut.check": {
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "accept_manual": {
+            "type": "boolean"
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
       "result": {
-        "type": "string"
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "available",
+              "pending",
+              "manual"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "message"
+        ],
+        "additionalProperties": false
       }
     },
     "setup.finish": {
@@ -1805,6 +1832,12 @@
         "type": "boolean"
       },
       "backend": {
+        "type": "string"
+      },
+      "shortcut_mode": {
+        "type": "string"
+      },
+      "shortcut_description": {
         "type": "string"
       },
       "engine": {

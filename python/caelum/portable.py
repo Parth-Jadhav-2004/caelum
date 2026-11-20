@@ -13,6 +13,7 @@ from dbus_next import Message, MessageType, Variant
 from dbus_next.aio import MessageBus
 from dbus_next.errors import AuthError, DBusError, InvalidAddressError
 
+from .config import resolve_backend
 from .linux import Target, command
 
 PORTAL = "org.freedesktop.portal.Desktop"
@@ -21,11 +22,7 @@ SHORTCUTS = "org.freedesktop.portal.GlobalShortcuts"
 
 
 def backend_name(config):
-    if os.name == "nt":
-        return "windows"
-    if config.app.backend != "auto":
-        return config.app.backend
-    return "hyprland" if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") else "portable"
+    return resolve_backend(config.app.backend)
 
 
 async def session_locked():
@@ -67,8 +64,8 @@ class Bindings:
         self.bus = None
         self.session = None
         self.core = None
-        self.mode = "manual"
-        self.description = "Use Record in Caelum or a desktop shortcut for caelum control toggle"
+        self.mode = "pending"
+        self.description = "Waiting for desktop shortcut approval. You can use Record / Finish recording."
         self.pending = {}
         self.events = asyncio.Queue()
         self.responses = {}
@@ -146,7 +143,8 @@ class Bindings:
     async def install(self):
         trigger = portal_trigger(self.hotkey)
         if not trigger:
-            self.description = "Choose a shortcut with a letter or use Record in Caelum"
+            self.mode = "manual"
+            self.description = "Shortcut inactive: choose a non-modifier key or use Record / Finish recording."
             return
         try:
             self.bus = await asyncio.wait_for(MessageBus().connect(), 5)
@@ -229,7 +227,7 @@ class Bindings:
             InvalidAddressError,
         ):
             await self.remove()
-            self.description = "Shortcut unavailable. Use Record or configure caelum control toggle"
+            self.description = "Shortcut inactive: the desktop did not register it. Use Record / Finish recording."
 
     async def active(self, enabled):
         # Escape interception is compositor-specific. Cancel remains available in the app/CLI.

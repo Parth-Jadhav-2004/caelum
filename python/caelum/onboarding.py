@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import Capture
-from .config import DEFAULT_HOTKEY, validate
+from .config import validate
 from .portable import backend_name
 from .providers import ProviderError, Providers
 
@@ -104,7 +104,7 @@ async def check_shortcut(config):
     if os.name == "nt":
         from .windows_desktop import check_shortcut as windows_check
 
-        return windows_check(config.app.hotkey)
+        return {"state": "available", "message": windows_check(config.app.hotkey)}
     if backend_name(config) == "hyprland":
         from .linux import hypr_json, shortcut_keys
 
@@ -120,20 +120,18 @@ async def check_shortcut(config):
             for item in binds
         ):
             raise RuntimeError("Shortcut is already in use. Choose another shortcut")
-        return "Shortcut is available on Hyprland."
+        return {"state": "available", "message": "Shortcut is available on Hyprland."}
     from .portable import portal_trigger
 
     if portal_trigger(config.app.hotkey) is None:
-        if config.app.hotkey == DEFAULT_HOTKEY:
-            return (
-                "This desktop needs a shortcut with a letter or another non-modifier key. "
-                "Choose another shortcut for global recording, or use Record / Finish recording."
-            )
-        raise ValueError("Choose a shortcut with a non-modifier key on this desktop")
-    return (
-        "Your desktop checks conflicts and may ask permission when the service starts. "
-        "If permission is declined or shortcuts are unavailable, use Record / Finish recording."
-    )
+        return {"state": "manual", "message": (
+            "Shortcut inactive: this desktop requires a non-modifier key. "
+            "Choose another shortcut or continue with Record / Finish recording."
+        )}
+    return {"state": "pending", "message": (
+        "Your desktop may ask permission when the service starts. Until it registers "
+        "the shortcut, use Record / Finish recording."
+    )}
 
 
 def record_sample(config, seconds, cancelled, level=lambda value: None, finished=None):

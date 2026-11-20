@@ -63,6 +63,8 @@ STATUS = obj(
         "pending_audio": BOOL,
         "storage_error": BOOL,
         "backend": STRING,
+        "shortcut_mode": STRING,
+        "shortcut_description": STRING,
         "engine": obj({
             "kind": {"enum": ["online", "local"]}, "model": union(STRING, NULL),
             "state": {"enum": ["ready", "loading", "error", "missing", "unloaded"]}, "message": STRING,
@@ -72,7 +74,8 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "feedback", "engine"),
+    optional=("pending_audio", "storage_error", "backend", "shortcut_mode", "shortcut_description",
+              "feedback", "engine"),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})
@@ -170,7 +173,8 @@ method(
     obj({"consent": BOOL, "keys": STRINGS}, optional=("keys",)),
     obj({"storage": STRINGS}),
 )
-method("shortcut.check", result=STRING)
+method("shortcut.check", obj({"accept_manual": BOOL}, optional=("accept_manual",)),
+       obj({"state": {"enum": ["available", "pending", "manual"]}, "message": STRING}))
 method("setup.finish", obj({"skip_practice": BOOL}, optional=("skip_practice",)))
 method("setup.stage", obj({"stage": {"enum": [0, 1, 2, 3]}}))
 method("setup.skip")

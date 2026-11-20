@@ -38,9 +38,10 @@ def test_modifier_only_shortcut(tmp_path):
     assert load(path).app.hotkey == "CTRL + SUPER"
 
 
-def test_recording_defaults_and_toggle_roundtrip(tmp_path):
+def test_recording_defaults_and_toggle_roundtrip(tmp_path, monkeypatch):
     from caelum.config import Config, save
 
+    monkeypatch.setenv("HYPRLAND_INSTANCE_SIGNATURE", "test")
     config = Config()
     assert config.app.max_recording_seconds == 180
     assert config.app.recording_mode == "hold"
@@ -49,6 +50,29 @@ def test_recording_defaults_and_toggle_roundtrip(tmp_path):
     path = tmp_path / "config.toml"
     save(config, path)
     assert load(path).app.recording_mode == "toggle"
+
+
+@pytest.mark.parametrize(("signature", "backend", "expected"), [
+    ("", "auto", "SUPER + ALT + V"),
+    ("hypr", "auto", "CTRL + SUPER"),
+    ("hypr", "portable", "SUPER + ALT + V"),
+    ("", "hyprland", "CTRL + SUPER"),
+])
+def test_missing_hotkey_uses_effective_backend(tmp_path, monkeypatch, signature, backend, expected):
+    monkeypatch.setenv("HYPRLAND_INSTANCE_SIGNATURE", signature)
+    path = tmp_path / "config.toml"
+    if backend != "auto":
+        path.write_text(f'[app]\nbackend="{backend}"')
+    assert load(path).app.hotkey == expected
+
+
+def test_windows_default_even_without_hyprland(monkeypatch):
+    from types import SimpleNamespace
+
+    from caelum.config import Config
+
+    monkeypatch.setattr("caelum.config.os", SimpleNamespace(name="nt"))
+    assert Config().app.hotkey == "CTRL + SUPER"
 
 
 def test_legacy_appearance_loads_with_default_palette(tmp_path):

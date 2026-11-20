@@ -160,6 +160,12 @@ export function Dashboard({ config }: { config: Config }) {
             </Button>
           )}
         </div>
+        {status?.backend === "portable" &&
+          (status.shortcut_mode === "manual" || status.shortcut_mode === "pending") && (
+            <p role={status.shortcut_mode === "manual" ? "alert" : "status"}>
+              {status.shortcut_description}
+            </p>
+          )}
         <div
           aria-label="Today’s activity"
           aria-busy={summary.isPending}
