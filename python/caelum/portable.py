@@ -38,8 +38,13 @@ async def copy_private_result(text):
     # Clipboard helpers may fork to serve the selection after their parent exits.
     # An inherited stdout pipe would keep communicate() waiting for that child.
     if os.environ.get("WAYLAND_DISPLAY"):
-        await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
-    elif os.environ.get("DISPLAY"):
+        try:
+            await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
+            return
+        except FileNotFoundError:
+            if not os.environ.get("DISPLAY"):  # xclip needs X11 or XWayland.
+                raise
+    if os.environ.get("DISPLAY"):
         await command("xclip", "-selection", "clipboard", data=text.encode(), capture_output=False)
     else:
         raise RuntimeError("Clipboard unavailable; open a desktop session")

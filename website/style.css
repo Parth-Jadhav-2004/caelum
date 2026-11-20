@@ -64,7 +64,7 @@ summary::-webkit-details-marker {display:none}
 [data-phase=reset] .desk-line {opacity:0;transform:translateY(-4px)}
 .desk-hud {display:grid;place-items:center;padding:10px 12px clamp(18px,2.6vw,40px)}
 .desk-hud>span {grid-area:1/1;visibility:hidden;opacity:0;transform:translateY(5px) scale(.98);transition:opacity .35s,transform .45s var(--ease)}
-[data-phase=shortcut] .desk-keys,[data-phase=listening] .listen,[data-phase=processing] .processing,[data-phase=inserted] .done {visibility:visible;opacity:1;transform:none}
+[data-phase=shortcut] .desk-keys,[data-phase=listening] .listen,[data-phase=processing] .processing {visibility:visible;opacity:1;transform:none}
 .desk-keys,.desk-pill {display:flex;gap:6px;align-items:center}
 .desk-keys kbd {font:600 13px var(--mono);padding:6px 10px;background:#f3f5ee;border:1px solid #afbcb1;border-bottom-width:3px;border-radius:6px}
 .desk-pill {padding:8px 18px;border-radius:30px;font-size:14px;background:var(--ink);color:#fff}
