@@ -106,9 +106,12 @@ export function Dashboard({ config }: { config: Config }) {
     queryFn: () => ipc("summary", {}),
     refetchInterval: 5000,
   });
-  async function run(actionName: "start" | "stop" | "cancel" | "retry") {
+  async function run(actionName: "start" | "stop" | "cancel" | "retry" | "copy") {
     setBusy(true);
-    await action(() => ipc("control", { action: actionName }));
+    await action(
+      () => ipc("control", { action: actionName }),
+      actionName === "copy" ? "Transcript copied" : undefined,
+    );
     setBusy(false);
   }
   const nativeShortcut = status?.backend === "hyprland" || status?.backend === "windows";
@@ -215,6 +218,15 @@ export function Dashboard({ config }: { config: Config }) {
               </p>
             )}
           </div>
+          {status?.can_copy && (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void run("copy")}
+            >
+              Copy transcript
+            </Button>
+          )}
           {status?.pending_audio && !processing && (
             <Button
               variant="secondary"

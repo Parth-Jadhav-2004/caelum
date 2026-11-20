@@ -98,7 +98,11 @@ async def desktop_delivery():
 
 
 def main():
-    methods = ["bootstrap", "status", "models.list", "history", "shutdown"]
+    from caelum import updates
+
+    # Exercise the packaged trust policy with the Windows crypto backend.
+    assert updates.trusted_public_keys(updates.BASE)
+    methods = ["bootstrap", "status", "models.list", "history", "updates.pending", "shutdown"]
     with tempfile.TemporaryDirectory() as directory:
         env = {**os.environ, "APPDATA": directory, "LOCALAPPDATA": directory}
         # Leave the pipe open until all replies arrive (EOF initiates shutdown).
@@ -114,6 +118,8 @@ def main():
                         assert "result" in frame, (method, frame)
                         if method == "history":
                             assert frame["result"] == []
+                        if method == "updates.pending":
+                            assert frame["result"] is None
                         break
                 else:
                     raise RuntimeError(f"Engine exited during {method}")

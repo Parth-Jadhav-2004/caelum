@@ -172,8 +172,6 @@ impl Engine {
 }
 
 struct Desktop {
-    #[cfg(windows)]
-    installer_started: AtomicBool,
     engine: Result<Engine, EngineError>,
     quitting: AtomicBool,
     tray_available: AtomicBool,
@@ -204,12 +202,7 @@ impl Desktop {
 }
 #[tauri::command]
 async fn backend(method: String, params: Value, state: tauri::State<'_, Desktop>) -> Reply {
-    let result = state.call(&method, params).await;
-    #[cfg(windows)]
-    if method == "updates.apply" && matches!(&result, Ok(Value::Bool(true))) {
-        state.installer_started.store(true, Ordering::SeqCst);
-    }
-    result
+    state.call(&method, params).await
 }
 #[tauri::command]
 async fn restart_app(
@@ -218,11 +211,6 @@ async fn restart_app(
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
     state.prepare_exit(discard.unwrap_or(false)).await?;
-    #[cfg(windows)]
-    if state.installer_started.load(Ordering::SeqCst) {
-        app.exit(0);
-        return Ok(());
-    }
     app.restart();
 }
 #[tauri::command]
@@ -422,8 +410,6 @@ fn main() {
                     )
                 });
             app.manage(Desktop {
-                #[cfg(windows)]
-                installer_started: AtomicBool::new(false),
                 engine,
                 quitting: AtomicBool::new(false),
                 tray_available: AtomicBool::new(false),
@@ -607,8 +593,6 @@ mod startup_tests {
             )),
             quitting: false.into(),
             tray_available: false.into(),
-            #[cfg(windows)]
-            installer_started: false.into(),
         };
         let error = desktop.call("bootstrap", json!({})).await.unwrap_err();
         assert_eq!(error.message, "Could not start Python engine");
