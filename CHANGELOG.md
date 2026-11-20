@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- The website demo now shows the full transcript after hold-to-talk recording and processing finish. The FAQ explains how to copy or insert it on each supported desktop.
+
 ## 0.5.0
 
 Changes since stable v0.4.2.

@@ -1,4 +1,4 @@
-import "./demo.js?v=15";
+import "./demo.js?v=16";
 import { packageChoices, populateDownloads } from "./downloads.js?v=15";
 import { validateRelease } from "./release.js";
 

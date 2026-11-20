@@ -14,8 +14,8 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="./mark.svg" type="image/svg+xml">
   <link rel="preload" as="font" type="font/woff2" href="./fonts/inter-latin-wght-normal.woff2" crossorigin>
-  <link rel="stylesheet" href="./style.css?v=16">
-  <script type="module" src="./app.js?v=15"></script>
+  <link rel="stylesheet" href="./style.css?v=17">
+  <script type="module" src="./app.js?v=16"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -25,9 +25,9 @@
 </header>
 <main id="main">
   <section class="hero wrap">
-    <p class="category"><span class="signal" aria-hidden="true">▂▅▇▃</span> Desktop dictation</p>
+    <p class="category"><span class="signal" aria-hidden="true">▂▅▇▃</span> Dictation for Linux and Windows</p>
     <h1>A first draft, <em>spoken.</em></h1>
-    <p class="lede">Speak while the thought is fresh.<br>Caelum writes it where your cursor is.</p>
+    <p class="lede">Dictate with a shortcut or the Record button.<br> Your full draft appears after recording stops and processing finishes.</p>
     <div class="actions"><!-- ui:hero --><details class="download-menu"><summary data-slot="button" data-variant="default" data-size="lg" class="inline-flex shrink-0 items-center justify-center gap-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-6 has-[&gt;svg]:px-4 button"><span class="download-title">Download Caelum</span><svg class="menu-chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"></path></svg></summary><div class="package-options"><a href="https://github.com/Parth-Jadhav-2004/caelum/releases/latest">View stable downloads ↗</a></div></details><!-- /ui:hero --><!-- ui:star --><link rel="preload" as="image" href="./media/github.svg"/><a href="https://github.com/Parth-Jadhav-2004/caelum" aria-label="Star Caelum on GitHub" title="Star Caelum on GitHub" data-slot="button" data-variant="outline" data-size="lg" class="inline-flex shrink-0 items-center justify-center gap-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 border bg-background shadow-none hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-10 rounded-md px-6 has-[&gt;svg]:px-4 github-star"><img src="./media/github.svg" width="22" height="22" alt=""/></a><!-- /ui:star --></div>
   </section>
 
@@ -41,14 +41,15 @@
             <p class="desk-line"><span>Move the sound check to Friday.</span><i></i></p>
           </div>
           <div class="desk-hud">
-            <span class="desk-keys"><kbd>Super</kbd><kbd>Alt</kbd><kbd>V</kbd></span>
-            <span class="desk-pill listen"><img src="./mark.svg" alt=""> Listening</span>
+            <span class="desk-keys"><kbd>Hold your shortcut</kbd></span>
+            <span class="desk-pill listen"><img src="./mark.svg" alt=""> Shortcut held · Listening</span>
+            <span class="desk-pill processing"><img src="./mark.svg" alt=""> Released · Processing</span>
             <span class="desk-pill done">✓ &nbsp; Inserted</span>
           </div>
         </div>
       </div>
-      <figcaption><span><i class="desk-dot"></i> In session <b>/</b> Field notes</span><button type="button" class="motion-toggle" hidden>Pause animation</button></figcaption>
-      <p class="sr">The looping example shows Super, Alt and V starting dictation. Caelum listens, then inserts the spoken sentence into the open notebook.</p>
+      <figcaption><span><i class="desk-dot"></i> Hyprland <b>/</b> Notebook in focus</span><button type="button" class="motion-toggle" hidden>Pause animation</button></figcaption>
+      <p class="sr">In this native Hyprland example, holding the configured shortcut starts recording and opens the Listening pill. Releasing the shortcut stops recording. The pill shows Processing. When processing finishes, the complete sentence appears in the notebook that kept focus.</p>
     </figure>
   </section>
   <section class="samples wrap split" aria-labelledby="samples-title">
@@ -79,7 +80,12 @@
     <div class="faq-list">
       <details name="faq" open><summary>How do I get started?<span aria-hidden="true"></span></summary><div class="answer"><p>Choose a local model or online provider, test your microphone, and pick a shortcut. Try a sentence in setup before returning to your work.</p></div></details>
       <details name="faq"><summary>Where do my words go?<span aria-hidden="true"></span></summary><div class="answer"><p>On-device transcription stays on your computer. Online transcription sends speech and vocabulary to your provider; online cleanup sends the transcript. History stores text locally, unencrypted, and never saves audio.</p><a href="https://github.com/Parth-Jadhav-2004/caelum/blob/main/docs/privacy.md">Read the privacy details ↗</a></div></details>
-      <details name="faq"><summary>Can I dictate into my writing app?<span aria-hidden="true"></span></summary><div class="answer"><p>Keep your cursor in a text field while you speak. If your app doesn’t support direct insertion, or you switch focus, paste the finished text where you need it.</p></div></details>
+      <details name="faq"><summary>Can I dictate into my writing app?<span aria-hidden="true"></span></summary>
+        <div class="answer">
+          <p>On GNOME, KDE and other supported Linux desktops in portable mode, choose <strong>Record</strong> on Home, then <strong>Finish recording</strong>. After processing, you can copy a saved transcript from History and paste it into your app. If Caelum shows <strong>Copied</strong>, just paste, even with history off. These controls also work if your desktop shortcut is unavailable.</p>
+          <p>On native Hyprland and Windows, holding your configured hold-to-talk shortcut opens the recording pill. Release to stop capture. Once processing finishes, Hyprland can insert the full transcript into the original window if it still has focus. Windows can paste directly into a supported Edit or RichEdit control that keeps focus. If Caelum shows <strong>Copied</strong> instead, paste into the intended app yourself.</p>
+        </div>
+      </details>
       <details name="faq"><summary>What does it cost?<span aria-hidden="true"></span></summary><div class="answer"><p>Caelum is free and open source. Local transcription runs on your hardware. If you connect an online provider, its pricing applies to your account.</p></div></details>
     </div>
   </section>
