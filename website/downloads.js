@@ -20,7 +20,7 @@ export function packageChoices(packages, platform, userAgent) {
   if (ubuntu) {
     const exact = ubuntu[1] && linux.find(p => p.id === "ubuntu-" + ubuntu[1] + ubuntu[2]);
     if (exact) return [exact];
-    return linux.filter(p => p.id.startsWith("ubuntu-"));
+    return linux.filter(p => p.manager === "appimage");
   }
   if (/Arch(?:[ -]?Linux)?\b/i.test(system)) return linux.filter(p => p.id === "arch");
   if (/Fedora/i.test(system)) return linux.filter(p => p.id === "fedora");

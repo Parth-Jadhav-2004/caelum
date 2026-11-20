@@ -7,13 +7,33 @@ const manifest = JSON.parse(
   readFileSync(new URL("./release.json", import.meta.url)),
 );
 
-test("download menu preserves the detected Ubuntu version", () => {
-  const packages = ["arch", "ubuntu-2604", "ubuntu-2404"].map(id => ({ id }));
-  for (const [agent, expected] of [["Ubuntu/24.04", "ubuntu-2404"], ["Ubuntu", "ubuntu-2604"]]) {
-    const matches = packageChoices(packages, "Linux", agent);
-    assert.deepEqual(menuChoices(packages, matches).ordered.map(p => p.id), [expected, "arch"]);
-  }
-});
+for (const [platform, agent, expected] of [
+  ["Linux x86_64", "Ubuntu", "appimage"],
+  ["Linux x86_64", "Ubuntu/22.04", "appimage"],
+  ["Linux x86_64", "Ubuntu/24.04", "ubuntu-2404"],
+  ["Linux x86_64", "Ubuntu/26.04", "ubuntu-2604"],
+  ["Linux x86_64", "Linux", "appimage"],
+  ["Linux x86_64", "Debian", "debian-12"],
+  ["Linux x86_64", "Fedora", "fedora"],
+  ["Linux x86_64", "Arch Linux", "arch"],
+  ["Win32", "Windows NT 10.0", "windows"],
+  ["MacIntel", "Macintosh", null],
+  ["Linux armv8l", "Linux; Android", null],
+]) {
+  test(`package selection and compact menu for ${agent}`, () => {
+    const packages = manifest.packages;
+    const matches = packageChoices(packages, platform, agent);
+    const expectedIds = expected ? [expected] : [];
+    assert.deepEqual(matches.map(p => p.id), expectedIds);
+
+    const { ordered, preferred } = menuChoices(packages, matches);
+    assert.deepEqual([...preferred], expectedIds);
+    const compactUbuntu = expected === "ubuntu-2404" ? "ubuntu-2404" : "ubuntu-2604";
+    const otherIds = packages.map(p => p.id).filter(id =>
+      id !== expected && (!id.startsWith("ubuntu-") || id === compactUbuntu));
+    assert.deepEqual(ordered.map(p => p.id), [...expectedIds, ...otherIds]);
+  });
+}
 
 test("every published package has a matching version, architecture, URL and install command", () => {
   const release = validateRelease(manifest);
