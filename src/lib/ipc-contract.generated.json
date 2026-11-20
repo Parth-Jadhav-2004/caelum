@@ -342,6 +342,9 @@
           "storage_error": {
             "type": "boolean"
           },
+          "notice": {
+            "type": "string"
+          },
           "backend": {
             "type": "string"
           },
@@ -1892,6 +1895,9 @@
       },
       "storage_error": {
         "type": "boolean"
+      },
+      "notice": {
+        "type": "string"
       },
       "backend": {
         "type": "string"

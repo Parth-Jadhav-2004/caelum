@@ -123,6 +123,18 @@ describe("recording controls", () => {
       [...container.querySelectorAll("span")].map((e) => e.style.height),
     ).toEqual(["4px", "27px", "50px"]);
   });
+  it("shows the last Windows notice when Home opens after retry expired", () => {
+    const notice = "Retry window expired. Pending audio discarded; record again.";
+    useApp.setState({
+      status: {
+        running: true, backend: "windows", state: "hidden", paused: false,
+        title: "Ready", detail: "Hold your shortcut.", notice,
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(screen.getByText(notice).closest('[role="status"]')).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry dictation" })).not.toBeInTheDocument();
+  });
   it("only marks a configured microphone missing after discovery finishes", async () => {
     mount(<DeviceSelect value="missing" onChange={vi.fn()} />);
     const trigger = screen.getByRole("combobox", { name: "Microphone" });

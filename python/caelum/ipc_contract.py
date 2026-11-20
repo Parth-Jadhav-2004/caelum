@@ -63,6 +63,7 @@ STATUS = obj(
         "pending_audio": BOOL,
         "can_copy": BOOL,
         "storage_error": BOOL,
+        "notice": STRING,
         "backend": STRING,
         "hotkey": STRING,
         "shortcut_mode": STRING,
@@ -77,7 +78,7 @@ STATUS = obj(
         ),
     },
     optional=(
-        "pending_audio", "can_copy", "storage_error", "backend", "hotkey",
+        "pending_audio", "can_copy", "storage_error", "notice", "backend", "hotkey",
         "shortcut_mode", "shortcut_description", "feedback", "engine",
     ),
     extra=True,
