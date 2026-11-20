@@ -31,8 +31,11 @@ export function packageChoices(packages, platform, userAgent) {
 const formats = { exe: ".exe", apt: ".deb", dnf: ".rpm", pacman: ".pkg.tar.zst", appimage: ".AppImage" };
 
 export function menuChoices(packages, matches) {
+  const ubuntu = matches.length === 1 && matches[0].id.startsWith("ubuntu-") ? matches[0] :
+    packages.filter(p => p.id.startsWith("ubuntu-"))
+    .sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }))[0];
   const preferred = new Set(matches.map(p => p.id));
-  const ordered = [...packages]
+  const ordered = packages.filter(p => !p.id.startsWith("ubuntu-") || p.id === ubuntu?.id)
     .sort((a, b) => Number(preferred.has(b.id)) - Number(preferred.has(a.id)));
   return { ordered, preferred };
 }

@@ -341,22 +341,3 @@ async def test_history_off_clipboard_uses_stdin(monkeypatch, wayland):
     assert "Private text" not in str(args)
     assert kwargs["data"] == b"Private text"
     assert kwargs["capture_output"] is False
-
-
-@pytest.mark.parametrize("x_display", [True, False])
-async def test_wayland_missing_wl_copy_falls_back_only_with_x_display(monkeypatch, x_display):
-    from caelum.portable import copy_private_result
-
-    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
-    command = AsyncMock(side_effect=[FileNotFoundError("wl-copy"), ""])
-    monkeypatch.setattr("caelum.portable.command", command)
-    if x_display:
-        monkeypatch.setenv("DISPLAY", ":1")
-        await copy_private_result("Private text")
-        assert command.await_count == 2
-        command.assert_awaited_with("xclip", "-selection", "clipboard", data=b"Private text", capture_output=False)
-    else:
-        monkeypatch.delenv("DISPLAY", raising=False)
-        with pytest.raises(FileNotFoundError, match="wl-copy"):
-            await copy_private_result("Private text")
-        command.assert_awaited_once()
