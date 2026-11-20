@@ -254,6 +254,11 @@ export function Dashboard({ config }: { config: Config }) {
             </Button>
           )}
         </div>
+        {status?.notice && (
+          <p role="status">
+            <strong>Last dictation notice:</strong> {status.notice}
+          </p>
+        )}
         {status?.storage_error && (
           <p role="alert">History wasn’t saved. Check storage permissions.</p>
         )}

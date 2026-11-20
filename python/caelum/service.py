@@ -239,7 +239,7 @@ async def serve(config, config_path=None):
 
         bindings, hud = PortableBindings(config.app.hotkey, config.app.recording_mode), PortableHUD(config.app)
     provider = Providers(config)
-    core = Orchestrator(config, provider, hud, bindings)
+    core = Orchestrator(config, provider, hud, bindings, in_app_notifications=windows)
     if windows:
         core.media = windows_desktop.RecordingMedia()
     if not native:

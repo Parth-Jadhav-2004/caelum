@@ -20,6 +20,7 @@ export interface Status {
   pending_audio?: boolean;
   can_copy?: boolean;
   storage_error?: boolean;
+  notice?: string;
   backend?: string;
   shortcut_mode?: string;
   shortcut_description?: string;
