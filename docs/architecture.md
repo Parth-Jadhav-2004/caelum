@@ -3,6 +3,7 @@
 The React WebView is the only main application UI. Tauri owns the native window,
 single-instance activation, tray, native export dialog and the Python sidecar.
 Frontend code has no filesystem, shell or unrestricted process permissions.
+The [desktop style CSP assessment](desktop-style-csp.md) explains why the WebView still permits inline styles.
 
 React commands use `src/lib/ipc.ts`; Python configuration types are generated
 from dataclasses. The Rust `backend` command forwards versioned, ID-correlated
