@@ -43,6 +43,7 @@ export const testConfig: Config = {
   },
   desktop: {
     history_enabled: true,
+    auto_copy: true,
     check_updates: true,
     theme: "dark",
     color_theme: "t3-code",

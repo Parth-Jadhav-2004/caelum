@@ -65,6 +65,7 @@ class Orchestrator:
         self.capture = None
         self.pcm = None
         self.pending_copy = None
+        self.manual_result = None
         self.chunker = None
         self.work = None
         self.expiry = None
@@ -116,6 +117,7 @@ class Orchestrator:
         if action == "status":
             return {"feedback": self.feedback, "paused": self.paused, "state": self.state,
                     "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
+                    "can_copy": self.manual_result is not None,
                     "metrics": self.recent_metrics[-1:]}
         async with self.control_lock:
             if self.stopping and action != "status":
@@ -144,6 +146,7 @@ class Orchestrator:
                     await self.bindings.active(False)
                     return
                 self.session = uuid.uuid4().hex
+                self.manual_result = None
                 self.sequence = 0
                 self.token = token
                 self.started = time.monotonic()
@@ -199,15 +202,15 @@ class Orchestrator:
                 self.paused = True
             elif action == "resume":
                 self.paused = False
-            elif action == "status":
-                return {
-                    "feedback": self.feedback,
-                    "paused": self.paused,
-                    "state": self.state,
-                    "pending_audio": self.pcm is not None,
-                    "error_kind": self.error_kind,
-                    "metrics": self.recent_metrics[-1:],
-                }
+            elif action == "copy":
+                if self.manual_result is None or await getattr(self.bindings, "locked", session_locked)():
+                    raise ProviderError("No finished transcript available to copy.", "clipboard")
+                from .portable import copy_private_result
+
+                try:
+                    await getattr(self.bindings, "copy_result", copy_private_result)(self.manual_result)
+                except (RuntimeError, OSError, TimeoutError):
+                    raise ProviderError("Clipboard unavailable. Try Copy transcript again.", "clipboard") from None
 
     async def poll(self):
         try:
@@ -294,6 +297,33 @@ class Orchestrator:
             return await self.provider.cleanup(raw, lambda: self.event("refining"))
         return None
 
+    async def deliver(self, transcript):
+        text, _ = transcript
+        auto_copy = self.config.desktop.auto_copy
+        if getattr(self.bindings, "save_only", False):
+            if not auto_copy:
+                return "ready_to_copy"
+            if self.config.desktop.history_enabled:
+                return "saved"
+            from .portable import copy_private_result
+
+            await copy_private_result(text)
+            return "copied"
+        try:
+            if self.pending_copy is not None:
+                await self.bindings.copy_result(text)
+                return "copied"
+            if await getattr(self.bindings, "insert", insert)(text, self.target, auto_copy=auto_copy):
+                return "inserted"
+        except (RuntimeError, OSError, TimeoutError):
+            if not auto_copy:
+                return "ready_to_copy"
+            if hasattr(self.bindings, "copy_result"):
+                self.pending_copy = transcript
+                raise ProviderError("Choose Retry to copy the finished text.", "clipboard") from None
+            raise ProviderError("Insertion unavailable; retry or cancel") from None
+        return "copied" if auto_copy else "ready_to_copy"
+
     async def finalize(self, session):
         try:
             async with asyncio.timeout(
@@ -316,25 +346,22 @@ class Orchestrator:
                 if await getattr(self.bindings, "locked", session_locked)():
                     await self.cancel()
                     return
-                if getattr(self.bindings, "save_only", False):
-                    self.metrics.update(self.provider.metrics)
-                    self.metrics["release_to_dispatch_ms"] = (
-                        time.monotonic() - self.released
-                    ) * 1000
+                delivery = await self.deliver(transcript)
+                portable = getattr(self.bindings, "save_only", False)
+                copied = delivery == "copied" and not portable
+                self.metrics.update(self.provider.metrics)
+                if portable:
                     self.metrics["manual_copy"] = True
-                    self.metrics["clipboard_fallback"] = False
-                    self.metrics["visible_insertion_observed"] = False
-                    if not self.config.desktop.history_enabled:
-                        from .portable import copy_private_result
-
-                        await copy_private_result(text)
-                        self.recent_metrics.append(self.metrics.copy())
-                        self.recent_metrics = self.recent_metrics[-100:]
-                        self.pcm = self.chunker = self.failed_at = None
-                        await self.bindings.active(False)
-                        await self.event("copied")
-                        await notify("Text copied. Paste manually; history saving is off.")
-                        return
+                else:
+                    self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000
+                self.metrics["release_to_dispatch_ms"] = (time.monotonic() - self.released) * 1000
+                self.metrics["visible_insertion_observed"] = False
+                self.metrics["clipboard_fallback"] = copied
+                if delivery == "ready_to_copy" or (
+                    not self.config.desktop.auto_copy and not self.config.desktop.history_enabled
+                ):
+                    self.manual_result = text
+                if delivery == "saved":
                     if not self.on_completed:
                         raise RuntimeError("History storage is required for portable delivery")
                     result = self.on_completed(session, text, self.metrics.copy(), refined, False)
@@ -342,50 +369,21 @@ class Orchestrator:
                         result = await result
                     if result is False:
                         raise RuntimeError("Could not save dictation")
-                    self.recent_metrics.append(self.metrics.copy())
-                    self.recent_metrics = self.recent_metrics[-100:]
-                    self.pcm = self.chunker = self.failed_at = None
-                    await self.bindings.active(False)
-                    await self.event("saved")
-                    return
-                try:
-                    if self.pending_copy is not None:
-                        await self.bindings.copy_result(text)
-                        dispatched = False
-                    else:
-                        dispatched = await getattr(self.bindings, "insert", insert)(text, self.target)
-                except (RuntimeError, OSError, TimeoutError):
-                    if hasattr(self.bindings, "copy_result"):
-                        self.pending_copy = transcript
-                        raise ProviderError("Choose Retry to copy the finished text.", "clipboard") from None
-                    # Retain audio for explicit retry if even clipboard dispatch fails.
-                    raise ProviderError("Insertion unavailable; retry or cancel") from None
-                self.pending_copy = None
-                self.metrics.update(self.provider.metrics)
-                self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000
-                self.metrics["release_to_dispatch_ms"] = (time.monotonic() - self.released) * 1000
-                self.metrics["visible_insertion_observed"] = False
-                self.metrics["clipboard_fallback"] = not dispatched
+                elif self.on_completed and self.config.desktop.history_enabled:
+                    with suppress(Exception):
+                        self.on_completed(session, text, self.metrics.copy(), refined, copied)
                 self.recent_metrics.append(self.metrics.copy())
                 self.recent_metrics = self.recent_metrics[-100:]
-                self.pcm = None
-                self.chunker = None
-                self.failed_at = None
+                self.pending_copy = self.pcm = self.chunker = self.failed_at = None
                 await self.bindings.active(False)
                 await self.event(
                     ("success_fallback_" + self.provider.metrics["fallback"]
                      if self.provider.metrics.get("fallback") else
-                     ("success" if refined else "unrefined")) if dispatched else "copied"
+                     ("success" if refined else "unrefined")) if delivery == "inserted" else delivery
                 )
-                if self.on_completed:
-                    with suppress(Exception):
-                        self.on_completed(
-                            session, text, self.metrics.copy(), refined, not dispatched
-                        )
-                if not dispatched:
-                    await notify(
-                        "Text copied. Paste manually in the intended application."
-                    )
+                if delivery == "copied":
+                    await notify("Text copied. Paste manually; history saving is off." if portable else
+                                 "Text copied. Paste manually in the intended application.")
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -431,7 +429,7 @@ class Orchestrator:
         if self.chunker:
             self.chunker.cancel()
         await self.abort_capture()
-        self.chunker = self.pcm = self.pending_copy = self.failed_at = None
+        self.chunker = self.pcm = self.pending_copy = self.manual_result = self.failed_at = None
         await self.bindings.active(False)
         if feedback:
             await self.event("hidden")

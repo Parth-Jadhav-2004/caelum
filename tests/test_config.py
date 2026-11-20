@@ -51,6 +51,20 @@ def test_recording_defaults_and_toggle_roundtrip(tmp_path):
     assert load(path).app.recording_mode == "toggle"
 
 
+def test_auto_copy_defaults_on_and_opt_out_survives_restart(tmp_path):
+    from caelum.config import save
+
+    path = tmp_path / "config.toml"
+    assert load(path).desktop.auto_copy
+    path.write_text("[desktop]\nhistory_enabled=false\n")
+    config = load(path)
+    assert config.desktop.auto_copy
+    config.desktop.auto_copy = False
+    save(config, path)
+    assert not load(path).desktop.auto_copy
+    assert not load(path).desktop.history_enabled
+
+
 def test_legacy_appearance_loads_with_default_palette(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text('[desktop]\ntheme="light"\n[app]\nhotkey="CTRL + SUPER"\n')
