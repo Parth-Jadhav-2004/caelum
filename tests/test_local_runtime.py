@@ -19,7 +19,7 @@ from caelum.vad import Silero, pause_chunks
 @pytest.mark.parametrize("model_id,limit", [("cohere-transcribe", 35), ("whisper-turbo", 30),
                                           ("parakeet-v3", 60)])
 async def test_long_recordings_are_bounded_at_pauses_and_keep_offsets(monkeypatch, model_id, limit):
-    monkeypatch.setattr("caelum.local_stt.installed", lambda *_: True)
+    monkeypatch.setattr("caelum.local_stt.installed", lambda *_, **__: True)
     lengths = []
     def decode(samples):
         lengths.append(len(samples))
@@ -53,7 +53,7 @@ def test_continuous_speech_is_bounded_without_sample_loss():
 
 
 async def test_vad_skips_nonspeech_before_decoder_even_above_energy_threshold(monkeypatch):
-    monkeypatch.setattr("caelum.local_stt.installed", lambda *_: True)
+    monkeypatch.setattr("caelum.local_stt.installed", lambda *_, **__: True)
     decoder = Mock()
     engine = LocalEngine(adapter_factory=lambda *_: SimpleNamespace(transcribe=decoder),
                          speech_detector=lambda _: [])
