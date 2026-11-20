@@ -18,6 +18,7 @@ export interface Status {
   detail: string;
   paused: boolean;
   pending_audio?: boolean;
+  can_copy?: boolean;
   storage_error?: boolean;
   backend?: string;
   feedback?: Feedback;
@@ -148,7 +149,7 @@ interface Methods {
   "service.stop": [{ discard?: boolean }, Ack];
   control: [
     {
-      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume";
+      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume" | "copy";
       discard?: boolean;
     },
     Ack,

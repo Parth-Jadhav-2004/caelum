@@ -46,6 +46,7 @@ timeout_seconds = 1.8
 [desktop]
 # Disable to dictate without saving new transcripts. Existing history is kept.
 history_enabled = true
+auto_copy = true
 check_updates = true # Official native packages check GitHub on app launch; never auto-download.
 theme = "dark" # system follows desktop appearance; light and dark override it.
 color_theme = "t3-code" # t3-code, t3-chat, grove, ocean, ember, iris, or caelum.

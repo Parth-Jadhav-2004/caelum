@@ -42,6 +42,7 @@ export interface CleanupConfig {
 }
 export interface DesktopConfig {
   history_enabled: boolean
+  auto_copy: boolean
   check_updates: boolean
   theme: string
   color_theme: string

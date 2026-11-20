@@ -243,13 +243,14 @@ class Bindings:
         self.clipboard_sequence = win32clipboard.GetClipboardSequenceNumber()
         return focused_target()
 
-    async def insert(self, text, target):
+    async def insert(self, text, target, *, auto_copy=True):
         try:
             if replace_selection(text, target):
                 return True
         except pywintypes.error:
             pass  # The control closed, denied access or timed out.
-        await self.copy_result(text, self.clipboard_sequence)
+        if auto_copy:
+            await self.copy_result(text, self.clipboard_sequence)
         return False
 
     async def copy_result(self, text, expected_sequence=None):

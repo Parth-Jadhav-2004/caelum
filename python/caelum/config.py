@@ -60,6 +60,7 @@ class Cleanup:
 @dataclass
 class Desktop:
     history_enabled: bool = True
+    auto_copy: bool = True
     check_updates: bool = True
     theme: str = "dark"
     color_theme: str = "caelum"

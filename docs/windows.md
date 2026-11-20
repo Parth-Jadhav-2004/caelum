@@ -51,7 +51,9 @@ blocked, use **Settings → System → Open installer** to retry the staged down
   For other controls or a focus change, wait for **Copied**, then use **Ctrl+V**
   in the intended field. If a field truncates the text, the clipboard changed, or copying failed,
   choose **Retry** to copy the finished transcript before the retry window expires.
-  This also works with history saving off.
+  This also works with history saving off. With automatic clipboard copy off,
+  unsupported or failed insertions leave your clipboard untouched. Use **Copy
+  transcript** on Home before starting another recording.
 - Cancel with Escape, lock during capture, change input devices and test
   retry after a network interruption. Check tray hide/show and quit.
 - Check light, dark and high-contrast appearances, the history calendar,

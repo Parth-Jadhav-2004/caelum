@@ -61,6 +61,7 @@ STATUS = obj(
         "detail": STRING,
         "paused": BOOL,
         "pending_audio": BOOL,
+        "can_copy": BOOL,
         "storage_error": BOOL,
         "backend": STRING,
         "engine": obj({
@@ -72,7 +73,7 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "feedback", "engine"),
+    optional=("pending_audio", "can_copy", "storage_error", "backend", "feedback", "engine"),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})
@@ -150,7 +151,7 @@ method(
     "control",
     obj(
         {
-            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume"]},
+            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume", "copy"]},
             "discard": BOOL,
         },
         optional=("discard",),

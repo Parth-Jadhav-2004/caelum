@@ -29,6 +29,7 @@ STATES = {
     "error",
     "no_speech",
     "copied",
+    "ready_to_copy",
     "cancelled",
 }
 LABELS = {
@@ -49,6 +50,7 @@ LABELS = {
     "error": "Try again",
     "no_speech": "No speech",
     "copied": "Copied: paste with Ctrl V",
+    "ready_to_copy": "Copy in Caelum",
     "cancelled": "Cancelled",
 }
 ERRORS = {
@@ -73,7 +75,7 @@ def presentation(kind):
         "capture": capture,
         "width": 140 if capture else 320 if kind in ("error", "missing_model") else 264 if kind in ("copied", "success_fallback_online", "success_fallback_local") else 184,
         "dwell": {"model_downloading": 2, "model_stalled": 5, "model_ready": 2, "model_failed": 5, "success": 0.6, "unrefined": 0.6, "error": 5,
-                  "no_speech": 0.8, "copied": 2, "cancelled": 0.0, "missing_model": 5,
+                  "no_speech": 0.8, "copied": 2, "ready_to_copy": 2, "cancelled": 0.0, "missing_model": 5,
                   "success_fallback_online": 2, "success_fallback_local": 2}.get(kind),
         "actions": ("cancel", "stop") if capture else ("retry", "cancel") if kind in ("error", "missing_model") else (),
     }

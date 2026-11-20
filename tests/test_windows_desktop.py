@@ -48,11 +48,12 @@ def control(request, monkeypatch):
 
 
 @pytest.mark.parametrize("control", ["Edit", "RICHEDIT50W"], indirect=True)
-async def test_direct_insert_replaces_selection_without_opening_clipboard(bindings, clipboard, control):
+@pytest.mark.parametrize("auto_copy", [True, False])
+async def test_direct_insert_replaces_selection_without_opening_clipboard(bindings, clipboard, control, auto_copy):
     target = await bindings.target()
     clipboard.GetClipboardSequenceNumber.return_value += 1  # Another app copied while dictating.
     win32gui.SendMessage(control, win32con.EM_SETSEL, 7, -1)
-    assert await bindings.insert(TEXT + "\nNext line", target)
+    assert await bindings.insert(TEXT + "\nNext line", target, auto_copy=auto_copy)
     assert win32gui.GetWindowText(control) == "before " + TEXT + "\r\nNext line"
     assert win32gui.SendMessage(control, win32con.EM_GETLINECOUNT, 0, 0) == 2
     assert clipboard.mock_calls == [call.GetClipboardSequenceNumber()]
@@ -72,7 +73,8 @@ async def test_truncated_dispatch_preserves_clipboard_for_explicit_retry(binding
 @pytest.mark.parametrize("failure", [
     "focus", "late-focus", "unsupported", "readonly", "ansi", "denied", "no-target",
 ])
-async def test_failed_dispatch_copies_finished_text(bindings, clipboard, control, monkeypatch, failure):
+@pytest.mark.parametrize("auto_copy", [True, False])
+async def test_failed_dispatch_respects_clipboard_preference(bindings, clipboard, control, monkeypatch, failure, auto_copy):
     target = await bindings.target()
     real_send = win32gui.SendMessageTimeout
     denied = Mock(side_effect=desktop.pywintypes.error(5, "SendMessageTimeout", "denied"))
@@ -95,8 +97,11 @@ async def test_failed_dispatch_copies_finished_text(bindings, clipboard, control
         monkeypatch.setattr(ctypes.windll.user32, "IsWindowUnicode", lambda _: 0)
     elif failure == "no-target":
         target.address = None
-    assert not await bindings.insert(TEXT, target)
+    assert not await bindings.insert(TEXT, target, auto_copy=auto_copy)
     assert denied.call_count == int(failure == "denied")
+    if not auto_copy:
+        assert clipboard.mock_calls == [call.GetClipboardSequenceNumber()]
+        return
     assert clipboard.mock_calls == [
         call.GetClipboardSequenceNumber(), call.OpenClipboard(123),
         call.GetClipboardSequenceNumber(), call.EmptyClipboard(),

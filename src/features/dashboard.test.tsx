@@ -92,6 +92,18 @@ describe("recording controls", () => {
       screen.getByRole("button", { name: "Discard recording" }),
     ).toBeEnabled();
   });
+  it("offers explicit Copy when the finished transcript is only in memory", async () => {
+    useApp.setState({
+      status: {
+        running: true, state: "ready_to_copy", title: "Transcript ready",
+        detail: "Choose Copy transcript.", paused: false, can_copy: true,
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(ipc).not.toHaveBeenCalledWith("control", { action: "copy" });
+    await userEvent.click(screen.getByRole("button", { name: "Copy transcript" }));
+    expect(ipc).toHaveBeenCalledWith("control", { action: "copy" });
+  });
   it("uses only supplied microphone levels", () => {
     const { container } = render(<Waveform values={[0, 0.5, 1]} />);
     expect(
