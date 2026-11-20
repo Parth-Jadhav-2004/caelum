@@ -179,6 +179,7 @@ async def test_notifications_deduplicate_recording_frames(monkeypatch):
 
 async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, monkeypatch):
     import json
+    from dataclasses import asdict
 
     from caelum.service import serve
 
@@ -188,6 +189,7 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
     )
     config = Config()
     config.app.backend = "portable"
+    config.app.hotkey = "CTRL + ALT + V"
     # Cleanup verification must never gate recording, even with an invalid model/key.
     config.cleanup.model = "unavailable-model"
     config.cleanup.key_env = "CAELUM_MISSING_CLEANUP_KEY"
@@ -197,7 +199,26 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
     )
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     monkeypatch.setenv(config.stt.key_env, "unused-test-credential")
-    monkeypatch.setattr("caelum.portable.Bindings.install", AsyncMock())
+    bus = Mock(unique_name=":1.42")
+    monkeypatch.setattr("caelum.portable.MessageBus", lambda: SimpleNamespace(connect=AsyncMock(return_value=bus)))
+    prompt = asyncio.Event()
+    closed = []
+
+    async def call(self, interface, member, signature="", body=None, path=PATH, **kwargs):
+        if member == "GetNameOwner":
+            return [":1.7"]
+        if member in ("CreateSession", "BindShortcuts"):
+            request = f"{PATH}/request/1_42/{body[-1]['handle_token'].value}"
+            if member == "CreateSession":
+                self.pending[request].set_result([0, {"session_handle": Variant("s", "/session/test")}])
+            else:
+                prompt.set()  # No response: the desktop approval dialog remains open.
+            return [request]
+        if member == "Close":
+            closed.append((interface, path))
+        return []
+
+    monkeypatch.setattr(Bindings, "call", call)
     monkeypatch.setattr("caelum.portable.session_locked", AsyncMock(return_value=False))
     monkeypatch.setattr("caelum.portable.HUD.emit", AsyncMock())
 
@@ -231,9 +252,9 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
     service = asyncio.create_task(serve(config, tmp_path / "config.toml"))
     path = tmp_path / "caelum/control.sock"
 
-    async def control(action):
+    async def control(action, **arguments):
         reader, writer = await asyncio.open_unix_connection(str(path))
-        writer.write(json.dumps({"action": action}).encode() + b"\n")
+        writer.write(json.dumps({"action": action, **arguments}).encode() + b"\n")
         await writer.drain()
         reply = json.loads(await reader.readline())
         writer.close()
@@ -247,7 +268,13 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
                 if service.done():
                     service.result()
                 await asyncio.sleep(0.01)
-        assert (await control("status"))["backend"] == "portable"
+        await asyncio.wait_for(prompt.wait(), 2)
+        status = await control("status")
+        assert status["backend"] == "portable" and "Waiting" in status["shortcut_description"]
+        settings = asdict(config)
+        settings["app"]["hotkey"] = "CTRL + ALT + D"
+        await control("settings", config=settings)
+        assert (await control("status"))["hotkey"] == "CTRL + ALT + V"
         await control("pause")
         assert (await control("status"))["paused"]
         await control("toggle")
@@ -259,8 +286,12 @@ async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, mon
             assert (await control("status"))["state"] == "listening"
             await control("toggle")
             assert (await control("status"))["state"] == "hidden"
-        await control("shutdown")
+        await control("prepare-update")  # Non-discarding stop/restart.
         await asyncio.wait_for(service, 5)
+        assert [interface for interface, _ in closed] == [
+            "org.freedesktop.portal.Request", "org.freedesktop.portal.Session",
+        ]
+        bus.disconnect.assert_called_once()
         assert not path.exists()
     finally:
         if not service.done():

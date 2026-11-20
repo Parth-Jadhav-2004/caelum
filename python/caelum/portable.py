@@ -148,6 +148,7 @@ class Bindings:
         if not trigger:
             self.description = "Choose a shortcut with a letter or use Record in Caelum"
             return
+        self.description = "Waiting for desktop shortcut approval. You can use Record in Caelum."
         try:
             self.bus = await asyncio.wait_for(MessageBus().connect(), 5)
             # Resolve the unique sender before accepting signals from this service.

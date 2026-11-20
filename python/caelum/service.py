@@ -367,7 +367,8 @@ async def serve(config, config_path=None):
         if await locked():
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
-        await bindings.install()
+        if windows or native:
+            await bindings.install()
         if windows:
             windows_desktop.endpoint = loop, dispatch
         else:
@@ -376,11 +377,20 @@ async def serve(config, config_path=None):
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
         provider.configure_local()
+
+        async def monitor_shortcuts():
+            if native:
+                await compositor_monitor(core, bindings)
+            else:
+                if not windows:
+                    # The optional portal can prompt. Keep the control socket available
+                    # for settings, manual dictation, and cancellation during approval.
+                    await bindings.install()
+                await bindings.monitor()
+
         tasks = [
             asyncio.create_task(lock_monitor(core, locked)),
-            asyncio.create_task(
-                compositor_monitor(core, bindings) if native else bindings.monitor()
-            ),
+            asyncio.create_task(monitor_shortcuts()),
         ]
         if not windows:
             tasks.append(asyncio.create_task(safety_monitor(core)))

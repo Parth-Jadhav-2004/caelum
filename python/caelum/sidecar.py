@@ -266,13 +266,7 @@ class Backend:
             stderr=sys.stderr,
             env={**os.environ, "CAELUM_OWNER_PID": str(os.getpid())},
         )
-        from .portable import backend_name
-
-        # A portal restart can prompt for permission during CreateSession and BindShortcuts.
-        startup_seconds = 150 if backend_name(load(self.path)) == "portable" else 10
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + startup_seconds
-        while loop.time() < deadline:
+        for _ in range(100):
             await asyncio.sleep(0.1)
             if (await self.status())["running"]:
                 return
