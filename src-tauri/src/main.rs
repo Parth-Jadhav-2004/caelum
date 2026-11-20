@@ -5,6 +5,7 @@ use transport::{EngineError, Frame, Reply, Requests};
 
 use serde_json::{json, Value};
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -24,17 +25,17 @@ struct Engine {
     closed: AtomicBool,
     app: tauri::AppHandle,
 }
+
+fn engine_parent<'a>(path: &'a Path, description: &str) -> Result<&'a Path, String> {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| format!("{description} '{}' has no parent directory", path.display()))
+}
+
 impl Engine {
     async fn spawn(app: tauri::AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
-        #[cfg(not(windows))]
-        let executable = std::env::current_exe()?
-            .parent()
-            .unwrap()
-            .join("caelum-engine");
         let mut command = if cfg!(debug_assertions) {
-            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap();
+            let root = engine_parent(Path::new(env!("CARGO_MANIFEST_DIR")), "Manifest directory")?;
             let mut cmd = Command::new(root.join(if cfg!(windows) {
                 ".venv/Scripts/python.exe"
             } else {
@@ -53,7 +54,8 @@ impl Engine {
             }
             #[cfg(not(windows))]
             {
-                Command::new(executable)
+                let exe = std::env::current_exe()?;
+                Command::new(engine_parent(&exe, "Desktop executable")?.join("caelum-engine"))
             }
         };
         #[cfg(windows)]
@@ -95,7 +97,11 @@ impl Engine {
                     );
                 }
                 match transport::parse(&bytes) {
-                    Ok(Frame::Reply(id, result)) => reader_requests.resolve(id, result),
+                    Ok(Frame::Reply(id, result)) => {
+                        if let Err(error) = reader_requests.resolve(id, result) {
+                            break error;
+                        }
+                    }
                     Ok(Frame::Event(event, data)) => {
                         if event == "status" {
                             update_tray(&app, &data);
@@ -166,13 +172,37 @@ impl Engine {
 }
 
 struct Desktop {
-    engine: Engine,
+    engine: Result<Engine, EngineError>,
     quitting: AtomicBool,
     tray_available: AtomicBool,
 }
+impl Desktop {
+    async fn call(&self, method: &str, params: Value) -> Reply {
+        self.engine
+            .as_ref()
+            .map_err(Clone::clone)?
+            .call(method, params)
+            .await
+    }
+
+    async fn prepare_exit(&self, discard: bool) -> Result<(), EngineError> {
+        if let Ok(engine) = &self.engine {
+            let shutdown_complete = !discard && engine.requests.alive();
+            if shutdown_complete {
+                // The daemon atomically checks idle state before an ordinary exit.
+                engine.call("shutdown", json!({"discard":false})).await?;
+            }
+            self.quitting.store(true, Ordering::SeqCst);
+            engine.close(shutdown_complete).await;
+        } else {
+            self.quitting.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+}
 #[tauri::command]
 async fn backend(method: String, params: Value, state: tauri::State<'_, Desktop>) -> Reply {
-    state.engine.call(&method, params).await
+    state.call(&method, params).await
 }
 #[tauri::command]
 async fn restart_app(
@@ -180,17 +210,7 @@ async fn restart_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    let shutdown_complete = !discard.unwrap_or(false) && state.engine.requests.alive();
-    if shutdown_complete {
-        // The daemon atomically checks idle state and stops accepting captures.
-        // Confirmed recovery may explicitly discard; ordinary update restarts may not.
-        state
-            .engine
-            .call("shutdown", json!({"discard":false}))
-            .await?;
-    }
-    state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close(shutdown_complete).await;
+    state.prepare_exit(discard.unwrap_or(false)).await?;
     app.restart();
 }
 #[tauri::command]
@@ -242,15 +262,7 @@ async fn quit_app(
     app: tauri::AppHandle,
     state: tauri::State<'_, Desktop>,
 ) -> Result<(), EngineError> {
-    let shutdown_complete = !discard && state.engine.requests.alive();
-    if shutdown_complete {
-        state
-            .engine
-            .call("shutdown", json!({"discard":false}))
-            .await?;
-    }
-    state.quitting.store(true, Ordering::SeqCst);
-    state.engine.close(shutdown_complete).await;
+    state.prepare_exit(discard).await?;
     app.exit(0);
     Ok(())
 }
@@ -387,7 +399,16 @@ fn main() {
                 }
             }
             let handle = app.handle().clone();
-            let engine = tauri::async_runtime::block_on(Engine::spawn(handle.clone()))?;
+            // Setup errors panic inside Tauri. Let bootstrap report a failed
+            // engine through the same IPC error path as later backend calls.
+            let engine =
+                tauri::async_runtime::block_on(Engine::spawn(handle.clone())).map_err(|e| {
+                    EngineError::new(
+                        "disconnected",
+                        &format!("Could not start Python engine: {e}"),
+                        false,
+                    )
+                });
             app.manage(Desktop {
                 engine,
                 quitting: AtomicBool::new(false),
@@ -421,6 +442,8 @@ fn main() {
                     let app = app.clone();
                     match event.id.as_ref() {
                         "open" => show(&app),
+                        // No engine started, so there is no recording to confirm.
+                        "quit" if app.state::<Desktop>().engine.is_err() => app.exit(0),
                         "quit" => {
                             show(&app);
                             let _ = app.emit("desktop:quit", ());
@@ -440,7 +463,6 @@ fn main() {
                             tauri::async_runtime::spawn(async move {
                                 let result = app
                                     .state::<Desktop>()
-                                    .engine
                                     .call("control", json!({"action":action}))
                                     .await;
                                 if let Err(error) = result {
@@ -497,7 +519,7 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<Desktop>();
-                if !state.quitting.load(Ordering::SeqCst) {
+                if state.engine.is_ok() && !state.quitting.load(Ordering::SeqCst) {
                     api.prevent_close();
                     if state.tray_available.load(Ordering::SeqCst) {
                         let _ = window.hide();
@@ -511,7 +533,9 @@ fn main() {
         .expect("Failed to initialize Caelum")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                tauri::async_runtime::block_on(app.state::<Desktop>().engine.close(false));
+                if let Ok(engine) = &app.state::<Desktop>().engine {
+                    tauri::async_runtime::block_on(engine.close(false));
+                }
             }
         });
 }
@@ -539,5 +563,40 @@ mod release_link_tests {
         ] {
             assert!(release_url(Some(value)).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+
+    #[test]
+    fn missing_engine_parent_identifies_the_offending_path() {
+        for (path, description) in [
+            ("/", "Manifest directory"),
+            ("caelum", "Desktop executable"),
+        ] {
+            let error = engine_parent(Path::new(path), description).unwrap_err();
+            assert!(
+                error.contains(description) && error.contains(path) && error.contains("no parent")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_startup_is_reported_to_backend_and_allows_exit() {
+        let desktop = Desktop {
+            engine: Err(EngineError::new(
+                "disconnected",
+                "Could not start Python engine",
+                false,
+            )),
+            quitting: false.into(),
+            tray_available: false.into(),
+        };
+        let error = desktop.call("bootstrap", json!({})).await.unwrap_err();
+        assert_eq!(error.message, "Could not start Python engine");
+        desktop.prepare_exit(false).await.unwrap();
+        assert!(desktop.quitting.load(Ordering::SeqCst));
     }
 }
