@@ -132,3 +132,14 @@ jobs:
           fi
           unset CAELUM_LEGACY_UPDATE_SIGNING_KEY
           python3 scripts/publish_release.py release-assets "$CANDIDATE_SHA" "$CANDIDATE_RUN" "$CANDIDATE_ATTEMPT" "$key" "${legacy_args[@]}"
+  refresh-website:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      # Releases published with GITHUB_TOKEN don't trigger release events.
+      # Dispatch on main: only that ref may deploy to github-pages.
+      - run: gh workflow run website.yml --ref main --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}

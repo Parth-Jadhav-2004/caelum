@@ -1,6 +1,6 @@
 # Build from the checked-out release tree; dependency payload is locked in uv.lock.
 pkgname=caelum
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc='Linux dictation with Tauri and local transcript history'
 arch=('x86_64')

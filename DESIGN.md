@@ -1,6 +1,6 @@
 # Caelum design
 
-Caelum is a quiet place for your words. The desktop window is a library; recording happens through your shortcut and a small floating capsule.
+Caelum is a quiet place for your words. The desktop window is a library. On native Hyprland and Windows, a pill shows recording and processing status. In hold-to-talk mode, hold the configured shortcut to record and release it to stop. The full text appears after processing. Portable Linux uses desktop notifications and offers Record and Finish recording on Home.
 
 ## Surfaces and colour
 

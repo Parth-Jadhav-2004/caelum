@@ -1,11 +1,28 @@
-# Windows x64 development build
+# Windows x64 setup and packaging
 
-The Windows app uses the same React application, design tokens, navigation,
-onboarding, settings, history and model catalog as `dev`. The dictation
-pipeline, JSON-lines contract, model validation and SQLite schema are shared.
-Desktop integration lives in `python/caelum/windows_desktop.py`.
+## Install the stable release
+
+1. Open the [latest stable release on GitHub](https://github.com/Parth-Jadhav-2004/caelum/releases/latest).
+   From its Assets section, download the Windows x64 installer
+   (`caelum-<version>-x64-setup.exe`) and `SHA256SUMS` from the same release.
+2. In the download folder, run `Get-FileHash` in PowerShell. This example uses
+   the 0.5.0 filename. Use the filename you downloaded.
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\caelum-0.5.0-x64-setup.exe
+   ```
+
+3. Compare the hash with the entry for that exact filename in `SHA256SUMS`.
+   Letter case can differ. Run the installer only if the hashes match. The
+   installer is unsigned, so Windows SmartScreen may show an unknown-publisher
+   warning.
 
 ## Build on Windows
+
+The Windows and Linux apps share the React application, design tokens, navigation,
+onboarding, settings, history and model catalog. The dictation pipeline,
+JSON-lines contract, model validation and SQLite schema are shared.
+Windows desktop integration lives in `python/caelum/windows_desktop.py`.
 
 Install Node (see `.node-version`), Rust with the MSVC toolchain, Visual Studio
 C++ Build Tools and Windows SDK, WebView2, Python 3.11+ and `uv`. From the
@@ -28,24 +45,26 @@ uv sync --locked --python 3.12 --extra dev --extra whisper
 npx --no-install tauri dev
 ```
 
-The **Windows desktop** Actions workflow builds an installer, installs it to a
-path with spaces, exercises the installed Python engine and checks WebView2
-frontend startup. A successful run uploads `Caelum-Windows-x64`. This is a
-development artifact; Authenticode signing and public release promotion require
-the release owner's configuration. The stable update signer includes a Windows
-installer when `caelum-<version>-x64-setup.exe` is present in the release
-directory. For in-app updates, Caelum verifies the release manifest signature
-and checks the installer against its SHA-256 hash. The `.exe` itself is not
-Authenticode-signed, so Windows SmartScreen may prompt when the installer opens.
-Caelum closes so the installer can replace its files. Reopen Caelum after setup:
-it confirms the update from the version now running. If setup was cancelled or
-blocked, use **Settings → System → Open installer** to retry the staged download.
+## CI development artifact
+
+The [Windows desktop Actions workflow](https://github.com/Parth-Jadhav-2004/caelum/actions/workflows/windows.yml)
+builds an installer, installs it to a path with spaces, exercises the installed
+Python engine and checks WebView2 frontend startup. Successful runs upload
+`Caelum-Windows-x64` for development testing. The public stable installer and
+its checksums are published together in GitHub Releases.
+
+For in-app updates, Caelum verifies the release manifest signature and the
+installer's SHA-256 hash. The `.exe` itself is not Authenticode-signed, so
+SmartScreen may prompt. **Installer opened** means setup has started. Caelum
+closes so setup can replace its files and confirms the running version on next
+launch. If setup was cancelled or blocked, use **Settings → System → Open
+installer** to retry the staged download.
 
 ## Desktop behavior to verify on a Windows machine
 
 - Complete setup with a real microphone, once with an online provider and once
   with a downloaded model and the network disconnected.
-- Focus a text field in Notepad. Use Ctrl + Win, the default for new setups, or your configured hold or toggle shortcut.
+- Focus a text field in Notepad. Use **Ctrl+Win**, the default for new setups, or your configured hold or toggle shortcut.
   The feedback pill should not take focus. Supported Windows Edit/RichEdit
   controls receive the text at the caret or selection, leaving your clipboard intact.
   For other controls or a focus change, wait for **Copied**, then use **Ctrl+V**

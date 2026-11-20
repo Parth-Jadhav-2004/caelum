@@ -3,10 +3,11 @@
 ## First-run help
 
 - **No microphone or silence:** select the input in Settings → General. Check the desktop input meter and mute switch; reconnect USB/Bluetooth and wait for device discovery. Use the local microphone test before trying transcription. `caelum devices` lists the inputs visible to the app.
-- **Shortcut denied or unavailable:** Ctrl + Super is the default. Desktop portals that require a non-modifier key need a different shortcut for global recording. On portable desktops open Home, choose **Record**, then **Finish recording**. Copy from History and paste into an editor. With history disabled, the result goes straight to the clipboard unless automatic copy is off. With both off, choose **Copy transcript** on Home. Check `wl-copy` on Wayland or `xclip` on X11 if clipboard delivery fails.
+- **Shortcut denied or unavailable:** New setups use **Super+Alt+V** on GNOME, KDE and other portal desktops, or **Ctrl+Super** on native Hyprland. If the portal denies the shortcut, choose **Record** on Home, then **Finish recording**. If you change the shortcut, use **Restart Caelum** in Settings to activate the pending binding.
+- **Pasting the result:** If Caelum shows **Copied**, paste in your editor. You can also copy a saved transcript from History. With history and automatic clipboard copying both off, choose **Copy transcript** on Home before recording again. Check `wl-copy` on Wayland or `xclip` on X11 if clipboard delivery fails.
 - **No tray icon:** some desktops have no tray watcher. Keep the window open while dictating; reopen Caelum from the app launcher.
 - **Blank window:** quit Caelum, then try `WEBKIT_DISABLE_DMABUF_RENDERER=1 caelum-desktop` for this launch only. See the driver notes below.
-- **Local model unavailable (0.5.0 candidate):** choose a compatible downloaded model in Settings → Transcription. On x86-64, local inference needs AVX2 and sufficient available RAM. A model download needs network and disk space; local dictation does not require an online fallback.
+- **Local model unavailable:** choose a compatible downloaded model in Settings → Transcription. On x86-64, local inference needs AVX2 and sufficient available RAM. A model download needs network and disk space; local dictation does not require an online fallback.
 - **Uninstall:** quit the app, then `sudo apt remove caelum`, `sudo dnf remove caelum`, or `sudo pacman -R caelum`, depending on your package. Personal settings and fallback credentials remain in `~/.config/caelum`; history, models and pending downloads remain in `~/.local/share/caelum` (or the corresponding XDG directories). To remove saved keys, use the app before uninstalling; a keyring entry, clipboard history, exports and backups are independent of these directories.
 
 ## Building and desktop integration
@@ -39,8 +40,9 @@ Caelum does not install broad keyboard hooks or bypass compositor permissions.
 
 On Hyprland the existing bindings are installed dynamically and removed by exact
 handle; no user compositor config is rewritten. Native insertion targets the
-original app and falls back to clipboard if focus identity changes. Both use
-the clipboard, so turning off automatic copy replaces them with manual Copy. Lock/suspend
+original app. If focus changes, Caelum skips insertion; paste manually if it
+reports **Copied**. Hyprland insertion uses the clipboard, so turning off
+automatic copy replaces insertion and fallback with manual Copy. Lock/suspend
 signals cancel capture; lock feedback failures fail closed. The native HUD does
 not activate or steal keyboard focus. Portable mode uses notifications and saved
 history/manual copy. This distinction is intentional.

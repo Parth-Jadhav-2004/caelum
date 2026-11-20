@@ -1,8 +1,8 @@
 # Caelum
 
-## Download Caelum 0.5.0 for Linux and Windows
+## Download Caelum for Linux and Windows
 
-Dictate with a downloaded speech model or an online provider, then paste the transcript into your app. [Choose a download for your desktop](https://parth-jadhav-2004.github.io/caelum/#download) or [open the 0.5.0 release and SHA256SUMS](https://github.com/Parth-Jadhav-2004/caelum/releases/tag/v0.5.0).
+Dictate with a downloaded speech model or an online provider, then paste the transcript into your app. [Choose a download for your desktop](https://parth-jadhav-2004.github.io/caelum/#download) or [open the latest stable release and SHA256SUMS](https://github.com/Parth-Jadhav-2004/caelum/releases/latest). In the examples below, use the filename from the release you downloaded.
 
 **Windows x64.** Download the installer from the release, compare its SHA-256 with the entry in `SHA256SUMS` using `Get-FileHash .\caelum-0.5.0-x64-setup.exe` in PowerShell, then run it. Windows SmartScreen may warn about an unsigned installer. [Windows setup and shortcut behavior](docs/windows.md)
 
@@ -18,7 +18,9 @@ Dictate with a downloaded speech model or an online provider, then paste the tra
 
 For the AppImage, run `chmod +x ./caelum-0.5.0-x86_64.AppImage` and launch it from the download folder. It needs an Ubuntu 24.04-compatible userspace, WebKitGTK 4.1 and PortAudio. For the native Hyprland overlay, install GTK 4, gtk4-layer-shell and their introspection typelibs. The AppImage includes the matching Python GI and Cairo bindings.
 
-On GNOME, KDE and other Linux desktops, use Record and Finish recording, then copy and paste into your editor. Portal shortcut support depends on the desktop. Hyprland also supports native hold-to-talk and insertion. On Windows, a configurable shortcut can paste into a supported Edit or RichEdit field that retains focus. Use Ctrl+V in other applications. [Linux setup](docs/linux.md) · [Changes since 0.4.2](CHANGELOG.md#050)
+On GNOME, KDE and other supported Linux desktops in portable mode, choose **Record** on Home, then **Finish recording**. After processing, you can copy a saved transcript from History and paste it into your editor. If Caelum shows **Copied**, just paste, even with history off. These controls work even when a desktop portal shortcut is unavailable.
+
+On native Hyprland and Windows, press and hold your configured hold-to-talk shortcut to start recording and show the pill. Release to stop capture. The complete transcript appears once processing finishes. Hyprland can insert it into the original window if it keeps focus. Windows can paste it into a supported Edit or RichEdit control that keeps focus. If Caelum shows **Copied** instead, paste into the intended app yourself. [Linux setup](docs/linux.md) · [Windows shortcut behavior](docs/windows.md) · [Release notes](CHANGELOG.md)
 
 ## Development
 
@@ -114,7 +116,7 @@ click-through layer-shell contract. `python/caelum/hud.py` is intentionally reta
 as a separate GTK4 layer-shell helper; it is the only GTK4 UI. It never becomes a
 competing main window. GNOME and other compositors without layer-shell use portable
 notifications rather than a falsely equivalent overlay. Native Hyprland integration
-requires the existing Lua-capable compositor API. Other desktops use manual paste.
+requires the existing Lua-capable compositor API. Other Linux desktops use manual paste.
 
 Read [migration mapping](docs/migration.md), [architecture](docs/architecture.md),
 [Linux prerequisites](docs/linux.md), and [acceptance checks](docs/acceptance.md).
