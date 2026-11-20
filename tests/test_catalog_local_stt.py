@@ -22,7 +22,7 @@ PCM = np.full(RATE, 2000, dtype="<i2").tobytes()
 
 @pytest.fixture
 def fake_engine(monkeypatch):
-    monkeypatch.setattr(local_stt, "installed", lambda *_: True)
+    monkeypatch.setattr(local_stt, "installed", lambda *_, **__: True)
     threads = []
 
     class Adapter:
