@@ -1,15 +1,12 @@
 const motion = matchMedia("(prefers-reduced-motion: reduce)");
 const scene = document.querySelector(".desk-demo");
-const line = scene.querySelector(".desk-line span");
-const sentence = line.textContent;
-const words = sentence.split(" ");
 const pause = scene.querySelector(".motion-toggle");
 const cues = [
-  [0, "shortcut", ""],
-  [1600, "listening", ""],
-  ...words.map((_, i) => [2200 + i * 450, "listening", words.slice(0, i + 1).join(" ")]),
-  [5500, "inserted", sentence],
-  [8150, "reset", sentence],
+  [0, "shortcut"],
+  [1600, "listening"],
+  [4200, "processing"],
+  [5500, "inserted"],
+  [8150, "reset"],
 ];
 const duration = 8800;
 let inView = false;
@@ -20,9 +17,8 @@ let timer;
 
 function paint() {
   const t = (elapsed + performance.now() - since) % duration;
-  const [ , phase, text] = cues.findLast(cue => cue[0] <= t);
+  const [, phase] = cues.findLast(cue => cue[0] <= t);
   scene.dataset.phase = phase;
-  line.textContent = text;
   const next = cues.find(cue => cue[0] > t)?.[0] ?? duration;
   timer = setTimeout(paint, Math.ceil(next - t));
 }
@@ -51,7 +47,6 @@ motion.addEventListener("change", () => {
   if (paused) {
     elapsed = 0;
     scene.dataset.phase = "inserted";
-    line.textContent = sentence;
   }
 });
 

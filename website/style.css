@@ -60,11 +60,11 @@ summary::-webkit-details-marker {display:none}
 .desk-page p {font-size:clamp(17px,2.25vw,32px);line-height:1.35;letter-spacing:-.035em;color:var(--muted)}
 .desk-page .desk-line {min-height:2.7em;margin-top:8px;color:var(--ink);transition:opacity .55s,transform .55s,color .4s}
 .desk-line i {display:inline-block;height:1em;margin-left:2px;border-left:2px solid var(--green);vertical-align:-.12em}
-[data-phase=listening] .desk-line {color:var(--green)}
+.desk-demo:not([data-phase=inserted],[data-phase=reset]) .desk-line span {display:none}
 [data-phase=reset] .desk-line {opacity:0;transform:translateY(-4px)}
 .desk-hud {display:grid;place-items:center;padding:10px 12px clamp(18px,2.6vw,40px)}
-.desk-hud>span {grid-area:1/1;opacity:0;transform:translateY(5px) scale(.98);transition:opacity .35s,transform .45s var(--ease)}
-[data-phase=shortcut] .desk-keys,[data-phase=listening] .listen,[data-phase=inserted] .done {opacity:1;transform:none}
+.desk-hud>span {grid-area:1/1;visibility:hidden;opacity:0;transform:translateY(5px) scale(.98);transition:opacity .35s,transform .45s var(--ease)}
+[data-phase=shortcut] .desk-keys,[data-phase=listening] .listen,[data-phase=processing] .processing,[data-phase=inserted] .done {visibility:visible;opacity:1;transform:none}
 .desk-keys,.desk-pill {display:flex;gap:6px;align-items:center}
 .desk-keys kbd {font:600 13px var(--mono);padding:6px 10px;background:#f3f5ee;border:1px solid #afbcb1;border-bottom-width:3px;border-radius:6px}
 .desk-pill {padding:8px 18px;border-radius:30px;font-size:14px;background:var(--ink);color:#fff}
@@ -126,16 +126,13 @@ h2 {font-size:clamp(40px,5vw,74px);line-height:1.01}
 .faq-panel .answer {transition:transform .54s var(--ease)}
 .faq-panel[inert] .answer {transform:translateY(var(--answer-shift))}
 .answer {padding:0 clamp(12px,4vw,55px) 23px 2px;max-width:66ch}
+.answer p+p {margin-top:.75em}
 .answer a,#checksum-link {display:inline-block;margin-top:8px;text-decoration:underline;text-underline-offset:3px;font-size:14px}
 @media (prefers-reduced-motion:no-preference) {
   html {scroll-behavior:smooth}
-  [data-phase=shortcut] kbd {animation:tap-key .65s ease .22s both}
-  [data-phase=shortcut] kbd:nth-child(2) {animation-delay:.32s}
-  [data-phase=shortcut] kbd:last-child {animation-delay:.42s}
   [data-phase=listening] .listen img {animation:breathe 1.2s ease-in-out infinite alternate}
-  [data-running=false] :is(kbd,.listen img) {animation-play-state:paused}
+  [data-running=false] .listen img {animation-play-state:paused}
 }
-@keyframes tap-key {50% {transform:translateY(2px);background:#dee9df}}
 @keyframes breathe {to {opacity:.6;transform:scaleY(.76)}}
 .download {background:var(--mint);border-block:1px solid var(--line)}
 .download-grid {display:grid;grid-template-columns:1fr 1fr;gap:8%;padding-block:clamp(48px,6vw,88px);align-items:center}
