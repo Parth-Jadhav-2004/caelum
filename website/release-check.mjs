@@ -39,9 +39,7 @@ for (const [platform, agent, expected] of [
 
     const { ordered, preferred } = menuChoices(packages, matches);
     assert.deepEqual([...preferred], expectedIds);
-    const compactUbuntu = expected === "ubuntu-2404" ? "ubuntu-2404" : "ubuntu-2604";
-    const otherIds = packages.map(p => p.id).filter(id =>
-      id !== expected && (!id.startsWith("ubuntu-") || id === compactUbuntu));
+    const otherIds = packages.map(p => p.id).filter(id => id !== expected);
     assert.deepEqual(ordered.map(p => p.id), [...expectedIds, ...otherIds]);
   });
 }

@@ -2,6 +2,11 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- Portable Wayland dictation can copy through `xclip` when `wl-copy` is missing and XWayland is available.
+- The website’s compact download menu lists Ubuntu 24.04 alongside 26.04. The demo ends with the transcript in the notebook instead of an “Inserted” pill.
+
 ## 0.5.1
 
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
