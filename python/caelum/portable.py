@@ -211,9 +211,9 @@ class Bindings:
             bound = dict(values.get("shortcuts", Variant("a(sa{sv})", [])).value)
             if "dictate" not in bound:
                 raise RuntimeError("Desktop did not bind the recording shortcut")
-            self.description = (
-                bound["dictate"].get("trigger_description", Variant("s", self.hotkey)).value
-            )
+            # preferred_trigger is only a hint; never report it as the desktop's answer.
+            description = bound["dictate"].get("trigger_description")
+            self.description = (description.value if description else "") or "Assigned by desktop (keys not reported)"
             self.mode = "portal"
             self.installed = True
         except (

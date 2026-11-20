@@ -65,6 +65,7 @@ STATUS = obj(
         "storage_error": BOOL,
         "notice": STRING,
         "backend": STRING,
+        "hotkey": STRING,
         "shortcut_mode": STRING,
         "shortcut_description": STRING,
         "engine": obj({
@@ -76,8 +77,10 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "can_copy", "storage_error", "notice", "backend", "shortcut_mode",
-              "shortcut_description", "feedback", "engine"),
+    optional=(
+        "pending_audio", "can_copy", "storage_error", "notice", "backend", "hotkey",
+        "shortcut_mode", "shortcut_description", "feedback", "engine",
+    ),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})

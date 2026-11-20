@@ -348,6 +348,9 @@
           "backend": {
             "type": "string"
           },
+          "hotkey": {
+            "type": "string"
+          },
           "shortcut_mode": {
             "type": "string"
           },
@@ -1897,6 +1900,9 @@
         "type": "string"
       },
       "backend": {
+        "type": "string"
+      },
+      "hotkey": {
         "type": "string"
       },
       "shortcut_mode": {

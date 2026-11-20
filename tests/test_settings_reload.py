@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from caelum.config import Config, save, validate
+from caelum.config import Config, load, save, validate
 from caelum.desktop_services import CONTROL_FRAME_LIMIT, request
 from caelum.service import reload_settings
 
@@ -46,6 +46,21 @@ async def test_conflict_restores_previous_shortcut_and_runtime(context):
     assert bindings.hotkey == original.app.hotkey
     assert core.config is provider.config is original
     assert bindings.install.await_count == 2
+
+
+async def test_portal_edit_is_saved_without_disturbing_current_session(context):
+    core, bindings, provider, path = context
+    bindings.save_only = True
+    session_key = bindings.hotkey
+    updated = load(path)
+    save(core.config, path)
+
+    await reload_settings(core, bindings, provider, path, updated, persist=True)
+    assert bindings.hotkey == session_key != load(path).app.hotkey
+    assert core.config.app.microphone == "USB mic"
+    await reload_settings(core, bindings, provider, path)
+    bindings.remove.assert_not_awaited()
+    bindings.install.assert_not_awaited()
 
 
 @pytest.mark.parametrize("attribute", ["capture", "pcm", "work"])

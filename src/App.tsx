@@ -122,6 +122,9 @@ export default function App() {
               running: s.status.running,
               paused: s.status.paused,
               pending_audio: s.status.pending_audio,
+              backend: s.status.backend,
+              shortcut_mode: s.status.shortcut_mode,
+              shortcut_description: s.status.shortcut_description,
             }
           : null,
       ),
@@ -428,9 +431,14 @@ export default function App() {
                       />
                       {status?.title ?? "Connecting…"}
                     </p>
-                    {!["home", "settings"].includes(page) && (
-                      <kbd className="inline-block">{formatShortcut(config.app.hotkey)}</kbd>
-                    )}
+                    {!["home", "settings"].includes(page) &&
+                      (status?.backend !== "portable" || status.shortcut_mode === "portal") && (
+                        <kbd className="inline-block">
+                          {status?.backend === "portable"
+                            ? status.shortcut_description
+                            : formatShortcut(config.app.hotkey)}
+                        </kbd>
+                      )}
                     <label className="flex items-center justify-between gap-3 text-body">
                       Pause
                       <Switch

@@ -22,6 +22,7 @@ export interface Status {
   storage_error?: boolean;
   notice?: string;
   backend?: string;
+  hotkey?: string;
   shortcut_mode?: string;
   shortcut_description?: string;
   feedback?: Feedback;

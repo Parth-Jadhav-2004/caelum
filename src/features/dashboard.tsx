@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/stores/app";
 import { ipc, type Config } from "@/lib/ipc";
-import { formatShortcut } from "@/lib/shortcut";
+import { formatShortcut, portalShortcutStatus } from "@/lib/shortcut";
 import { action, Heading } from "@/components/common";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -115,6 +115,7 @@ export function Dashboard({ config }: { config: Config }) {
     setBusy(false);
   }
   const nativeShortcut = status?.backend === "hyprland" || status?.backend === "windows";
+  const portalStatus = portalShortcutStatus(status);
   const activity = summary.data?.activity ?? {};
   let streak = 0;
   const day = new Date();
@@ -163,12 +164,11 @@ export function Dashboard({ config }: { config: Config }) {
             </Button>
           )}
         </div>
-        {status?.backend === "portable" &&
-          (status.shortcut_mode === "manual" || status.shortcut_mode === "pending") && (
-            <p role={status.shortcut_mode === "manual" ? "alert" : "status"}>
-              {status.shortcut_description}
-            </p>
-          )}
+        {portalStatus && (
+          <p className="text-meta text-muted-foreground" role={status?.shortcut_mode === "manual" ? "alert" : "status"}>
+            {portalStatus}
+          </p>
+        )}
         <div
           aria-label="Today’s activity"
           aria-busy={summary.isPending}
