@@ -145,8 +145,6 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
         previous_mode = getattr(bindings, "recording_mode", "hold")
         if backend_name(updated) != backend_name(core.config):
             raise RuntimeError("Restart the service to change desktop backend")
-        if previous != updated.app.hotkey and getattr(bindings, "save_only", False):
-            raise RuntimeError("Restart the service to change the desktop portal shortcut")
         # Stage native loading before either configuration or the active engine changes.
         staged = hasattr(provider, "signature") and (
             provider.signature(updated) != provider.local_signature
@@ -167,8 +165,9 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
                     with suppress(RuntimeError, OSError, TimeoutError):
                         await core.event("model_failed")
                 raise
-        rebind = previous != updated.app.hotkey or (
-            previous_mode != updated.app.recording_mode and not getattr(bindings, "save_only", False)
+        # A portal session keeps its original binding until the user restarts.
+        rebind = not getattr(bindings, "save_only", False) and (
+            previous != updated.app.hotkey or previous_mode != updated.app.recording_mode
         )
         try:
             if rebind:
@@ -328,7 +327,7 @@ async def serve(config, config_path=None):
                 if message["action"] == "status":
                     result["engine"] = provider.engine_status()
                     result["storage_error"] = storage_error
-                    result["hotkey"] = core.config.app.hotkey
+                    result["hotkey"] = bindings.hotkey
                     result["recording_mode"] = core.config.app.recording_mode
                     result["backend"] = backend_name(core.config)
                     result["shortcut_mode"] = "native" if native else bindings.mode

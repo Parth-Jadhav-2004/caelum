@@ -338,6 +338,15 @@
           "backend": {
             "type": "string"
           },
+          "hotkey": {
+            "type": "string"
+          },
+          "shortcut_mode": {
+            "type": "string"
+          },
+          "shortcut_description": {
+            "type": "string"
+          },
           "engine": {
             "type": "object",
             "properties": {
@@ -1805,6 +1814,15 @@
         "type": "boolean"
       },
       "backend": {
+        "type": "string"
+      },
+      "hotkey": {
+        "type": "string"
+      },
+      "shortcut_mode": {
+        "type": "string"
+      },
+      "shortcut_description": {
         "type": "string"
       },
       "engine": {

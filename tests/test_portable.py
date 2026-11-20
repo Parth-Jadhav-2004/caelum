@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config
@@ -60,6 +60,27 @@ async def test_modifier_only_never_requests_portal():
     await bindings.install()
     assert bindings.bus is None
     assert bindings.mode == "manual"
+
+
+@pytest.mark.parametrize(("shortcuts", "mode", "description"), [
+    ([["dictate", {"trigger_description": Variant("s", "Alt+D")}]], "portal", "Alt+D"),
+    ([["dictate", {}]], "portal", "keys not reported"),
+    ([], "manual", "Use Record"),
+])
+async def test_new_session_reports_desktop_binding_not_preference(monkeypatch, shortcuts, mode, description):
+    bus = Mock()
+    monkeypatch.setattr("caelum.portable.MessageBus", lambda: SimpleNamespace(connect=AsyncMock(return_value=bus)))
+    bindings = Bindings("CTRL + ALT + D")
+    bindings.call = AsyncMock(return_value=[":1.7"])
+    bindings.request = AsyncMock(side_effect=[
+        {"session_handle": Variant("s", "/session/new")},
+        {"shortcuts": Variant("a(sa{sv})", shortcuts)},
+    ])
+    await bindings.install()
+    member, _, (session, requested, _), _ = bindings.request.await_args.args
+    assert member == "BindShortcuts" and session == "/session/new"
+    assert requested[0][1]["preferred_trigger"].value == "CTRL+ALT+D"
+    assert bindings.mode == mode and description in bindings.description
 
 
 async def test_portal_request_accepts_response_before_method_reply():

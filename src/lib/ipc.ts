@@ -20,6 +20,9 @@ export interface Status {
   pending_audio?: boolean;
   storage_error?: boolean;
   backend?: string;
+  hotkey?: string;
+  shortcut_mode?: string;
+  shortcut_description?: string;
   feedback?: Feedback;
   engine?: {
     kind: "online" | "local";

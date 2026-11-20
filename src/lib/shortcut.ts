@@ -1,3 +1,13 @@
+import type { Status } from "./ipc";
+
+export function portalShortcutStatus(status: Status | null): string | undefined {
+  if (!status?.running || status.backend !== "portable" || !status.shortcut_description) return;
+  if (status.shortcut_mode === "portal")
+    return `Active shortcut: ${status.shortcut_description}`;
+  if (status.shortcut_mode === "manual")
+    return `No active portal shortcut. ${status.shortcut_description}`;
+}
+
 const windowsLabels: Record<string, string> = {
   SUPER: "Win",
   CTRL: "Ctrl",

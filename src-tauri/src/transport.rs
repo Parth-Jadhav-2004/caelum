@@ -318,7 +318,8 @@ pub fn deadline(method: &str) -> Duration {
     Duration::from_secs(match method {
         "status" | "devices" | "history" | "summary" | "bootstrap" | "sample.cancel" => 10,
         "shutdown" | "service.stop" => 12,
-        "service.start" | "settings.save" | "shortcut.check" => 20,
+        "service.start" => 180, // Portable startup may wait for desktop shortcut approval.
+        "settings.save" | "shortcut.check" => 20,
         "updates.stage" => 180,
         // Local inference permits 1800 seconds, plus interactive capture and cleanup.
         "practice" => 1830,
