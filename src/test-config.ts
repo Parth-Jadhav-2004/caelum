@@ -25,7 +25,7 @@ export const testConfig: Config = {
     local_device: "auto",
     local_idle_seconds: 300,
     local_timeout_seconds: 300,
-    vocabulary: "Caelum, Omarchy, Hyprland",
+    vocabulary: "",
     timeout_seconds: 15.0,
     chunk_seconds: 7.0,
     overlap_seconds: 0.8,

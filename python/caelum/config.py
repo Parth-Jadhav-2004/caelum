@@ -51,7 +51,7 @@ class STT:
     model: str = "whisper-large-v3-turbo"
     key_env: str = "GROQ_API_KEY"
     language: str = ""
-    vocabulary: str = "Caelum, Omarchy, Hyprland"
+    vocabulary: str = ""
     timeout_seconds: float = 15.0
     chunk_seconds: float = 7.0
     overlap_seconds: float = 0.8
