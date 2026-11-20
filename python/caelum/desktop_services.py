@@ -255,6 +255,7 @@ def service_presentation(status):
             "Raw transcription was sent to the original application.",
         ),
         "copied": ("Copied", "Paste manually in the intended application."),
+        "ready_to_copy": ("Transcript ready", "Choose Copy transcript to paste it into your app."),
         "saved": ("Saved", "Use Copy text below, then paste into your chosen app."),
         "no_speech": ("No speech detected", "Nothing inserted. Try recording again."),
     }

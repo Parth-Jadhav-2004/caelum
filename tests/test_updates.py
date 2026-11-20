@@ -369,9 +369,9 @@ def test_successful_apply_removes_pending(release, monkeypatch):
         assert kwargs["stdin"] == subprocess.DEVNULL
 
     monkeypatch.setattr(subprocess, "run", execute)
-    assert updates.apply_pending()
+    assert updates.apply_pending() == "installed"
     assert not pending.exists()
-    assert not updates.apply_pending()
+    assert updates.apply_pending() == "no_update"
 
 
 def test_corrupt_pending_never_requests_authorization(release, monkeypatch):
@@ -391,15 +391,50 @@ def test_corrupt_pending_never_requests_authorization(release, monkeypatch):
 def test_external_upgrade_clears_obsolete_pending_update(release, monkeypatch):
     pending = staged(release)
     release.info["version"] = "0.3.0"
-    assert not updates.apply_pending()
+    assert updates.apply_pending() == "no_update"
     assert not pending.exists()
 
 
 def test_pending_status_clears_an_already_installed_package(release):
     pending = staged(release)
-    assert updates.pending_update()
+    assert updates.pending_update() == {"state": "queued", "version": "0.3.0"}
     release.info["version"] = "0.3.0"
-    assert not updates.pending_update()
+    assert updates.pending_update() == {"state": "installed", "version": "0.3.0"}
+    assert not pending.exists()
+
+
+def test_windows_handoff_is_retryable_until_the_new_version_runs(release, monkeypatch):
+    release.info["target"] = "windows-x64"
+    release.asset["name"] = "caelum-0.3.0-x64-setup.exe"
+    release.manifest["assets"] = {"windows-x64": release.asset}
+    pending = staged(release)
+    installer = pending / release.asset["name"]
+    popen = subprocess.Popen
+    launches = []
+
+    def launch(command, **kwargs):
+        if command[0] == "/usr/bin/openssl":
+            return popen(command, **kwargs)
+        assert command == [str(installer)]
+        launches.append(command)
+        if len(launches) == 1:
+            raise PermissionError("blocked")
+
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    with pytest.raises(RuntimeError, match="queued for retry"):
+        updates.apply_pending()
+    assert updates.apply_pending() == "installer_launched"
+    # Installer was cancelled: reopening the old version must not report success.
+    assert updates.pending_update() == {"state": "queued", "version": "0.3.0"}
+    installer.write_bytes(b"changed between attempts")
+    with pytest.raises(ValueError, match="corrupt"):
+        updates.apply_pending()
+    assert len(launches) == 2
+    installer.write_bytes(release.payload)
+    assert updates.apply_pending() == "installer_launched"
+    release.info["version"] = "0.3.1"
+    assert updates.pending_update() == {"state": "installed", "version": "0.3.1"}
+    assert updates.pending_update() is None
     assert not pending.exists()
 
 
@@ -419,20 +454,20 @@ def test_invalid_queued_update_remains_discardable(release, monkeypatch, invalid
         return original_run(command, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", no_authorization)
-    assert updates.pending_update() is True
+    assert updates.pending_update() == {"state": "unverified", "version": None}
     assert pending.is_dir()
     with pytest.raises((ValueError, OSError)):
         updates.apply_pending()
     assert pending.is_dir()
     updates.discard_pending()
     assert not pending.exists()
-    assert updates.pending_update() is False
+    assert updates.pending_update() is None
 
 
 def test_queued_update_remains_discardable_without_install_metadata(release, monkeypatch):
     pending = staged(release)
     monkeypatch.setattr(updates, "installed", lambda: None)
-    assert updates.pending_update() is True
+    assert updates.pending_update() == {"state": "unverified", "version": None}
     updates.discard_pending()
     assert not pending.exists()
 
@@ -449,7 +484,7 @@ def test_installer_output_cannot_enter_sidecar_protocol(release, monkeypatch, ca
         return original_run(command, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", noisy_installer)
-    assert updates.apply_pending()
+    assert updates.apply_pending() == "installed"
     assert capfd.readouterr().out == ""
 
 
@@ -529,18 +564,18 @@ def test_restart_stops_daemon_before_installing(release, tmp_path, monkeypatch):
     monkeypatch.setattr("caelum.desktop_services.request", lambda action: calls.append(action))
     def install():
         calls.append("install")
-        return True
+        return "installed"
 
     monkeypatch.setattr(updates, "apply_pending", install)
-    assert install_queued_update()
+    assert install_queued_update() == "installed"
     assert calls == ["prepare-update", "install"]
 
 
 def test_no_install_does_not_request_restart(release, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
     monkeypatch.setattr("caelum.desktop_services.request", lambda _: {})
-    monkeypatch.setattr(updates, "apply_pending", lambda: False)
-    assert install_queued_update() is False
+    monkeypatch.setattr(updates, "apply_pending", lambda: "no_update")
+    assert install_queued_update() == "no_update"
 
 
 def test_restart_leaves_active_dictation_untouched(release, monkeypatch):

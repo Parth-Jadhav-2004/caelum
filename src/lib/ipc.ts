@@ -18,6 +18,7 @@ export interface Status {
   detail: string;
   paused: boolean;
   pending_audio?: boolean;
+  can_copy?: boolean;
   storage_error?: boolean;
   backend?: string;
   shortcut_mode?: string;
@@ -154,7 +155,7 @@ interface Methods {
   "service.stop": [{ discard?: boolean }, Ack];
   control: [
     {
-      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume";
+      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume" | "copy";
       discard?: boolean;
     },
     Ack,
@@ -183,9 +184,15 @@ interface Methods {
     { version: string; installed: boolean } | null,
   ];
   "updates.stage": [Record<string, never>, string];
-  "updates.apply": [Record<string, never>, boolean];
+  "updates.apply": [
+    Record<string, never>,
+    "installed" | "installer_launched" | "no_update",
+  ];
   "updates.discard": [Record<string, never>, Ack];
-  "updates.pending": [Record<string, never>, boolean];
+  "updates.pending": [
+    Record<string, never>,
+    null | { state: "unverified"; version: null } | { state: "queued" | "installed"; version: string },
+  ];
 }
 export async function ipc<M extends keyof Methods>(
   method: M,

@@ -112,20 +112,8 @@ def trusted_public_keys(directory, *, now=None):
             or not 0 <= entry["not_before"] < entry["not_after"]
         ):
             raise ValueError("Invalid update key validity")
-        der = subprocess.check_output(
-            ["/usr/bin/openssl", "pkey", "-pubin", "-outform", "DER"],
-            input=entry["pem"].encode(),
-            stderr=subprocess.DEVNULL,
-            env=SAFE_ENV,
-            timeout=2,
-        )
-        identifier = hashlib.sha256(der).hexdigest()
-        if (
-            len(der) != 44
-            or not der.startswith(bytes.fromhex("302a300506032b6570032100"))
-            or entry["id"] != identifier
-            or identifier in seen
-        ):
+        identifier = public_key_id(entry["pem"].encode())
+        if entry["id"] != identifier or identifier in seen:
             raise ValueError("Update key identity mismatch")
         seen.add(identifier)
         if not entry["revoked"] and entry["not_before"] <= now < entry["not_after"]:
@@ -571,29 +559,36 @@ def pending_update():
     info = installed()
     pending = cache_dir() / "pending"
     if not pending.is_dir():
-        return False
+        return None
     if not info:
-        return True
+        return {"state": "unverified", "version": None}
     try:
-        manifest, _ = verify_manifest(
+        manifest, asset = verify_manifest(
             read_regular(pending / "update.json", 65536),
             read_regular(pending / "update.json.sig", 4096), info,
         )
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         # Pending status also controls Discard. Invalid/expired metadata must
         # remain discoverable; apply_pending still performs full verification.
-        return True
+        return {"state": "unverified", "version": None}
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
+        if info["target"] == "windows-x64":
+            # NSIS can reopen Caelum while the executable is still locked.
+            # Preserve the manifest so the next inspection can retry cleanup.
+            try:
+                (pending / asset["name"]).unlink(missing_ok=True)
+            except PermissionError:
+                return {"state": "installed", "version": info["version"]}
         discard_pending()
-        return False
-    return True
+        return {"state": "installed", "version": info["version"]}
+    return {"state": "queued", "version": manifest["version"]}
 
 
 def apply_pending():
     info = installed()
     pending = cache_dir() / "pending"
     if not info or not pending.is_dir():
-        return False
+        return "no_update"
     if not compatible(info):
         raise RuntimeError("Use your package manager after changing OS or Python versions")
     manifest, asset = verify_manifest(
@@ -603,14 +598,17 @@ def apply_pending():
     )
     if version_tuple(manifest["version"]) <= version_tuple(info["version"]):
         discard_pending()
-        return False
+        return "no_update"
     verify_package(pending / asset["name"], asset)
-    if os.name == "nt":
+    if info["target"] == "windows-x64":
         # The desktop exits after this handoff, releasing its installed files.
         # A cancelled install leaves the verified package available for retry.
-        subprocess.Popen([str(pending / asset["name"])], cwd=pending, close_fds=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
+        try:
+            subprocess.Popen([str(pending / asset["name"])], cwd=pending.parent, close_fds=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as error:
+            raise RuntimeError("Windows could not open the installer. The update is queued for retry.") from error
+        return "installer_launched"
     try:
         # stdout belongs exclusively to the sidecar JSON protocol. Inheriting it
         # lets pacman progress break the connection during its own transaction.
@@ -626,7 +624,7 @@ def apply_pending():
             message = INSTALL_BUSY if INSTALL_BUSY in (error.stderr or "") else INSTALL_FAILED
         raise RuntimeError(message) from error
     shutil.rmtree(pending)
-    return True
+    return "installed"
 
 
 def discard_pending():

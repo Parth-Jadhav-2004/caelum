@@ -313,6 +313,7 @@ class HUD:
             "success_fallback_local": "Done · used this computer",
             "refining": "Cleaning up your words…",
             "saved": "Dictation saved. Open Caelum and choose Copy text, then paste where you want.",
+            "ready_to_copy": "Transcript ready. Choose Copy transcript in Caelum.",
             "error": "Dictation failed. Retry or cancel in Caelum.",
             "no_speech": "No speech detected.",
             "hidden": "Recording cancelled.",

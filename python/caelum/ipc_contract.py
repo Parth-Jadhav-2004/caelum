@@ -61,6 +61,7 @@ STATUS = obj(
         "detail": STRING,
         "paused": BOOL,
         "pending_audio": BOOL,
+        "can_copy": BOOL,
         "storage_error": BOOL,
         "backend": STRING,
         "shortcut_mode": STRING,
@@ -74,7 +75,7 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "shortcut_mode", "shortcut_description",
+    optional=("pending_audio", "can_copy", "storage_error", "backend", "shortcut_mode", "shortcut_description",
               "feedback", "engine"),
     extra=True,
 )
@@ -153,7 +154,7 @@ method(
     "control",
     obj(
         {
-            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume"]},
+            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume", "copy"]},
             "discard": BOOL,
         },
         optional=("discard",),
@@ -184,9 +185,12 @@ method(
 method("updates.check", result=union(obj({"version": STRING}), NULL))
 method("updates.testing", result=union(obj({"version": STRING, "installed": BOOL}), NULL))
 method("updates.stage", result=STRING)
-method("updates.apply", result=BOOL)
+method("updates.apply", result={"enum": ["installed", "installer_launched", "no_update"]})
 method("updates.discard")
-method("updates.pending", result=BOOL)
+method("updates.pending", result=union(
+    NULL, obj({"state": {"enum": ["unverified"]}, "version": NULL}),
+    obj({"state": {"enum": ["queued", "installed"]}, "version": STRING}),
+))
 method("shutdown", obj({"discard": BOOL}, optional=("discard",)))
 
 MODEL_PROGRESS = obj({

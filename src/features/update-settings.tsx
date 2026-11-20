@@ -20,6 +20,9 @@ export function UpdateSettings({
     queryKey: ["updates.pending"],
     queryFn: () => ipc("updates.pending", {}),
   });
+  const windows = /Windows/i.test(navigator.userAgent);
+  const hasPending = !!pending.data && pending.data.state !== "installed";
+  const installAction = windows ? "Open installer" : "Update & restart";
   const [updateChecking, setUpdateChecking] = useState(false),
     [updateStatus, setUpdateStatus] = useState(""),
     [update, setUpdate] = useState<string | null>(null),
@@ -64,11 +67,11 @@ export function UpdateSettings({
       <Row
         title={`Caelum ${version}`}
         detail={
-          update
-            ? `Version ${update} available`
-            : pending.data
-              ? "An update is ready to install."
-              : "Automatic updates use signed stable releases."
+          hasPending
+            ? "An update is queued."
+            : update
+              ? `Version ${update} available`
+              : "Caelum verifies updates against a signed release manifest."
         }
       >
         <div className="flex flex-wrap gap-2">
@@ -76,7 +79,7 @@ export function UpdateSettings({
             variant="outline"
             disabled={updateChecking}
             onClick={() => {
-              if (update || pending.data) {
+              if (update || hasPending) {
                 setConfirmUpdate(true);
                 return;
               }
@@ -84,7 +87,7 @@ export function UpdateSettings({
             }}
           >
             <RefreshCw />
-            {update || pending.data ? "Update & restart" : "Check updates"}
+            {update || hasPending ? installAction : "Check updates"}
           </Button>
           <Button
             variant="ghost"
@@ -92,7 +95,7 @@ export function UpdateSettings({
           >
             View releases
           </Button>
-          {pending.data && (
+          {hasPending && (
             <Button
               variant="ghost"
               onClick={() => {
@@ -143,15 +146,17 @@ export function UpdateSettings({
       </p>
       <Confirm
         open={confirmUpdate}
-        title={`Install ${update ? `Caelum ${update}` : "queued update"}?`}
-        detail="Downloads and verifies a signed package. Administrator authorization is required. Finish dictation first. Settings and history are preserved."
-        confirm="Update & restart"
+        title={windows ? "Open the Caelum installer?" : `Install ${hasPending ? "queued update" : `Caelum ${update}`}?`}
+        detail={windows
+          ? "Finish dictation first. Caelum checks the installer against the signed release manifest, then opens it and closes the app. The installer is not Authenticode-signed, so Windows SmartScreen may prompt you. If you cancel, reopen Caelum to retry in Settings."
+          : "Caelum verifies the package against the signed release manifest. Administrator authorization is required. Finish dictation first. Settings and history are preserved."}
+        confirm={installAction}
         onCancel={() => setConfirmUpdate(false)}
         onConfirm={async () => {
           try {
             const queued = await pending.refetch();
             if (queued.isError) throw queued.error;
-            if (!queued.data) {
+            if (!queued.data || queued.data.state === "installed") {
               const available = await ipc("updates.check", {});
               setUpdate(available?.version ?? null);
               if (!available) {
@@ -164,8 +169,11 @@ export function UpdateSettings({
             const applied = await ipc("updates.apply", {});
             setUpdate(null);
             setConfirmUpdate(false);
-            if (applied) await invoke("restart_app");
-            else setUpdateStatus("Caelum is already up to date.");
+            if (applied === "installer_launched") {
+              setUpdateStatus("Installer opened. Finish the update in the installer.");
+              await invoke("quit_app", { discard: false });
+            } else if (applied === "installed") await invoke("restart_app");
+            else setUpdateStatus("No update is queued.");
           } catch (error) {
             setUpdateStatus(errorText(error));
             throw error;
