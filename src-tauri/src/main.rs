@@ -273,6 +273,15 @@ struct TrayMenu {
     paused: AtomicBool,
     last_status: std::sync::Mutex<String>,
 }
+fn can_start_dictation(state: &str, running: bool, paused: bool, pending_audio: bool) -> bool {
+    running
+        && !paused
+        && !pending_audio
+        && !matches!(
+            state,
+            "starting" | "listening" | "recording" | "processing" | "refining" | "loading"
+        )
+}
 fn update_tray(app: &tauri::AppHandle, data: &Value) {
     let paused = data["paused"].as_bool().unwrap_or(false);
     let running = data["running"].as_bool().unwrap_or(false);
@@ -308,21 +317,12 @@ fn update_tray(app: &tauri::AppHandle, data: &Value) {
             "Pause dictation"
         });
         let _ = menu.pause.set_enabled(running);
-        let _ = menu.start.set_enabled(
-            running
-                && !paused
-                && !data["pending_audio"].as_bool().unwrap_or(false)
-                && matches!(
-                    state,
-                    "hidden"
-                        | "success"
-                        | "unrefined"
-                        | "copied"
-                        | "ready_to_copy"
-                        | "cancelled"
-                        | "no_speech"
-                ),
-        );
+        let _ = menu.start.set_enabled(can_start_dictation(
+            state,
+            running,
+            paused,
+            data["pending_audio"].as_bool().unwrap_or(false),
+        ));
     }
     if let Some(tray) = app.tray_by_id("caelum") {
         let _ = tray.set_tooltip(Some(format!("Caelum · {title}")));
@@ -544,6 +544,43 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::can_start_dictation;
+
+    #[test]
+    fn start_is_available_after_completed_work() {
+        for state in [
+            "saved",
+            "ready_to_copy",
+            "error",
+            "success_fallback_online",
+            "success_fallback_local",
+            "model_ready",
+            "model_failed",
+        ] {
+            assert!(can_start_dictation(state, true, false, false), "{state}");
+        }
+    }
+
+    #[test]
+    fn start_is_unavailable_while_busy_or_unable_to_record() {
+        for state in [
+            "starting",
+            "listening",
+            "recording",
+            "processing",
+            "refining",
+            "loading",
+        ] {
+            assert!(!can_start_dictation(state, true, false, false), "{state}");
+        }
+        assert!(!can_start_dictation("error", true, false, true));
+        assert!(!can_start_dictation("saved", true, true, false));
+        assert!(!can_start_dictation("saved", false, false, false));
+    }
 }
 
 #[cfg(test)]

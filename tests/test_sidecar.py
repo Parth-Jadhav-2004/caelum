@@ -1,16 +1,38 @@
 """Desktop boundary tests use temporary XDG roots and never touch real microphones."""
 
+import ast
 import asyncio
 import json
 import os
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config, load, save
 from caelum.desktop_services import SettingsBusy
+from caelum.ipc_contract import MODEL_PROGRESS, STATUS, matches
 from caelum.sidecar import Backend
+
+
+def test_rust_event_fixtures_cover_sidecar_emitters():
+    root = Path(__file__).resolve().parents[1]
+    tree = ast.parse((root / "python/caelum/sidecar.py").read_text(encoding="utf-8"))
+    emitted = set()
+    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+        if ((isinstance(call.func, ast.Name) and call.func.id == "emit")
+                or (isinstance(call.func, ast.Attribute) and call.func.attr == "emit")):
+            emitted.add(ast.literal_eval(call.args[0]))
+
+    fixture = root / "tests/fixtures/sidecar-events.json"
+    frames = json.loads(fixture.read_text(encoding="utf-8"))
+    assert {frame["event"] for frame in frames} == emitted
+    for frame in frames:
+        if frame["event"] == "model-download":
+            assert matches(MODEL_PROGRESS, frame["data"])
+        elif frame["event"] == "status":
+            assert matches(STATUS, frame["data"])
 
 
 @pytest.fixture
@@ -253,7 +275,6 @@ async def test_slow_update_check_does_not_block_shutdown(tmp_path):
 
 async def test_configuration_contract_matches_python_dataclasses():
     import importlib.util
-    from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     output = root / "src/lib/config.generated.ts"

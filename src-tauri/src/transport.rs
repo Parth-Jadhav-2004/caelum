@@ -60,6 +60,39 @@ pub enum Frame {
     Reply(u64, Reply),
     Event(String, Value),
 }
+
+fn valid_model_id(data: &Value) -> bool {
+    data["id"].as_str().is_some_and(|id| !id.is_empty())
+}
+
+fn valid_model_progress(data: &Value) -> bool {
+    valid_model_id(data)
+        && matches!(
+            data["state"].as_str(),
+            Some(
+                "queued"
+                    | "downloading"
+                    | "stalled"
+                    | "paused"
+                    | "verifying"
+                    | "installing"
+                    | "ready"
+                    | "failed"
+                    | "cancelled"
+            )
+        )
+        && ["received_bytes", "total_bytes", "bytes_per_sec"]
+            .iter()
+            .all(|&key| data[key].is_number())
+        && matches!(
+            data.get("eta_seconds"),
+            Some(Value::Null | Value::Number(_))
+        )
+        && data.get("error").is_some_and(|error| {
+            error.is_null() || (error["code"].is_string() && error["message"].is_string())
+        })
+}
+
 pub fn parse(bytes: &[u8]) -> Result<Frame, EngineError> {
     let frame: Value = serde_json::from_slice(bytes).map_err(|_| protocol())?;
     let obj = frame.as_object().ok_or_else(protocol)?;
@@ -122,30 +155,22 @@ pub fn parse(bytes: &[u8]) -> Result<Frame, EngineError> {
     {
         return Err(protocol());
     }
-    let event = frame["event"]
-        .as_str()
-        .filter(|s| ["status", "microphone", "status-error"].contains(s))
-        .ok_or_else(protocol)?;
-    if !frame["data"].is_object() {
-        return Err(protocol());
-    }
+    let event = frame["event"].as_str().ok_or_else(protocol)?;
     let data = &frame["data"];
-    match event {
-        "microphone"
-            if data["level"]
-                .as_f64()
-                .is_none_or(|value| !value.is_finite() || !(0.0..=1.0).contains(&value)) =>
-        {
-            return Err(protocol())
-        }
-        "status-error"
-            if data["message"]
-                .as_str()
-                .is_none_or(|message| message.is_empty() || message.len() > 2048) =>
-        {
-            return Err(protocol())
-        }
-        _ => (),
+    let valid = match event {
+        "status" => data.is_object(),
+        "microphone" => data["level"]
+            .as_f64()
+            .is_some_and(|level| (0.0..=1.0).contains(&level)),
+        "status-error" | "model-attention" => data["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty() && message.len() <= 2048),
+        "models-changed" => valid_model_id(data),
+        "model-download" => valid_model_progress(data),
+        _ => false,
+    };
+    if !valid {
+        return Err(protocol());
     }
     Ok(Frame::Event(event.into(), data.clone()))
 }
@@ -359,6 +384,35 @@ pub fn deadline(method: &str) -> Duration {
 mod tests {
     use super::*;
     use tokio::io::{duplex, BufReader};
+
+    #[test]
+    fn forwards_sidecar_contract_events_unchanged() {
+        let frames: Vec<Value> =
+            serde_json::from_str(include_str!("../../tests/fixtures/sidecar-events.json")).unwrap();
+        for expected in frames {
+            let Frame::Event(event, data) = parse(expected.to_string().as_bytes()).unwrap() else {
+                panic!("expected event: {expected}");
+            };
+            assert_eq!(event, expected["event"]);
+            assert_eq!(data, expected["data"]);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_events_and_malformed_model_payloads() {
+        for (event, data) in [
+            ("unknown", json!({})),
+            ("models-changed", json!({"id":""})),
+            ("model-attention", json!({"message":42})),
+            (
+                "model-download",
+                json!({"id":"parakeet-v3","state":"ready"}),
+            ),
+        ] {
+            let frame = json!({"v":1,"event":event,"data":data});
+            assert!(matches!(parse(frame.to_string().as_bytes()), Err(e) if e.code == "protocol"));
+        }
+    }
     #[test]
     fn practice_allows_maximum_local_inference_without_slowing_cancellation() {
         assert!(deadline("practice") >= Duration::from_secs(1800 + 15 + 10));
