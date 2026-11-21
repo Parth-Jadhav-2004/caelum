@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from . import credentials
-from .config import config_path, load, save
+from .config import Config, InvalidConfig, backup_invalid_config, config_path, load, save
 from .desktop_services import (
     SettingsBusy,
     connection_status,
@@ -52,9 +52,7 @@ class Backend:
         self.update = None
         self.setup_checks = set()
         self.shutdown_complete = False
-        progress = Progress.load(self.path)
-        if progress.fingerprint == setup_fingerprint(load(self.path)):
-            self.setup_checks.update(progress.checks)
+        self.restore_setup_checks = True
         self.models = ModelManager(progress=self.model_progress)
         self.pending_model = None
         try:
@@ -312,7 +310,10 @@ class Backend:
         self.process = None
 
     async def stop_idle(self):
-        await self.idle()
+        # Even with unreadable settings, prepare-update checks the live daemon's
+        # capture/pending audio atomically before allowing an ordinary quit.
+        with suppress(InvalidConfig):
+            await self.idle()
         # Recheck under the daemon's control lock and block already queued starts.
         # A shortcut can begin recording after the sidecar's status snapshot.
         with suppress(FileNotFoundError, ConnectionRefusedError):
@@ -322,7 +323,36 @@ class Backend:
         await self.stop(request_shutdown=False)
 
     async def dispatch(self, method, params):
+        if method == "shutdown":
+            if not self.shutdown_complete:
+                self.cancelled.set()
+                if params.get("discard"):
+                    await self.stop()
+                else:
+                    await self.stop_idle()
+                self.shutdown_complete = True
+            return {"ok": True}
+        if method == "settings.reset_invalid":
+            try:
+                load(self.path)
+            except InvalidConfig:
+                pass
+            else:
+                raise ValueError("Settings are already valid. Retry the connection.")
+            await self.stop_idle()
+            backup = backup_invalid_config(self.path)
+            # Reset consent/checks before publishing online defaults, even if
+            # a previously completed profile used only local transcription.
+            Progress().save(self.path)
+            save(Config(), self.path)
+            self.setup_checks.clear()
+            return {"backup_path": str(backup)}
         config = load(self.path)
+        if self.restore_setup_checks:
+            progress = Progress.load(self.path)
+            if progress.fingerprint == setup_fingerprint(config):
+                self.setup_checks.update(progress.checks)
+            self.restore_setup_checks = False
         if method == "bootstrap":
             from .launcher import entry_path
             progress = Progress.load(self.path)
@@ -644,15 +674,6 @@ class Backend:
             from .updates import pending_update
 
             return await asyncio.to_thread(pending_update)
-        elif method == "shutdown":
-            if self.shutdown_complete:
-                return {"ok": True}
-            self.cancelled.set()
-            if params.get("discard"):
-                await self.stop()
-            else:
-                await self.stop_idle()
-            self.shutdown_complete = True
         else:
             raise ValueError("Unknown method")
         return {"ok": True}
@@ -751,6 +772,12 @@ async def run(output=None):
                 if backend.reload_model:
                     async with backend.mutation_lock:
                         await backend.apply_ready_reload()
+            except InvalidConfig as error:
+                # Bootstrap and explicit status calls return the same typed error.
+                # Notify subscribers only on transition, rather than every 100 ms.
+                if previous != error.path:
+                    emit("status-error", {"message": error_payload(error)["message"]})
+                    previous = error.path
             except Exception:
                 emit("status-error", {"message": "Service status unavailable. Retrying…"})
             await asyncio.sleep(0.1)

@@ -7,7 +7,7 @@ network schema loading, credential values, or provider response bodies.
 import math
 from dataclasses import fields
 
-from .config import STT, App, Cleanup, Desktop
+from .config import STT, App, Cleanup, Desktop, InvalidConfig
 
 STRING = {"type": "string"}
 NUMBER = {"type": "number"}
@@ -146,6 +146,7 @@ method(
 method("devices", result=array(obj({"label": STRING, "value": union(STRING, NUMBER, NULL)})))
 method("history.delete", obj({"id": STRING}, optional=("id",)))
 method("history.export", obj({"path": STRING}))
+method("settings.reset_invalid", result=obj({"backup_path": STRING}))
 method(
     "settings.save",
     obj({"config": PATCH_CONFIG}),
@@ -280,6 +281,12 @@ def error_payload(error):
             "message": str(error)[:2048],
             "retryable": error.kind in {"timeout", "offline", "rate_limit", "unavailable"},
         }
+    if isinstance(error, InvalidConfig):
+        # Parser messages may contain hand-edited values. Only disclose the file path.
+        message = f"Invalid settings file: {error.path}".encode("utf-8", "replace")[:2048].decode(
+            "utf-8", "ignore"
+        )
+        return {"code": "invalid_config", "message": message, "retryable": False}
     if isinstance(error, ValueError):
         return {"code": "invalid_request", "message": str(error)[:2048], "retryable": False}
     if isinstance(error, PermissionError):
