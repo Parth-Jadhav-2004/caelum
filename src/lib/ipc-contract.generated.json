@@ -627,6 +627,26 @@
         "additionalProperties": false
       }
     },
+    "settings.reset_invalid": {
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "backup_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup_path"
+        ],
+        "additionalProperties": false
+      }
+    },
     "settings.save": {
       "params": {
         "type": "object",

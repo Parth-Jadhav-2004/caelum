@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
-import { ipc, errorText, type Config, type ConfigPatch } from "@/lib/ipc";
+import { ipc, errorText, IpcError, type Config, type ConfigPatch } from "@/lib/ipc";
 import { formatShortcut } from "@/lib/shortcut";
 import { action, Confirm } from "@/components/common";
 import {
@@ -108,6 +108,44 @@ function FrontendReady() {
     return () => window.clearTimeout(timer);
   }, []);
   return null;
+}
+function InvalidSettings({ message, retry }: { message: string; retry: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
+  const [backup, setBackup] = useState("");
+  async function reset() {
+    setBusy(true);
+    setFailure("");
+    try {
+      const result = await ipc("settings.reset_invalid", {});
+      setBackup(result.backup_path);
+    } catch (error) {
+      setFailure(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="mx-auto max-w-lg space-y-5 p-8">
+      <h1 className="text-xl font-medium">{backup ? "Settings reset" : "Caelum couldn’t read your settings."}</h1>
+      {backup ? (
+        <>
+          <p role="status" className="break-all">Your original settings are backed up at {backup}.</p>
+          <Button onClick={() => window.location.reload()}>Continue to setup</Button>
+        </>
+      ) : (
+        <>
+          <p className="break-all">{message}</p>
+          <p>Edit the file and retry, or back it up and start setup again with default settings.</p>
+          {failure && <p role="alert">{failure}</p>}
+          <Button disabled={busy} onClick={retry}>Retry connection</Button>{" "}
+          <Button disabled={busy} variant="outline" onClick={() => void reset()}>
+            Back up and reset settings
+          </Button>
+        </>
+      )}
+    </main>
+  );
 }
 export default function App() {
   const settingsGroup = useApp((s) => s.settingsGroup);
@@ -266,6 +304,8 @@ export default function App() {
       void action(() => commit(draft.current ?? next));
     }, 200);
   }
+  if (bootstrap.isError && bootstrap.error instanceof IpcError && bootstrap.error.code === "invalid_config")
+    return <InvalidSettings message={bootstrap.error.message} retry={() => void bootstrap.refetch()} />;
   if (bootstrap.isError)
     return (
       <main className="mx-auto max-w-lg space-y-5 p-8">
