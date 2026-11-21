@@ -24,8 +24,8 @@ def test_rust_event_fixtures_cover_sidecar_emitters():
                 or (isinstance(call.func, ast.Attribute) and call.func.attr == "emit")):
             emitted.add(ast.literal_eval(call.args[0]))
 
-    lines = (root / "tests/fixtures/sidecar-events.jsonl").read_text(encoding="utf-8").splitlines()
-    frames = [json.loads(line) for line in lines]
+    fixture = root / "tests/fixtures/sidecar-events.json"
+    frames = json.loads(fixture.read_text(encoding="utf-8"))
     assert {frame["event"] for frame in frames} == emitted
     for frame in frames:
         if frame["event"] == "model-download":

@@ -1,8 +1,0 @@
-{"v":1,"event":"status","data":{"running":false,"state":"hidden","paused":false,"title":"Stopped","detail":""}}
-{"v":1,"event":"microphone","data":{"level":0.25}}
-{"v":1,"event":"status-error","data":{"message":"Service status unavailable. Retrying…"}}
-{"v":1,"event":"model-download","data":{"id":"parakeet-v3","state":"queued","received_bytes":0,"total_bytes":100,"bytes_per_sec":0,"eta_seconds":null,"error":null}}
-{"v":1,"event":"model-download","data":{"id":"parakeet-v3","state":"downloading","received_bytes":25,"total_bytes":100,"bytes_per_sec":12.5,"eta_seconds":6,"error":null}}
-{"v":1,"event":"model-download","data":{"id":"parakeet-v3","state":"failed","received_bytes":25,"total_bytes":100,"bytes_per_sec":0,"eta_seconds":null,"error":{"code":"network","message":"Download interrupted"}}}
-{"v":1,"event":"models-changed","data":{"id":"parakeet-v3"}}
-{"v":1,"event":"model-attention","data":{"message":"Couldn't switch speech model. Open Settings."}}

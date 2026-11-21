@@ -387,10 +387,11 @@ mod tests {
 
     #[test]
     fn forwards_sidecar_contract_events_unchanged() {
-        for line in include_str!("../../tests/fixtures/sidecar-events.jsonl").lines() {
-            let expected: Value = serde_json::from_str(line).unwrap();
-            let Frame::Event(event, data) = parse(line.as_bytes()).expect(line) else {
-                panic!("expected event: {line}");
+        let frames: Vec<Value> =
+            serde_json::from_str(include_str!("../../tests/fixtures/sidecar-events.json")).unwrap();
+        for expected in frames {
+            let Frame::Event(event, data) = parse(expected.to_string().as_bytes()).unwrap() else {
+                panic!("expected event: {expected}");
             };
             assert_eq!(event, expected["event"]);
             assert_eq!(data, expected["data"]);
