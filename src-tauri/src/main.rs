@@ -314,7 +314,13 @@ fn update_tray(app: &tauri::AppHandle, data: &Value) {
                 && !data["pending_audio"].as_bool().unwrap_or(false)
                 && matches!(
                     state,
-                    "hidden" | "success" | "unrefined" | "copied" | "cancelled" | "no_speech"
+                    "hidden"
+                        | "success"
+                        | "unrefined"
+                        | "copied"
+                        | "ready_to_copy"
+                        | "cancelled"
+                        | "no_speech"
                 ),
         );
     }
