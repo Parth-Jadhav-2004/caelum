@@ -148,7 +148,7 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
             # policy, backend, or other settings. Retry remains an explicit action.
             expected = replace(core.config, stt=replace(core.config.stt, local_model=updated.stt.local_model))
             if (getattr(core, "state", "") != "missing_model" or updated.stt.engine != "local"
-                    or not updated.stt.local_model or expected != updated):
+                    or not updated.stt.local_model or not expected.same_runtime_settings(updated)):
                 raise SettingsBusy("Finish or cancel dictation before applying settings")
         previous = bindings.hotkey
         previous_mode = getattr(bindings, "recording_mode", "hold")

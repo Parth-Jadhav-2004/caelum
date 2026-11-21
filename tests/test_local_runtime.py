@@ -232,6 +232,10 @@ async def test_download_recovers_retained_local_audio_only_on_explicit_retry(tmp
         await reload_settings(core, bindings, provider, path, updated, True)
     monkeypatch.setattr(backend, "save_settings", daemon_save)
     try:
+        # UI-only saves need not have been reloaded into the running daemon.
+        appearance = deepcopy(cfg)
+        appearance.desktop.sidebar_visible = False
+        save(appearance, path)
         unsafe = deepcopy(cfg)
         unsafe.stt.fallback = "online"
         unsafe.stt.local_model = "parakeet-110m"
