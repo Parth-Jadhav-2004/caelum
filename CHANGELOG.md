@@ -5,6 +5,7 @@ Release notes, newest first.
 ## 0.5.2
 
 - If a settings file prevents startup, Caelum shows its path. Edit it and retry, or choose **Back up and reset settings** to keep a copy and return to setup.
+- On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
 
 ## 0.5.1
 
@@ -15,6 +16,7 @@ Release notes, newest first.
 - Windows setup uses your regional language and detects NVIDIA display adapters when recommending a speech model. An explicit language selection takes priority.
 - If Windows Credential Manager is unavailable, Caelum protects saved provider keys with your Windows account using DPAPI. Existing plaintext fallback entries are migrated on access.
 - New profiles start with an empty custom vocabulary. Existing vocabulary is preserved.
+- CLI commands now name the config section that must be a TOML table instead of printing a Python traceback.
 - Caelum verifies local model content before loading it and offers repair for damaged downloads. Desktop engine startup and connection failures now report errors and allow the app to quit.
 - Downloading or switching local speech models in setup or Settings no longer disconnects the desktop app from the engine.
 - The website demo now shows the full transcript after hold-to-talk recording and processing finish. The FAQ explains how to copy or insert it on each supported desktop.

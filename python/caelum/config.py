@@ -131,7 +131,7 @@ def _parse(text):
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
         values = data.get(section, {})
         if not isinstance(values, dict):
-            raise ValueError(f"{section} must be a table")
+            raise ValueError(f"[{section}] must be a table")
         if section == "app" and "hotkey" not in values:
             values["hotkey"] = default_hotkey(values.get("backend", "auto"))
         if section == "stt":
