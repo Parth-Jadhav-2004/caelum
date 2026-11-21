@@ -4,12 +4,14 @@ Release notes, newest first.
 
 ## 0.5.2
 
+- On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
 - History export now replaces the selected file after you confirm the overwrite. If the export fails, the previous file stays intact.
 - On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
 - On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
 
 ## 0.5.1
 
+- The desktop sidebar toggle sits beside the Caelum logo and replaces it when collapsed, giving pages more vertical space.
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
 - Windows dictation preserves the clipboard when inserting into a focused Edit or RichEdit field. If direct insertion fails and the clipboard has changed, choose Retry to copy the finished transcript.
 - Turn off automatic clipboard copying in Settings to keep your clipboard intact, including when insertion fails. **Copy transcript** on Home works even with history disabled. You can start the next recording from the tray when a transcript is saved or ready to copy, or after an error with no audio left to retry.

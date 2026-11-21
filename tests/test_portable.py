@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config
+from caelum.orchestrator import Orchestrator
 from caelum.portable import (
     HUD,
     PATH,
@@ -15,6 +16,7 @@ from caelum.portable import (
     portal_trigger,
     session_locked,
 )
+from caelum.service import model_download_feedback
 from dbus_next import Message, MessageType, Variant
 
 
@@ -199,6 +201,37 @@ async def test_notifications_deduplicate_recording_frames(monkeypatch):
     assert command.await_count == 3
     assert "--replace-id=42" in command.call_args.args
     assert "Copy text" in command.call_args.args[-1]
+
+
+@pytest.mark.parametrize(("progress", "end", "notice"), [
+    ("downloading", "ready", "Downloading speech model"),
+    ("stalled", "paused", "Model download stalled"),
+    ("verifying", "cancelled", "Loading speech model"),
+])
+async def test_ending_model_download_feedback_is_silent(monkeypatch, progress, end, notice):
+    command = AsyncMock(return_value="42")
+    monkeypatch.setattr("caelum.portable.command", command)
+    config = Config()
+    core = Orchestrator(config, None, HUD(config.app), None)
+
+    await model_download_feedback(core, progress)
+    await model_download_feedback(core, end)
+    assert core.state == "hidden"
+    assert [call.args[-1] for call in command.await_args_list] == [notice]
+
+    await model_download_feedback(core, progress)
+    assert [call.args[-1] for call in command.await_args_list] == [notice, notice]
+
+
+@pytest.mark.parametrize("state", ["listening", "processing"])
+async def test_cancelling_dictation_still_notifies(monkeypatch, state):
+    command = AsyncMock(return_value="42")
+    monkeypatch.setattr("caelum.portable.command", command)
+    hud = HUD(Config().app)
+    await hud.emit({"state": state})
+    await hud.emit({"state": "hidden"})
+    assert command.await_args.args[-1] == "Recording cancelled."
+    assert "--replace-id=42" in command.await_args.args
 
 
 async def test_portable_service_controls_without_hyprland_or_audio(tmp_path, monkeypatch):

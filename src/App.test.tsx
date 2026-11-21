@@ -110,7 +110,9 @@ it.each(["queued", "installed"])("reconciles a %s Windows update without an onli
 it("collapses the sidebar and persists the preference", async () => {
   mount();
   await screen.findByRole("heading", { name: /Record, finish/ });
-  await userEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+  const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
+  const toggle = navigation.getByRole("button", { name: "Toggle Sidebar" });
+  await userEvent.click(toggle);
   await waitFor(() =>
     expect(ipc).toHaveBeenCalledWith("settings.save", {
       config: { desktop: { sidebar_visible: false } },
@@ -119,9 +121,8 @@ it("collapses the sidebar and persists the preference", async () => {
   expect(
     document.querySelector('[data-state="collapsed"]'),
   ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Caelum home" }),
-  ).toBeInTheDocument();
+  expect(toggle).toHaveFocus();
+  expect(navigation.getByRole("button", { name: "Home" })).toBeInTheDocument();
 });
 it("opens first-run setup without starting the service", async () => {
   vi.mocked(ipc).mockImplementation((async (method: string) =>
@@ -130,6 +131,8 @@ it("opens first-run setup without starting the service", async () => {
       : []) as typeof ipc);
   mount();
   await screen.findByText("Welcome to Caelum");
+  expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Toggle Sidebar" })).not.toBeInTheDocument();
   expect(ipc).not.toHaveBeenCalledWith("service.start", {});
 });
 it("saves appearance while keeping the Caelum identity", async () => {
