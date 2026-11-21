@@ -38,6 +38,7 @@ import {
   SidebarMenuButton,
   SidebarInset,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   CommandDialog,
@@ -146,6 +147,14 @@ function InvalidSettings({ message, retry }: { message: string; retry: () => voi
       )}
     </main>
   );
+}
+function MobileSidebarOpener() {
+  const { isMobile } = useSidebar();
+  return isMobile ? (
+    <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
+      <SidebarTrigger />
+    </header>
+  ) : null;
 }
 export default function App() {
   const settingsGroup = useApp((s) => s.settingsGroup);
@@ -343,7 +352,7 @@ export default function App() {
             <Skeleton key={i} className="h-9" />
           ))}
         </div>
-        <div className="min-w-0 flex-1 pt-12">
+        <div className="min-w-0 flex-1 pt-12 md:pt-0">
           <div className="mx-auto max-w-5xl space-y-8 p-8">
             <Skeleton className="h-10 w-64 max-w-full" />
             <Skeleton className="h-40" />
@@ -387,19 +396,16 @@ export default function App() {
                 role="navigation"
                 aria-label="Main navigation"
               >
-                <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-2">
-                  <SidebarMenu>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        size="lg"
-                        aria-label="Caelum home"
-                        tooltip="Caelum home"
-                        onClick={() => navigate("home")}
-                      >
-                        <CaelumBrand />
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
+                <SidebarHeader className="h-24 flex-row items-center px-2">
+                  <SidebarMenuButton
+                    size="lg"
+                    aria-label="Caelum home"
+                    onClick={() => navigate("home")}
+                    className="min-w-0 group-data-[collapsible=icon]:hidden"
+                  >
+                    <CaelumBrand />
+                  </SidebarMenuButton>
+                  <SidebarTrigger className="ml-auto shrink-0" />
                 </SidebarHeader>
                 <SidebarContent className="px-2">
                   {[pages.slice(0, 3), pages.slice(3)].map((group, i) => (
@@ -516,11 +522,7 @@ export default function App() {
               </Sidebar>
             )}
             <SidebarInset>
-              {page !== "setup" && (
-                <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
-                  <SidebarTrigger />
-                </header>
-              )}
+              {page !== "setup" && <MobileSidebarOpener />}
               <div
                 ref={content}
                 id="main-content"

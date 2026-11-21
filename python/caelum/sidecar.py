@@ -62,6 +62,7 @@ class Backend:
             self.pending_model = None
         self._download_tray = (0, "")
         self.reload_model = None
+        self.pending_settings_reload = False
         self.model_tasks = set()
         self.switching_model = None
         self.model_failures = {}
@@ -139,6 +140,9 @@ class Backend:
         from .providers import Providers
 
         validate(config)
+        if config.same_runtime_settings(previous):
+            await asyncio.to_thread(save, config, self.path)
+            return None
         running = (await self.status())["running"]
         changed = Providers.signature(config) != Providers.signature(previous)
         if running and changed:
@@ -158,11 +162,29 @@ class Backend:
         else:
             await asyncio.to_thread(save, config, self.path)
             if running:
-                try:
-                    await asyncio.to_thread(request, "reload")
-                except (RuntimeError, OSError) as error:
-                    return f"Saved; service not updated: {error}"
+                return await self.reload_saved_settings()
+        self.pending_settings_reload = False
         return None
+
+    async def reload_saved_settings(self):
+        # Reload from disk so multiple saves during dictation coalesce.
+        try:
+            await asyncio.to_thread(request, "reload")
+        except SettingsBusy:
+            self.pending_settings_reload = True
+            return None
+        except (RuntimeError, OSError) as error:
+            self.pending_settings_reload = False
+            return f"Saved; service not updated: {error}"
+        self.pending_settings_reload = False
+        return None
+
+    async def apply_pending_settings(self, status):
+        if self.pending_settings_reload:
+            if not status["running"]:
+                self.pending_settings_reload = False  # Next start reads disk.
+            elif not dictation_busy(status):
+                return await self.reload_saved_settings()
 
     async def use_model(self, model_id, *, downloaded=False):
         get_model(model_id)
@@ -227,14 +249,7 @@ class Backend:
         status = await self.status()
         if allow_missing_model and status.get("state") == "missing_model" and load(self.path).stt.engine == "local":
             return
-        if status.get("pending_audio") or status.get("state") in {
-            "starting",
-            "listening",
-            "recording",
-            "processing",
-            "refining",
-            "loading",
-        }:
+        if dictation_busy(status):
             raise RuntimeError("Finish dictation or discard pending audio first")
 
     async def start(self):
@@ -664,6 +679,12 @@ class Backend:
         return {"ok": True}
 
 
+def dictation_busy(status):
+    return status.get("pending_audio") or status.get("state") in {
+        "starting", "listening", "recording", "processing", "refining", "loading",
+    }
+
+
 async def run(output=None):
     loop = asyncio.get_running_loop()
 
@@ -734,7 +755,14 @@ async def run(output=None):
         previous = None
         while True:
             try:
-                status = await backend.status()
+                if backend.pending_settings_reload:
+                    async with backend.mutation_lock:
+                        status = await backend.status()
+                        if warning := await backend.apply_pending_settings(status):
+                            emit("status-error", {"message": warning})
+                            previous = None
+                else:
+                    status = await backend.status()
                 if status != previous:
                     emit("status", status)
                     previous = status

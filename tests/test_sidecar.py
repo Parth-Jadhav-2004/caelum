@@ -7,10 +7,11 @@ import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config, load, save
+from caelum.desktop_services import SettingsBusy
 from caelum.ipc_contract import MODEL_PROGRESS, STATUS, matches
 from caelum.onboarding import Progress
 from caelum.sidecar import Backend
@@ -79,12 +80,53 @@ async def test_busy_stop_does_not_discard_without_confirmation(backend, monkeypa
 
 async def test_reload_failure_reports_saved_but_not_applied(backend, monkeypatch):
     monkeypatch.setattr(backend, "status", AsyncMock(return_value={"running": True}))
-    monkeypatch.setattr(
-        "caelum.sidecar.request", lambda _: (_ for _ in ()).throw(RuntimeError("Busy"))
-    )
-    result = await backend.dispatch("settings.save", {"config": {"desktop": {"theme": "light"}}})
-    assert result["saved"] and "service not updated" in result["warning"]
-    assert load(backend.path).desktop.theme == "light"
+    reload = Mock(side_effect=RuntimeError("Shortcut conflict"))
+    monkeypatch.setattr("caelum.sidecar.request", reload)
+    result = await backend.dispatch("settings.save", {"config": {"app": {"recording_mode": "toggle"}}})
+    assert result == {"saved": True, "warning": "Saved; service not updated: Shortcut conflict"}
+    assert load(backend.path).app.recording_mode == "toggle"
+    await backend.apply_pending_settings({"running": True, "state": "hidden"})
+    reload.assert_called_once_with("reload")
+
+
+async def test_appearance_only_save_needs_no_daemon(backend, monkeypatch):
+    monkeypatch.setattr("caelum.sidecar.request", lambda *args: pytest.fail(f"Unexpected IPC: {args}"))
+    config = load(backend.path)
+    config.desktop.theme, config.desktop.color_theme, config.desktop.sidebar_visible = "light", "ocean", False
+    assert await backend.dispatch("settings.save", {"config": asdict(config)}) == {"saved": True}
+    assert load(backend.path) == config
+
+
+async def test_busy_settings_apply_latest_save_once_idle(backend, monkeypatch):
+    status = {"running": True, "state": "recording"}
+    monkeypatch.setattr(backend, "status", AsyncMock(return_value=status))
+    applied = []
+
+    def reload(action):
+        assert action == "reload"
+        if status["state"] != "hidden":
+            raise SettingsBusy("Finish or cancel dictation")
+        applied.append(load(backend.path))
+
+    request = Mock(side_effect=reload)
+    monkeypatch.setattr("caelum.sidecar.request", request)
+    for patch in ({"app": {"recording_mode": "toggle"}},
+                  {"desktop": {"auto_copy": False, "theme": "light"}},
+                  {"desktop": {"sidebar_visible": False}}):
+        assert await backend.dispatch("settings.save", {"config": patch}) == {"saved": True}
+    assert request.call_count == 2
+    latest = load(backend.path)
+    assert latest.app.recording_mode == "toggle" and not latest.desktop.auto_copy
+    for state, pending in (("recording", False), ("processing", False), ("error", True)):
+        await backend.apply_pending_settings({**status, "state": state, "pending_audio": pending})
+    assert request.call_count == 2
+    idle_snapshot = {**status, "state": "hidden"}
+    await backend.apply_pending_settings(idle_snapshot)  # A new capture beat the idle snapshot.
+    assert not applied
+    status.update(idle_snapshot)
+    await backend.apply_pending_settings(idle_snapshot)
+    await backend.apply_pending_settings(idle_snapshot)
+    assert applied == [latest]
 
 
 async def test_onboarding_requires_all_checks_and_upload_consent(backend, monkeypatch):
