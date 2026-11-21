@@ -4,8 +4,9 @@ Release notes, newest first.
 
 ## 0.5.2
 
-- On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
 - History export now replaces the selected file after you confirm the overwrite. If the export fails, the previous file stays intact.
+- On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
+- On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
 
 ## 0.5.1
 
