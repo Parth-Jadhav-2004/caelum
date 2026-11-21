@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- History export now replaces the selected file after you confirm the overwrite. If the export fails, the previous file stays intact.
+
 ## 0.5.1
 
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
