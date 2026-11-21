@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
 import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
-import { ipc, type Config } from "@/lib/ipc";
+import { ipc, IpcError, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
 import { toast } from "sonner";
 import { testModels } from "@/test-models";
@@ -19,7 +19,10 @@ import { testConfig } from "@/test-config";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
 }));
-vi.mock("@/lib/ipc", () => ({ ipc: vi.fn(), errorText: String }));
+vi.mock("@/lib/ipc", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ipc")>()),
+  ipc: vi.fn(),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
 }));
@@ -83,6 +86,34 @@ it("starts the service after setup without automatically recording", async () =>
   await waitFor(() => expect(ipc).toHaveBeenCalledWith("service.start", {}));
   expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
   expect(document.documentElement.dataset.reducedMotion).toBe("true");
+});
+it("shows the settings path and only resets on request, keeping failure and backup paths visible", async () => {
+  let attempts = 0;
+  vi.mocked(ipc).mockImplementation((async (method: string) => {
+    if (method === "bootstrap")
+      throw new IpcError("invalid_config", "Invalid settings file: /profile/config.toml", false);
+    if (method === "settings.reset_invalid") {
+      if (!attempts++) throw new Error("Permission denied");
+      return { backup_path: "/profile/config.toml.original.bak" };
+    }
+    return useApp.getState().status;
+  }) as typeof ipc);
+  mount();
+  await screen.findByText("Invalid settings file: /profile/config.toml");
+  expect(ipc).not.toHaveBeenCalledWith("settings.reset_invalid", {});
+  const reset = screen.getByRole("button", { name: "Back up and reset settings" });
+  await userEvent.click(reset);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Permission denied");
+  await userEvent.click(reset);
+  expect(await screen.findByRole("status")).toHaveTextContent("/profile/config.toml.original.bak");
+  expect(screen.getByRole("button", { name: "Continue to setup" })).toBeEnabled();
+  expect(ipc).not.toHaveBeenCalledWith("service.start", {});
+});
+it("keeps unrelated startup failures on connection recovery", async () => {
+  vi.mocked(ipc).mockRejectedValue(new IpcError("disconnected", "Disconnected", false));
+  mount();
+  await screen.findByRole("heading", { name: "Caelum couldn’t start." });
+  expect(screen.queryByRole("button", { name: /reset settings/i })).not.toBeInTheDocument();
 });
 it.each(["queued", "installed"])("reconciles a %s Windows update without an online check", async (state) => {
   const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT");

@@ -35,6 +35,12 @@ are blocked; rate limits/offline/provider timeouts can be eligible for an explic
 retry. `retryable` never authorizes automatic replay of a mutation or paid request.
 Unexpected exception details and provider response bodies are not exposed.
 
+An invalid settings file returns `invalid_config` with the path in the message.
+Retry `bootstrap` after a manual edit, or explicitly call `settings.reset_invalid`
+with `{}`. It backs up the invalid file beside the original, resets onboarding
+before saving defaults, and returns `{backup_path}`. A valid or missing file
+is never reset.
+
 Transport limits:
 
 - 1MiB requests; response lines bounded during reading to 16MiB, including newline.

@@ -4,8 +4,10 @@ Release notes, newest first.
 
 ## 0.5.2
 
+- If a settings file prevents startup, Caelum shows its path. Edit it and retry, or choose **Back up and reset settings** to keep a copy and return to setup.
 - On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
 - On Hyprland, retrying a failed dictation dismisses its Retry/Cancel notification. If the retry fails too, only the new notification can act on it.
+- History export now replaces the selected file after you confirm the overwrite. If the export fails, the previous file stays intact.
 - On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
 - On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
 - Appearance and sidebar changes save quietly during dictation. Changes to recording mode, clipboard copying, and history settings take effect after dictation finishes or is cancelled, without restarting Caelum.

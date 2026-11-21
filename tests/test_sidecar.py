@@ -13,6 +13,7 @@ import pytest
 from caelum.config import Config, load, save
 from caelum.desktop_services import SettingsBusy
 from caelum.ipc_contract import MODEL_PROGRESS, STATUS, matches
+from caelum.onboarding import Progress
 from caelum.sidecar import Backend
 
 
@@ -204,6 +205,71 @@ async def test_json_lines_process_eof_and_unknown_method(tmp_path):
     assert "Unknown method" in replies[2]["error"]
     assert "Unsupported protocol" in replies[3]["error"]
     assert not any("value" in item for item in replies[1]["result"]["credentials"].values())
+
+
+async def test_invalid_settings_recover_over_live_json_lines(tmp_path):
+    path = tmp_path / "config.toml"
+    original = b'[app]\nhotkey = "ctrl+x"\n'
+    path.write_bytes(original)
+    Progress(4, True).save(path)
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "caelum.sidecar",
+        env={**os.environ, "CAELUM_CONFIG": str(path)},
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+    )
+
+    async def call(method):
+        process.stdin.write(json.dumps({"v": 1, "id": 1, "method": method}).encode() + b"\n")
+        await process.stdin.drain()
+        while line := await asyncio.wait_for(process.stdout.readline(), 10):
+            frame = json.loads(line)
+            if frame.get("id") == 1:
+                return frame
+        pytest.fail("Sidecar exited without a reply")
+
+    try:
+        for method in ("bootstrap", "status"):
+            assert (await call(method))["error_info"] == {
+                "code": "invalid_config", "message": f"Invalid settings file: {path}",
+                "retryable": False,
+            }
+        assert path.read_bytes() == original
+        backup = Path((await call("settings.reset_invalid"))["result"]["backup_path"])
+        assert backup.parent == path.parent and backup.read_bytes() == original
+        if os.name != "nt":
+            assert backup.stat().st_mode & 0o077 == 0
+        result = (await call("bootstrap"))["result"]
+        assert result["setup"] == {"stage": 0, "complete": False}
+        assert result["config"] == asdict(Config())
+        assert "error" in await call("settings.reset_invalid")
+    finally:
+        process.stdin.close()
+        await asyncio.wait_for(process.wait(), 10)
+
+
+@pytest.mark.parametrize("contents", [b"[app", b"app = 5", b"\xff"])
+async def test_editing_invalid_config_allows_retry_without_reset(backend, contents):
+    backend.path.write_bytes(contents)
+    with pytest.raises(ValueError):
+        await backend.dispatch("bootstrap", {})
+    backend.path.write_text('[desktop]\ntheme = "light"\n')
+    with pytest.raises(ValueError, match="already valid"):
+        await backend.dispatch("settings.reset_invalid", {})
+    assert (await backend.dispatch("bootstrap", {}))["config"]["desktop"]["theme"] == "light"
+    assert not list(backend.path.parent.glob("*.bak"))
+
+
+async def test_failed_backup_leaves_invalid_config_and_onboarding(backend, monkeypatch):
+    backend.path.write_bytes(b"[broken")
+    Progress(4, True).save(backend.path)
+    def fail(*args, **kwargs):
+        raise OSError("Disk full")
+    monkeypatch.setattr("caelum.config.os.fsync", fail)
+    with pytest.raises(OSError, match="Disk full"):
+        await backend.dispatch("settings.reset_invalid", {})
+    assert backend.path.read_bytes() == b"[broken"
+    assert Progress.load(backend.path).complete
+    assert not list(backend.path.parent.glob("*.bak"))
 
 
 async def test_supervised_process_terminates_after_grace_deadline(backend, monkeypatch):
