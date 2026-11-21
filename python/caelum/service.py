@@ -9,6 +9,7 @@ import sys
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
+from functools import partial
 
 from .config import STT, App, Cleanup, Config, Desktop, load, save, validate
 from .credentials import get as credential
@@ -202,6 +203,35 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
             provider.arm_idle()
 
 
+async def handle_control_request(reader, writer, *, dispatch):
+    try:
+        peer = writer.get_extra_info("socket").getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, 12
+        )
+        if struct.unpack("3i", peer)[1] != os.getuid():
+            return
+        try:
+            line = await asyncio.wait_for(reader.readuntil(b"\n"), 1)
+            message = json.loads(line)
+            if not isinstance(message, dict):
+                raise ValueError("Expected a request object")
+        except (
+            ValueError, RecursionError, TimeoutError, asyncio.LimitOverrunError,
+            asyncio.IncompleteReadError,
+        ):
+            result = {"error": "Invalid request"}
+        else:
+            result = await dispatch(message)
+        writer.write(json.dumps(result).encode() + b"\n")
+        await writer.drain()
+    except ConnectionError:
+        pass  # The peer disconnected before the exchange finished.
+    finally:
+        writer.close()
+        with suppress(ConnectionError):
+            await writer.wait_closed()
+
+
 async def serve(config, config_path=None):
     if config.stt.engine != "local" and not await asyncio.to_thread(credential, config.stt.key_env):
         raise ValueError(
@@ -348,21 +378,6 @@ async def serve(config, config_path=None):
                 payload["error_code"] = "settings_busy"
             return payload
 
-    async def handle(reader, writer):
-        try:
-            peer = writer.get_extra_info("socket").getsockopt(
-                socket.SOL_SOCKET, socket.SO_PEERCRED, 12
-            )
-            if struct.unpack("3i", peer)[1] != os.getuid():
-                return
-            line = await asyncio.wait_for(reader.readline(), 1)
-            result = await dispatch(json.loads(line))
-            writer.write(json.dumps(result).encode() + b"\n")
-        finally:
-            with suppress(ConnectionError):
-                await writer.drain()
-            writer.close()
-
     async def monitor_shortcut():
         if native:
             await compositor_monitor(core, bindings)
@@ -381,7 +396,11 @@ async def serve(config, config_path=None):
         if windows:
             windows_desktop.endpoint = loop, dispatch
         else:
-            server = await asyncio.start_unix_server(handle, path=str(path), limit=CONTROL_FRAME_LIMIT)
+            server = await asyncio.start_unix_server(
+                partial(handle_control_request, dispatch=dispatch),
+                path=str(path),
+                limit=CONTROL_FRAME_LIMIT,
+            )
             path.chmod(0o600)
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
