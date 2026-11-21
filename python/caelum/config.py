@@ -3,7 +3,7 @@ import os
 import re
 import tempfile
 import tomllib
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -89,6 +89,13 @@ class Config:
     stt: STT = field(default_factory=STT)
     cleanup: Cleanup = field(default_factory=Cleanup)
     desktop: Desktop = field(default_factory=Desktop)
+
+    def same_runtime_settings(self, other):
+        desktop = replace(
+            self.desktop, theme=other.desktop.theme, color_theme=other.desktop.color_theme,
+            sidebar_visible=other.desktop.sidebar_visible,
+        )
+        return replace(self, desktop=desktop) == other
 
 
 def config_path():

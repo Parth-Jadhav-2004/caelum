@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## 0.5.2
+
+- Appearance and sidebar changes save quietly during dictation. Changes to recording mode, clipboard copying, and history settings take effect after dictation finishes or is cancelled, without restarting Caelum.
+
 ## 0.5.1
 
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
