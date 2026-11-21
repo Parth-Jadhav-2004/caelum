@@ -296,9 +296,13 @@ class HUD:
     async def emit(self, message):
         state = message["state"]
         phase = "recording" if state in ("starting", "listening", "recording") else state
-        if phase == self.last:
+        previous = self.last
+        if phase == previous:
             return
         self.last = phase
+        # Clearing model feedback is not a recording cancellation.
+        if phase == "hidden" and previous and previous.startswith("model_"):
+            return
         labels = {
             "model_downloading": "Downloading speech model",
             "model_stalled": "Model download stalled",

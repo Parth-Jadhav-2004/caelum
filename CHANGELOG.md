@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
+
 ## 0.5.1
 
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
