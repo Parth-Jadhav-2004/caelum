@@ -246,6 +246,67 @@ async def test_retry_uses_saved_audio(core, monkeypatch):
     assert core.state == "success"
 
 
+async def test_external_retry_retires_old_prompt_before_next_failure(core, monkeypatch):
+    prompts = asyncio.Queue()
+    cleaned = []
+
+    async def prompt(_, session, seconds):
+        answer = asyncio.get_running_loop().create_future()
+        prompts.put_nowait(answer)
+        try:
+            await core.handle(await answer)
+        finally:
+            await asyncio.sleep(0)  # Allow asynchronous notification teardown.
+            cleaned.append(answer)
+
+    monkeypatch.setattr("caelum.orchestrator.recovery_notification", prompt)
+    core.provider.stt.side_effect = ProviderError("offline")
+    await core.finalize(core.session)
+    first = await prompts.get()
+    try:
+        await core.handle("retry")
+        assert cleaned == [first] and first.cancelled()
+        await core.work
+        second = await prompts.get()
+        assert core.state == "error"
+        # Retry from the notification itself must not cancel or await itself.
+        core.provider.stt.side_effect = None
+        core.bindings.insert = AsyncMock(return_value=True)
+        notification = core.recovery_task
+        second.set_result("retry")
+        await notification
+        await core.work
+        assert core.state == "success"
+    finally:
+        await core.cancel()
+
+
+async def test_retry_while_failure_notice_pending_cannot_publish_stale_prompt(core, monkeypatch):
+    from caelum.orchestrator import recovery_notification
+
+    notifying = asyncio.Event()
+
+    async def pending_notice(message):
+        notifying.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(core, "notify", pending_notice)
+    core.provider.stt.side_effect = ProviderError("offline")
+    core.work = asyncio.create_task(core.finalize(core.session))
+    await notifying.wait()
+    old_work = core.work
+    try:
+        core.provider.stt.side_effect = None
+        core.bindings.insert = AsyncMock(return_value=True)
+        await core.handle("retry")
+        await core.work
+        assert core.state == "success" and old_work.done()
+        recovery_notification.assert_not_called()
+    finally:
+        old_work.cancel()
+        await asyncio.gather(old_work, return_exceptions=True)
+
+
 async def test_locked_session_never_inserts(core, monkeypatch):
     monkeypatch.setattr("caelum.orchestrator.session_locked", AsyncMock(return_value=True))
     insertion = AsyncMock()
