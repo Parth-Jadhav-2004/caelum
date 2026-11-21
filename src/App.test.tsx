@@ -13,6 +13,7 @@ import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { ipc, type Config } from "@/lib/ipc";
 import { useApp } from "@/stores/app";
+import { toast } from "sonner";
 import { testModels } from "@/test-models";
 import { testConfig } from "@/test-config";
 vi.mock("@tauri-apps/api/core", () => ({
@@ -82,6 +83,29 @@ it("starts the service after setup without automatically recording", async () =>
   await waitFor(() => expect(ipc).toHaveBeenCalledWith("service.start", {}));
   expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
   expect(document.documentElement.dataset.reducedMotion).toBe("true");
+});
+it.each(["queued", "installed"])("reconciles a %s Windows update without an online check", async (state) => {
+  const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT");
+  const confirmed = vi.spyOn(toast, "success");
+  const reminder = vi.spyOn(toast, "info");
+  try {
+    const original = vi.mocked(ipc).getMockImplementation()!;
+    vi.mocked(ipc).mockImplementation(((method, params) => method === "updates.pending"
+      ? Promise.resolve({ state, version: "0.5.1" }) : original(method, params)) as typeof ipc);
+    mount();
+    if (state === "installed")
+      await waitFor(() => expect(confirmed).toHaveBeenCalledWith("Update confirmed: Caelum 0.5.1 is running."));
+    else {
+      await waitFor(() => expect(reminder).toHaveBeenCalledWith(expect.stringContaining("0.5.1 is not installed yet")));
+      expect(confirmed).not.toHaveBeenCalled();
+    }
+    expect(ipc).not.toHaveBeenCalledWith("updates.check", {});
+    expect(ipc).not.toHaveBeenCalledWith("updates.apply", {});
+  } finally {
+    agent.mockRestore();
+    confirmed.mockRestore();
+    reminder.mockRestore();
+  }
 });
 it("collapses the sidebar and persists the preference", async () => {
   mount();
@@ -191,7 +215,7 @@ it("shows stable update results beside the update controls and links to releases
     method === "updates.check"
       ? Promise.resolve(null)
       : method === "updates.pending"
-        ? Promise.resolve(false)
+        ? Promise.resolve(null)
         : implementation(method as never, params as never)) as typeof ipc);
   mount();
   await screen.findByRole("heading", { name: /Record, finish/ });
@@ -417,6 +441,40 @@ it("lets shortcut capture consume Ctrl+B without collapsing the sidebar", async 
   expect(
     screen.getByRole("button", { name: "Toggle Sidebar" }),
   ).toHaveAttribute("aria-expanded", "true");
+});
+
+it("separates a saved portal preference from the binding reported before and after restart", async () => {
+  const session = {
+    ...useApp.getState().status!,
+    backend: "portable", hotkey: "CTRL + V", shortcut_mode: "portal",
+    shortcut_description: "Control+V",
+  };
+  useApp.setState({ status: session });
+  mount();
+  await screen.findByText("Active shortcut: Control+V");
+  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await screen.findByText("Pending shortcut: SUPER + ALT + V");
+  expect(screen.getByText("Active shortcut: Control+V")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Restart Caelum" }));
+  expect(invoke).toHaveBeenCalledWith("restart_app", { discard: false });
+
+  act(() => useApp.setState({ status: {
+    ...session, hotkey: config.app.hotkey, shortcut_mode: "pending",
+    shortcut_description: "Waiting for desktop shortcut approval.",
+  } }));
+  expect(screen.getByText("Waiting for desktop shortcut approval.")).toBeInTheDocument();
+  expect(screen.queryByText(/Active shortcut:/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Restart Caelum" })).not.toBeInTheDocument();
+  act(() => useApp.setState({ status: {
+    ...session, hotkey: config.app.hotkey, shortcut_description: "Meta+D",
+  } }));
+  expect(screen.getByText("Active shortcut: Meta+D")).toBeInTheDocument();
+  expect(screen.queryByText(/Pending shortcut:/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Restart Caelum" })).not.toBeInTheDocument();
+  act(() => useApp.setState({ status: {
+    ...session, hotkey: config.app.hotkey, shortcut_mode: "manual", shortcut_description: "Use Record",
+  } }));
+  expect(screen.getByText("No active portal shortcut. Use Record")).toBeInTheDocument();
 });
 
 it("keeps a background model switch when an appearance edit is waiting to save", async () => {

@@ -53,24 +53,36 @@ Python engine and checks WebView2 frontend startup. Successful runs upload
 `Caelum-Windows-x64` for development testing. The public stable installer and
 its checksums are published together in GitHub Releases.
 
-The stable update signer includes a Windows installer when
-`caelum-<version>-x64-setup.exe` is present in the release directory. Windows
-rechecks its signed manifest and hash before opening it.
+For in-app updates, Caelum verifies the release manifest signature and the
+installer's SHA-256 hash. The `.exe` itself is not Authenticode-signed, so
+SmartScreen may prompt. **Installer opened** means setup has started. Caelum
+closes so setup can replace its files and confirms the running version on next
+launch. If setup was cancelled or blocked, use **Settings → System → Open
+installer** to retry the staged download.
 
 ## Desktop behavior to verify on a Windows machine
 
 - Complete setup with a real microphone, once with an online provider and once
   with a downloaded model and the network disconnected.
-- Focus a text field in Notepad. Use Ctrl + Win, the default for new setups, or your configured hold or toggle shortcut.
+- Focus a text field in Notepad. Use **Ctrl+Win**, the default for new setups, or your configured hold or toggle shortcut.
   The feedback pill should not take focus. Supported Windows Edit/RichEdit
-  controls receive an addressed paste. For other controls or a focus change,
-  use **Ctrl+V** in the intended field. A global synthetic Ctrl+V is never sent.
+  controls receive the text at the caret or selection, leaving your clipboard intact.
+  For other controls or a focus change, wait for **Copied**, then use **Ctrl+V**
+  in the intended field. If a field truncates the text, the clipboard changed, or copying failed,
+  choose **Retry** to copy the finished transcript before the retry window expires.
+  This also works with history saving off. With automatic clipboard copy off,
+  unsupported or failed insertions leave your clipboard untouched. Use **Copy
+  transcript** on Home before starting another recording.
 - Cancel with Escape, lock during capture, change input devices and test
   retry after a network interruption. Check tray hide/show and quit.
 - Check light, dark and high-contrast appearances, the history calendar,
   export, dictionary, model switching, and Start Menu/startup shortcuts.
 
 Config and setup metadata use `%APPDATA%\Caelum`; transcripts, models and the
-update cache use `%LOCALAPPDATA%\Caelum`. Provider secrets are stored in Windows
-Credential Manager. The GUI-owned service uses an in-process control channel;
+update cache use `%LOCALAPPDATA%\Caelum`. Setup shows where each provider key
+is saved. Caelum prefers Windows Credential Manager; if it cannot save there,
+it encrypts the key for your Windows account using DPAPI before writing it to
+`credentials.json`. Older plaintext entries are encrypted on first access. If
+Windows cannot protect a key, Caelum reports the failure rather than saving a
+plaintext copy. The GUI-owned service uses an in-process control channel;
 Linux compositor, portal and Unix-socket CLI integrations are Linux-specific.

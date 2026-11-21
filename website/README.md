@@ -38,8 +38,8 @@ cryptographically authenticate the packages itself; the user verifies the
 checksum, and the app verifies signed update metadata during an update.
 
 Pages runs this generator before deployment on website changes, a published
-release, or a successful **Promote to testing or production** workflow (needed because
-releases created using GITHUB_TOKEN do not trigger release workflows). It checks
+release, or an explicit dispatch from successful production publication (needed
+because releases created using GITHUB_TOKEN do not trigger release workflows). It checks
 out `main` for the site and updates the deployment artifact without committing
 back to the repository. The workflow can also be run manually. A generation
 failure prevents publication rather than inventing download links.

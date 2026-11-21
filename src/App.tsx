@@ -122,6 +122,9 @@ export default function App() {
               running: s.status.running,
               paused: s.status.paused,
               pending_audio: s.status.pending_audio,
+              backend: s.status.backend,
+              shortcut_mode: s.status.shortcut_mode,
+              shortcut_description: s.status.shortcut_description,
             }
           : null,
       ),
@@ -158,6 +161,18 @@ export default function App() {
     initialized.current = true;
     draft.current = bootstrap.data.config;
     setConfig(bootstrap.data.config);
+    // This is a local version check, even when online update checks are off.
+    if (/Windows/i.test(navigator.userAgent))
+      void ipc("updates.pending", {})
+        .then((pending) => {
+          if (pending?.state === "installed")
+            toast.success(`Update confirmed: Caelum ${pending.version} is running.`);
+          else if (pending?.state === "queued") {
+            setUpdateAvailable(true);
+            toast.info(`Caelum ${pending.version} is not installed yet. Open the installer from Settings to retry.`);
+          }
+        })
+        .catch(() => {});
     if (!bootstrap.data.setup.complete) navigate("setup");
     else {
       void action(() => ipc("service.start", {}));
@@ -416,9 +431,14 @@ export default function App() {
                       />
                       {status?.title ?? "Connecting…"}
                     </p>
-                    {!["home", "settings"].includes(page) && (
-                      <kbd className="inline-block">{formatShortcut(config.app.hotkey)}</kbd>
-                    )}
+                    {!["home", "settings"].includes(page) &&
+                      (status?.backend !== "portable" || status.shortcut_mode === "portal") && (
+                        <kbd className="inline-block">
+                          {status?.backend === "portable"
+                            ? status.shortcut_description
+                            : formatShortcut(config.app.hotkey)}
+                        </kbd>
+                      )}
                     <label className="flex items-center justify-between gap-3 text-body">
                       Pause
                       <Switch

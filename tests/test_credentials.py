@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,6 +11,7 @@ from caelum import credentials
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
     monkeypatch.setattr(credentials, "_secret", Mock(return_value=None))
 
 
@@ -98,3 +100,56 @@ def test_describes_storage_without_secrets(storage, monkeypatch):
     description = credentials.describe("GROQ_API_KEY")
     assert description["storage"] == storage
     assert "private-test-key" not in json.dumps(description)
+
+
+def test_windows_upgrades_old_file_keys_without_losing_vault_copy_or_tombstone(monkeypatch):
+    monkeypatch.setattr(credentials, "_WINDOWS", False)
+    credentials.store("ONE", "synthetic-first")
+    data = credentials._read()
+    data["ONE"]["keyring_copy"] = True
+    data["TWO"] = {"storage": "file", "value": "synthetic-second"}
+    data["REMOVED"] = {"storage": "deleted"}
+    credentials._write(data)
+    monkeypatch.setenv("REMOVED", "synthetic-environment")
+    monkeypatch.setattr(credentials, "_WINDOWS", True)
+    blobs = {b"synthetic-first": b"blob1", b"synthetic-second": b"blob2"}
+    crypt = SimpleNamespace(
+        CryptProtectData=lambda plain, **kw: blobs[plain],
+        CryptUnprotectData=lambda blob, **kw: ("", next(k for k, v in blobs.items() if v == blob)),
+    )
+    monkeypatch.setitem(sys.modules, "pywintypes", SimpleNamespace(error=OSError))
+    monkeypatch.setitem(sys.modules, "win32crypt", crypt)
+    assert credentials.describe("ONE")["storage"] == "dpapi"
+    assert "synthetic-" not in credentials._path().read_text()
+    assert credentials.get("ONE") == "synthetic-first"
+    assert credentials.get("TWO") == "synthetic-second"
+    assert credentials.get("REMOVED") is None
+    with pytest.raises(RuntimeError, match="Credential Manager"):
+        credentials.delete("ONE")
+    credentials.delete("TWO")
+    assert credentials.get("TWO") is None
+
+
+def test_windows_fails_closed_without_data_protection(monkeypatch):
+    monkeypatch.setattr(credentials, "_WINDOWS", False)
+    credentials.store("OLD", "synthetic-legacy")
+    original = credentials._path().read_bytes()
+    monkeypatch.setattr(credentials, "_WINDOWS", True)
+    monkeypatch.setitem(sys.modules, "win32crypt", None)
+    with pytest.raises(RuntimeError, match="data protection"):
+        credentials.store("NEW", "synthetic-new")
+    with pytest.raises(RuntimeError, match="still unencrypted"):
+        credentials.get("OLD")
+    assert credentials.describe("OLD")["storage"] == "unavailable"
+    assert credentials._path().read_bytes() == original
+    assert not list(credentials._path().parent.glob(".credentials-*"))
+
+
+def test_windows_unreadable_dpapi_key_does_not_fall_back_to_environment(monkeypatch):
+    credentials._write({"ONE": {"storage": "dpapi", "value": "not-base64!"}})
+    monkeypatch.setattr(credentials, "_WINDOWS", True)
+    monkeypatch.setitem(sys.modules, "pywintypes", SimpleNamespace(error=OSError))
+    monkeypatch.setitem(sys.modules, "win32crypt", SimpleNamespace())
+    monkeypatch.setenv("ONE", "synthetic-env")
+    with pytest.raises(RuntimeError, match="Cannot unlock"):
+        credentials.get("ONE")

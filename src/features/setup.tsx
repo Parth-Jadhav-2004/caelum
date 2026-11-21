@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Eye, EyeOff } from "lucide-react";
 import { CaelumBrand } from "@/components/brand";
-import { ipc, type Config, errorText } from "@/lib/ipc";
+import { ipc, type Config, type ShortcutCheck, errorText } from "@/lib/ipc";
 import { formatShortcut } from "@/lib/shortcut";
 import { useApp } from "@/stores/app";
 import { action, Confirm, CopyButton, briefError } from "@/components/common";
@@ -88,7 +88,7 @@ export function Setup({
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [micPassed, setMicPassed] = useState(false);
-  const [keyStoredInFile, setKeyStoredInFile] = useState(false);
+  const [savedStorage, setSavedStorage] = useState<Record<string, string>>({});
   const [micAttempt, setMicAttempt] = useState(0);
   const [practice, setPractice] = useState(""),
     [remove, setRemove] = useState(false);
@@ -99,7 +99,8 @@ export function Setup({
   useEffect(() => {
     document.getElementById("setup-title")?.focus({ preventScroll: true });
   }, [step]);
-  const [shortcutHint, setShortcutHint] = useState("");
+  const [shortcut, setShortcut] = useState<ShortcutCheck | null>(null);
+  const manual = shortcut?.state === "manual";
   const generation = useRef(0);
   const microphoneSave = useRef(Promise.resolve());
   const shortcutRecording = useRef(false);
@@ -129,27 +130,23 @@ export function Setup({
   useEffect(() => {
     if (step !== 3) return;
     let disposed = false;
+    setShortcut(null);
+    setNotice("");
     void ipc("shortcut.check", {})
       .then((result) => {
-        if (!disposed)
-          setShortcutHint(
-            typeof result === "string" && result.includes("Record / Finish recording")
-              ? result
-              : "",
-          );
+        if (!disposed) setShortcut(result);
       })
       .catch((e) => {
         if (!disposed) {
-          setShortcutHint("");
           setNotice(errorText(e));
         }
       });
     return () => {
       disposed = true;
     };
-  }, [step, config.app.hotkey]);
+  }, [step, config.app.backend, config.app.hotkey]);
   useEffect(() => {
-    if (step !== 4 || (mode === "local" && !localReady)) return;
+    if (step !== 4 || manual || (mode === "local" && !localReady)) return;
     const parts = config.app.hotkey
       .split("+")
       .map((v) => v.trim().toUpperCase());
@@ -214,6 +211,7 @@ export function Setup({
     recordPractice,
     mode,
     localReady,
+    manual,
   ]);
   useEffect(
     () => () => {
@@ -323,12 +321,17 @@ export function Setup({
         });
         setKeys({});
         await bootstrap.refetch();
-        setKeyStoredInFile(Object.values(result.storage).includes("file"));
+        setSavedStorage(result.storage);
         if (manageKeys) openSettings("Transcription");
         else setStep(2);
       } else if (step === 2 && micPassed) setStep(3);
       else if (step === 3) {
-        await ipc("shortcut.check", {});
+        const result = await ipc(
+          "shortcut.check",
+          manual ? { accept_manual: true } : {},
+        );
+        setShortcut(result);
+        if (result.state === "manual" && !manual) return;
         setStep(4);
       } else if (step === 4) {
         if (!practicePassed) await recordPractice();
@@ -530,12 +533,9 @@ export function Setup({
                     </Button>
                   </div>
                   <p className="text-meta text-muted-foreground">
-                    {typeof credential === "object" &&
-                    ["keyring", "file", "environment"].includes(
-                      credential.storage,
-                    )
-                      ? "Your key is saved"
-                      : "Add a key to get started"}
+                    {typeof credential === "string"
+                      ? credential
+                      : (credential?.description ?? "Add a key to get started")}
                   </p>
                 </div>
                 {config.stt.base_url.startsWith("https://api.groq.com/") && (
@@ -664,10 +664,10 @@ export function Setup({
                     ? "Press to talk. Press again to finish recording."
                     : "Hold to talk. Let go to finish recording."}
                 </p>
-                {shortcutHint && (
+                {shortcut && shortcut.state !== "available" && (
                   <>
-                    <p role="status" className="text-body">
-                      {shortcutHint}
+                    <p role={manual ? "alert" : "status"} className="text-body">
+                      {shortcut.message}
                     </p>
                     <details>
                       <summary>Shortcut not working?</summary>
@@ -691,8 +691,11 @@ export function Setup({
                   </p>
                 )}
                 <p className="text-body">
-                  Choose Record practice, or use your shortcut{" "}
-                  <kbd>{formatShortcut(config.app.hotkey)}</kbd> and say:
+                  Choose Record practice
+                  {!manual && (
+                    <>, or use your shortcut <kbd>{formatShortcut(config.app.hotkey)}</kbd></>
+                  )}{" "}
+                  and say:
                 </p>
                 <p className="text-body">
                   “A little less typing, a little more room to think.”
@@ -726,7 +729,14 @@ export function Setup({
                       config.app.microphone ?? "System default",
                       2,
                     ],
-                    ["Shortcut", formatShortcut(config.app.hotkey), 3],
+                    [
+                      "Shortcut",
+                      manual
+                        ? "Record / Finish recording"
+                        : formatShortcut(config.app.hotkey) +
+                          (shortcut?.state === "pending" ? " (pending desktop approval)" : ""),
+                      3,
+                    ],
                   ].map(([label, value, target]) => (
                     <div
                       key={String(label)}
@@ -784,11 +794,23 @@ export function Setup({
               Try it later
             </Button>
           )}
-          {keyStoredInFile && (
-            <p role="alert" className="text-body">
-              Key stored without encryption. Review Settings after setup.
-            </p>
-          )}
+          {step > 1 &&
+            Object.entries(savedStorage).map(([keyName, storage]) => {
+              const saved = bootstrap.data?.credentials[keyName];
+              const description =
+                storage === "file"
+                  ? "Key stored without encryption. Review Settings after setup."
+                  : storage === "dpapi"
+                    ? "Key encrypted for your Windows account (DPAPI)."
+                    : typeof saved === "object" && saved.storage === storage
+                      ? saved.description
+                      : "Key saved in the system key store.";
+              return (
+                <p key={keyName} role={storage === "file" ? "alert" : "status"} className="text-body">
+                  {keyName}: {description}
+                </p>
+              );
+            })}
           <div className="flex shrink-0 justify-between gap-3">
             {manageKeys ? (
               <Button
@@ -847,7 +869,9 @@ export function Setup({
                       ? "Done"
                       : step === 4 && !practicePassed
                         ? "Record practice"
-                        : "Continue"}
+                        : step === 3 && manual
+                          ? "Use Record / Finish recording"
+                          : "Continue"}
             </Button>
           </div>
         </footer>

@@ -2,8 +2,16 @@
 
 Release notes, newest first.
 
-## Unreleased
+## 0.5.1
 
+- New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
+- Windows dictation preserves the clipboard when inserting into a focused Edit or RichEdit field. If direct insertion fails and the clipboard has changed, choose Retry to copy the finished transcript.
+- Turn off automatic clipboard copying in Settings to keep your clipboard intact, including when insertion fails. **Copy transcript** on Home works even with history disabled. When a transcript is ready to copy, you can start the next recording from the tray.
+- Windows keeps recovery notices on Home for clipboard fallback, microphone errors and expired retries. The updater says **Installer opened** and checks the running version on next launch; a cancelled installer can be reopened.
+- Windows setup uses your regional language and detects NVIDIA display adapters when recommending a speech model. An explicit language selection takes priority.
+- If Windows Credential Manager is unavailable, Caelum protects saved provider keys with your Windows account using DPAPI. Existing plaintext fallback entries are migrated on access.
+- New profiles start with an empty custom vocabulary. Existing vocabulary is preserved.
+- Caelum verifies local model content before loading it and offers repair for damaged downloads. Desktop engine startup and connection failures now report errors and allow the app to quit.
 - The website demo now shows the full transcript after hold-to-talk recording and processing finish. The FAQ explains how to copy or insert it on each supported desktop.
 
 ## 0.5.0

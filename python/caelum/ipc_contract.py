@@ -61,8 +61,13 @@ STATUS = obj(
         "detail": STRING,
         "paused": BOOL,
         "pending_audio": BOOL,
+        "can_copy": BOOL,
         "storage_error": BOOL,
+        "notice": STRING,
         "backend": STRING,
+        "hotkey": STRING,
+        "shortcut_mode": STRING,
+        "shortcut_description": STRING,
         "engine": obj({
             "kind": {"enum": ["online", "local"]}, "model": union(STRING, NULL),
             "state": {"enum": ["ready", "loading", "error", "missing", "unloaded"]}, "message": STRING,
@@ -72,7 +77,10 @@ STATUS = obj(
             extra=True,
         ),
     },
-    optional=("pending_audio", "storage_error", "backend", "feedback", "engine"),
+    optional=(
+        "pending_audio", "can_copy", "storage_error", "notice", "backend", "hotkey",
+        "shortcut_mode", "shortcut_description", "feedback", "engine",
+    ),
     extra=True,
 )
 ACK = obj({"ok": {"enum": [True]}})
@@ -150,7 +158,7 @@ method(
     "control",
     obj(
         {
-            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume"]},
+            "action": {"enum": ["start", "stop", "cancel", "retry", "pause", "resume", "copy"]},
             "discard": BOOL,
         },
         optional=("discard",),
@@ -170,7 +178,8 @@ method(
     obj({"consent": BOOL, "keys": STRINGS}, optional=("keys",)),
     obj({"storage": STRINGS}),
 )
-method("shortcut.check", result=STRING)
+method("shortcut.check", obj({"accept_manual": BOOL}, optional=("accept_manual",)),
+       obj({"state": {"enum": ["available", "pending", "manual"]}, "message": STRING}))
 method("setup.finish", obj({"skip_practice": BOOL}, optional=("skip_practice",)))
 method("setup.stage", obj({"stage": {"enum": [0, 1, 2, 3]}}))
 method("setup.skip")
@@ -180,9 +189,12 @@ method(
 method("updates.check", result=union(obj({"version": STRING}), NULL))
 method("updates.testing", result=union(obj({"version": STRING, "installed": BOOL}), NULL))
 method("updates.stage", result=STRING)
-method("updates.apply", result=BOOL)
+method("updates.apply", result={"enum": ["installed", "installer_launched", "no_update"]})
 method("updates.discard")
-method("updates.pending", result=BOOL)
+method("updates.pending", result=union(
+    NULL, obj({"state": {"enum": ["unverified"]}, "version": NULL}),
+    obj({"state": {"enum": ["queued", "installed"]}, "version": STRING}),
+))
 method("shutdown", obj({"discard": BOOL}, optional=("discard",)))
 
 MODEL_PROGRESS = obj({

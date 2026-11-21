@@ -58,11 +58,14 @@ async def test_hyprland_shortcut_conflict(monkeypatch):
 async def test_portable_shortcut_explains_permission_and_manual_fallback(monkeypatch):
     monkeypatch.setattr("caelum.onboarding.backend_name", lambda _: "portable")
     config = Config()
+    config.app.hotkey = "CTRL + SUPER"
     result = await check_shortcut(config)
-    assert "non-modifier key" in result and "Record / Finish" in result
+    assert result["state"] == "manual"
+    assert "non-modifier key" in result["message"] and "Record / Finish" in result["message"]
     config.app.hotkey = "SUPER + ALT + V"
     result = await check_shortcut(config)
-    assert "permission" in result and "Record / Finish" in result
+    assert result["state"] == "pending"
+    assert "permission" in result["message"] and "Record / Finish" in result["message"]
 
 
 def test_local_recording_cancel_closes_and_discards(monkeypatch):

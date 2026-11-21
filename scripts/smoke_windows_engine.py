@@ -56,6 +56,17 @@ async def online_setup():
             assert result["storage"][key_name] == "keyring"
             assert credentials.get(key_name) == key
             assert key not in config_path().with_name("credentials.json").read_text()
+            assert "Windows Credential Manager" in credentials.describe(key_name)["description"]
+            # Only fail the vault write: exercise real current-user DPAPI in
+            # both the embedded runtime and the installed application.
+            import pywintypes
+
+            replacement = uuid.uuid4().hex
+            with patch("win32cred.CredWrite", side_effect=pywintypes.error(1312, "CredWrite", "offline")):
+                assert credentials.store(key_name, replacement) == "dpapi"
+            assert replacement not in config_path().with_name("credentials.json").read_text()
+            assert credentials.get(key_name) == replacement
+            assert credentials.describe(key_name)["storage"] == "dpapi"
         finally:
             server.shutdown()
             credentials.delete(key_name)
@@ -63,6 +74,7 @@ async def online_setup():
 
 
 async def desktop_delivery():
+    import win32clipboard
     import win32con
     import win32gui
     from caelum.config import App
@@ -74,13 +86,20 @@ async def desktop_delivery():
     try:
         binding = Bindings("CTRL + ALT + V", "hold")
         binding.core = SimpleNamespace(hud=hud)
-        original = SimpleNamespace(top=edit, address=edit, pid=os.getpid(), output="")
-        with patch("caelum.windows_desktop.focused_target", return_value=original):
+        focused = SimpleNamespace(top=edit, address=edit, pid=os.getpid(), output="")
+        with patch("caelum.windows_desktop.focused_target", return_value=focused):
+            original = await binding.target()
             assert await binding.insert("Unicode: café", original)
             assert win32gui.GetWindowText(edit) == "Unicode: café"
+            original = await binding.target()
         with patch("caelum.windows_desktop.focused_target", return_value=None):
             assert not await binding.insert("manual paste", original)
             assert win32gui.GetWindowText(edit) == "Unicode: café"
+            win32clipboard.OpenClipboard(hud.window)
+            try:
+                assert win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT) == "manual paste"
+            finally:
+                win32clipboard.CloseClipboard()
         focus = win32gui.GetForegroundWindow()
         await hud.emit({"state": "recording", "history": [0.5] * 17})
         assert win32gui.GetForegroundWindow() == focus
@@ -90,7 +109,11 @@ async def desktop_delivery():
 
 
 def main():
-    methods = ["bootstrap", "status", "models.list", "history", "shutdown"]
+    from caelum import updates
+
+    # Exercise the packaged trust policy with the Windows crypto backend.
+    assert updates.trusted_public_keys(updates.BASE)
+    methods = ["bootstrap", "status", "models.list", "history", "updates.pending", "shutdown"]
     with tempfile.TemporaryDirectory() as directory:
         env = {**os.environ, "APPDATA": directory, "LOCALAPPDATA": directory}
         # Leave the pipe open until all replies arrive (EOF initiates shutdown).
@@ -106,6 +129,8 @@ def main():
                         assert "result" in frame, (method, frame)
                         if method == "history":
                             assert frame["result"] == []
+                        if method == "updates.pending":
+                            assert frame["result"] is None
                         break
                 else:
                     raise RuntimeError(f"Engine exited during {method}")

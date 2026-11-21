@@ -18,8 +18,13 @@ export interface Status {
   detail: string;
   paused: boolean;
   pending_audio?: boolean;
+  can_copy?: boolean;
   storage_error?: boolean;
+  notice?: string;
   backend?: string;
+  hotkey?: string;
+  shortcut_mode?: string;
+  shortcut_description?: string;
   feedback?: Feedback;
   engine?: {
     kind: "online" | "local";
@@ -66,6 +71,10 @@ export interface Device {
 }
 export interface Ack {
   ok: boolean;
+}
+export interface ShortcutCheck {
+  state: "available" | "pending" | "manual";
+  message: string;
 }
 export interface ModelProgress {
   id: string;
@@ -148,7 +157,7 @@ interface Methods {
   "service.stop": [{ discard?: boolean }, Ack];
   control: [
     {
-      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume";
+      action: "start" | "stop" | "cancel" | "retry" | "pause" | "resume" | "copy";
       discard?: boolean;
     },
     Ack,
@@ -166,7 +175,7 @@ interface Methods {
     { consent: boolean; keys?: Record<string, string> },
     { storage: Record<string, string> },
   ];
-  "shortcut.check": [Record<string, never>, string];
+  "shortcut.check": [{ accept_manual?: boolean }, ShortcutCheck];
   "setup.finish": [{ skip_practice?: boolean }, Ack];
   "setup.stage": [{ stage: number }, Ack];
   "setup.skip": [Record<string, never>, Ack];
@@ -177,9 +186,15 @@ interface Methods {
     { version: string; installed: boolean } | null,
   ];
   "updates.stage": [Record<string, never>, string];
-  "updates.apply": [Record<string, never>, boolean];
+  "updates.apply": [
+    Record<string, never>,
+    "installed" | "installer_launched" | "no_update",
+  ];
   "updates.discard": [Record<string, never>, Ack];
-  "updates.pending": [Record<string, never>, boolean];
+  "updates.pending": [
+    Record<string, never>,
+    null | { state: "unverified"; version: null } | { state: "queued" | "installed"; version: string },
+  ];
 }
 export async function ipc<M extends keyof Methods>(
   method: M,

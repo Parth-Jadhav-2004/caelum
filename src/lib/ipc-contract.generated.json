@@ -201,6 +201,9 @@
                   "history_enabled": {
                     "type": "boolean"
                   },
+                  "auto_copy": {
+                    "type": "boolean"
+                  },
                   "check_updates": {
                     "type": "boolean"
                   },
@@ -225,6 +228,7 @@
                 },
                 "required": [
                   "history_enabled",
+                  "auto_copy",
                   "check_updates",
                   "theme",
                   "color_theme",
@@ -332,10 +336,25 @@
           "pending_audio": {
             "type": "boolean"
           },
+          "can_copy": {
+            "type": "boolean"
+          },
           "storage_error": {
             "type": "boolean"
           },
+          "notice": {
+            "type": "string"
+          },
           "backend": {
+            "type": "string"
+          },
+          "hotkey": {
+            "type": "string"
+          },
+          "shortcut_mode": {
+            "type": "string"
+          },
+          "shortcut_description": {
             "type": "string"
           },
           "engine": {
@@ -760,6 +779,9 @@
                   "history_enabled": {
                     "type": "boolean"
                   },
+                  "auto_copy": {
+                    "type": "boolean"
+                  },
                   "check_updates": {
                     "type": "boolean"
                   },
@@ -870,7 +892,8 @@
               "cancel",
               "retry",
               "pause",
-              "resume"
+              "resume",
+              "copy"
             ]
           },
           "discard": {
@@ -1080,12 +1103,33 @@
     "shortcut.check": {
       "params": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "accept_manual": {
+            "type": "boolean"
+          }
+        },
         "required": [],
         "additionalProperties": false
       },
       "result": {
-        "type": "string"
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "available",
+              "pending",
+              "manual"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "message"
+        ],
+        "additionalProperties": false
       }
     },
     "setup.finish": {
@@ -1264,7 +1308,11 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "enum": [
+          "installed",
+          "installer_launched",
+          "no_update"
+        ]
       }
     },
     "updates.discard": {
@@ -1297,7 +1345,48 @@
         "additionalProperties": false
       },
       "result": {
-        "type": "boolean"
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "unverified"
+                ]
+              },
+              "version": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "queued",
+                  "installed"
+                ]
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "shutdown": {
@@ -1801,10 +1890,25 @@
       "pending_audio": {
         "type": "boolean"
       },
+      "can_copy": {
+        "type": "boolean"
+      },
       "storage_error": {
         "type": "boolean"
       },
+      "notice": {
+        "type": "string"
+      },
       "backend": {
+        "type": "string"
+      },
+      "hotkey": {
+        "type": "string"
+      },
+      "shortcut_mode": {
+        "type": "string"
+      },
+      "shortcut_description": {
         "type": "string"
       },
       "engine": {

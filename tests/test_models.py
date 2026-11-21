@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import tarfile
 from copy import deepcopy
 from unittest.mock import Mock
@@ -9,6 +10,8 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from caelum import models
+from caelum.local_stt import LocalEngine
+from caelum.providers import ProviderError
 
 
 @pytest.fixture
@@ -24,6 +27,13 @@ def tiny_catalog(monkeypatch):
     }
     monkeypatch.setattr(models, "catalog", lambda: {"version": 1, "models": [model]})
     return model, payload
+
+
+def corrupt_weights(path, *, preserve_mtime):
+    before = path.stat()
+    path.write_bytes(b"x" * before.st_size)
+    mtime = before.st_mtime_ns if preserve_mtime else before.st_mtime_ns - 60_000_000_000
+    os.utime(path, ns=(before.st_atime_ns, mtime))
 
 
 def test_shipped_catalog_is_pinned_and_consistent():
@@ -55,7 +65,7 @@ async def test_download_verifies_receipt_and_skips_installed(tmp_path, tiny_cata
         await manager.download(model["id"])
         assert handler.call_count == 1
         # Modified time invalidates the quick scan without rehashing.
-        (path / "model.bin").write_bytes(b"x" * len(payload))
+        corrupt_weights(path / "model.bin", preserve_mtime=False)
         assert not models.installed(model["id"], tmp_path)
         assert models.verify(model["id"], tmp_path) == {"ok": False, "bad_files": ["model.bin"]}
         assert manager.remove(model["id"]) > len(payload)
@@ -249,7 +259,7 @@ async def test_restart_restores_paused_and_rechecks_corrupt_receipt(tmp_path, ti
     work = tmp_path / ".download" / model["id"]
     work.mkdir(parents=True)
     (work / "model.bin.part").write_bytes(payload[:4])
-    (tmp_path / model["id"] / "model.bin").write_bytes(b"x" * len(payload))
+    corrupt_weights(tmp_path / model["id"] / "model.bin", preserve_mtime=False)
     manager = models.ModelManager(tmp_path)
     assert manager.states[model["id"]]["state"] == "paused"
     await manager.recover()
@@ -292,8 +302,35 @@ async def test_startup_uses_size_and_mtime_cache_without_hashing(tmp_path, tiny_
     manager = models.ModelManager(tmp_path)
     await manager.recover()
     assert models.installed(model["id"], tmp_path)
-    (path / "model.bin").write_bytes(b"x" * len(payload))
+    corrupt_weights(path / "model.bin", preserve_mtime=False)
     assert not models.installed(model["id"], tmp_path)
+
+
+async def test_load_rejects_corrupt_weights_with_matching_stats_and_download_repairs(
+    tmp_path, tiny_catalog
+):
+    model, payload = tiny_catalog
+    model.update(languages=["en"], auto_language=True)
+    adapter = Mock()
+    engine = LocalEngine(root=tmp_path, adapter_factory=adapter, speech_detector=Mock())
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, content=payload)
+        )) as client:
+            manager = models.ModelManager(tmp_path, client)
+            path = await manager.download(model["id"])
+            corrupt_weights(path / "model.bin", preserve_mtime=True)
+            assert models.installed(model["id"], tmp_path)
+            with pytest.raises(ProviderError, match="Check files.*Download again"):
+                await engine.load(model["id"])
+            adapter.assert_not_called()
+
+            await manager.download(model["id"])
+            assert (path / "model.bin").read_bytes() == payload
+            await engine.load(model["id"])
+            adapter.assert_called_once()
+    finally:
+        await engine.aclose()
 
 
 async def test_legacy_receipt_is_verified_once_then_cached(tmp_path, tiny_catalog, monkeypatch):

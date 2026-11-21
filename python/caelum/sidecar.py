@@ -328,9 +328,11 @@ class Backend:
             return await self.status()
         if method == "models.list":
             await self.models.recover()
+            if os.name == "nt" and "language" in params:
+                config.stt.language = params["language"]
             hardware = await asyncio.to_thread(detect, config)
-            if "language" in params:
-                hardware.language = params["language"] or hardware.language
+            if os.name != "nt" and params.get("language"):
+                hardware.language = params["language"]
             result = await asyncio.to_thread(self.models.list, config, hardware)
             status = await self.status()
             for model in result["models"]:
@@ -407,7 +409,7 @@ class Backend:
             action = params.get("action")
             if self.sample_lock.locked() and action in {"start", "retry"}:
                 raise RuntimeError("Finish the microphone test first")
-            if action not in {"start", "stop", "retry", "cancel", "pause", "resume"}:
+            if action not in {"start", "stop", "retry", "cancel", "pause", "resume", "copy"}:
                 raise ValueError("Unknown recording action")
             if action == "pause" and not params.get("discard"):
                 await self.idle()
@@ -440,7 +442,7 @@ class Backend:
                 if previous.app.microphone != config.app.microphone:
                     self.setup_checks.discard("microphone")
                     self.setup_checks.discard("practice")
-                if previous.app.hotkey != config.app.hotkey:
+                if previous.app.hotkey != config.app.hotkey or previous.app.backend != config.app.backend:
                     self.setup_checks.discard("shortcut")
             return {"saved": True, **({"warning": warning} if warning else {})}
         elif method == "providers.check":
@@ -511,7 +513,10 @@ class Backend:
                 await asyncio.gather(validation, return_exceptions=True)
         elif method == "shortcut.check":
             result = await check_shortcut(config)
-            self.setup_checks.add("shortcut")
+            if result["state"] == "manual" and not params.get("accept_manual"):
+                self.setup_checks.discard("shortcut")
+            else:
+                self.setup_checks.add("shortcut")
             return result
         elif method in {"microphone.test", "practice"}:
             interactive = method == "practice" and params.get("interactive") is True
@@ -528,7 +533,7 @@ class Backend:
                 target = None
                 if method == "practice" and params.get("insert") is True:
                     from .portable import backend_name
-                    if backend_name(config) == "hyprland":
+                    if backend_name(config) == "hyprland" and config.desktop.auto_copy:
                         from .linux import target_at_press
                         target = await target_at_press()
                         # Setup only inserts into the desktop window that owns this sidecar.

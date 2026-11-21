@@ -306,7 +306,12 @@ class LocalEngine:
     def _load(self, model_id):
         began = time.monotonic()
         try:
-            if not installed(model_id, self.root):
+            if not installed(model_id, self.root, full=True):
+                if installed(model_id, self.root):
+                    raise ProviderError(
+                        "Speech model files are damaged. Choose Check files in the model menu, "
+                        "then Download again.", "local_setup"
+                    )
                 raise ProviderError("Speech model not downloaded", "missing_model")
             model = get_model(model_id)
             if self.language and "*" not in model["languages"] and self.language not in model["languages"]:

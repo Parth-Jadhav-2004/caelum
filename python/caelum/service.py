@@ -35,7 +35,7 @@ async def prepare_update(core, stop):
             or core.work
             and not core.work.done()
             or core.state
-            not in {"hidden", "success", "unrefined", "saved", "copied", "error", "no_speech",
+            not in {"hidden", "success", "unrefined", "saved", "copied", "ready_to_copy", "error", "no_speech",
                     "success_fallback_online", "success_fallback_local", "model_ready", "model_failed"}
         ):
             raise RuntimeError("Finish dictation or discard pending audio before updating")
@@ -92,7 +92,7 @@ async def safety_monitor(core):
 
 async def lock_monitor(core, locked=session_locked):
     while True:
-        if core.capture or core.pcm is not None:
+        if core.capture or core.pcm is not None or core.manual_result is not None:
             try:
                 is_locked = await locked()
             except (OSError, RuntimeError, TimeoutError):
@@ -145,8 +145,6 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
         previous_mode = getattr(bindings, "recording_mode", "hold")
         if backend_name(updated) != backend_name(core.config):
             raise RuntimeError("Restart the service to change desktop backend")
-        if previous != updated.app.hotkey and getattr(bindings, "save_only", False):
-            raise RuntimeError("Restart the service to change the desktop portal shortcut")
         # Stage native loading before either configuration or the active engine changes.
         staged = hasattr(provider, "signature") and (
             provider.signature(updated) != provider.local_signature
@@ -167,8 +165,9 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
                     with suppress(RuntimeError, OSError, TimeoutError):
                         await core.event("model_failed")
                 raise
-        rebind = previous != updated.app.hotkey or (
-            previous_mode != updated.app.recording_mode and not getattr(bindings, "save_only", False)
+        # A portal session keeps its original binding until the user restarts.
+        rebind = not getattr(bindings, "save_only", False) and (
+            previous != updated.app.hotkey or previous_mode != updated.app.recording_mode
         )
         try:
             if rebind:
@@ -239,7 +238,7 @@ async def serve(config, config_path=None):
 
         bindings, hud = PortableBindings(config.app.hotkey, config.app.recording_mode), PortableHUD(config.app)
     provider = Providers(config)
-    core = Orchestrator(config, provider, hud, bindings)
+    core = Orchestrator(config, provider, hud, bindings, in_app_notifications=windows)
     if windows:
         core.media = windows_desktop.RecordingMedia()
     if not native:
@@ -285,6 +284,7 @@ async def serve(config, config_path=None):
                 "toggle",
                 "cancel",
                 "retry",
+                "copy",
                 "status",
                 "reload",
                 "settings",
@@ -328,7 +328,7 @@ async def serve(config, config_path=None):
                 if message["action"] == "status":
                     result["engine"] = provider.engine_status()
                     result["storage_error"] = storage_error
-                    result["hotkey"] = core.config.app.hotkey
+                    result["hotkey"] = bindings.hotkey
                     result["recording_mode"] = core.config.app.recording_mode
                     result["backend"] = backend_name(core.config)
                     result["shortcut_mode"] = "native" if native else bindings.mode
@@ -363,11 +363,21 @@ async def serve(config, config_path=None):
                 await writer.drain()
             writer.close()
 
+    async def monitor_shortcut():
+        if native:
+            await compositor_monitor(core, bindings)
+        else:
+            # Portal approval can outlive startup. Keep manual controls available.
+            if not windows:
+                await bindings.install()
+            await bindings.monitor()
+
     try:
         if await locked():
             raise RuntimeError("Unlock your desktop before starting Caelum")
         await hud.start()
-        await bindings.install()
+        if native or windows:
+            await bindings.install()
         if windows:
             windows_desktop.endpoint = loop, dispatch
         else:
@@ -376,11 +386,10 @@ async def serve(config, config_path=None):
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)
         provider.configure_local()
+
         tasks = [
             asyncio.create_task(lock_monitor(core, locked)),
-            asyncio.create_task(
-                compositor_monitor(core, bindings) if native else bindings.monitor()
-            ),
+            asyncio.create_task(monitor_shortcut()),
         ]
         if not windows:
             tasks.append(asyncio.create_task(safety_monitor(core)))

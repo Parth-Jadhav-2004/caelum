@@ -1,6 +1,6 @@
 # Contributing to Caelum
 
-Use short-lived feature branches off `dev` and open pull requests back into `dev` for integration. `main` holds the stable release. Promote a tested integration commit through a release pull request after the required checks pass. Bring any independent website or maintenance changes on `main` back into `dev` before building the next candidate.
+Branch from `dev` and target changes at `dev`, including website, documentation and release preparation. The only PR to `main` is a release promotion from `dev`: use a merge commit and preserve the exact tested tree. See [the release procedure](docs/releasing.md).
 
 Stable is GitHub Latest (`vX.Y.Z`). Testing releases use `vX.Y.Z-rc.N`. Ordinary builds stay in Actions. Include user-visible changes in the next version’s CHANGELOG section.
 

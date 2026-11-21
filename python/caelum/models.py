@@ -136,7 +136,8 @@ def _matches(path, item, full=False):
         return False
 
 
-def installed(model_id, root=None):
+def installed(model_id, root=None, *, full=False):
+    """Check the receipt and file metadata; request full content checks before use."""
     model = get_model(model_id)
     path = (Path(root) if root is not None else models_dir()) / model_id
     try:
@@ -147,8 +148,8 @@ def installed(model_id, root=None):
             and receipt["catalog_version"] == catalog()["version"]
             and receipt["revision"] == model["revision"]
             and receipt["files"] == model["files"]
-            and all(_matches(path / item["path"], item) for item in model["files"])
             and ("file_stats" not in receipt or receipt["file_stats"] == file_stats(path, model))
+            and all(_matches(path / item["path"], item, full) for item in model["files"])
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False
@@ -413,7 +414,7 @@ class ModelManager:
                 f"Needs an extra component. Install caelum-dictation[{extra}].", "missing_extra"
             )
         with self._locked():
-            if installed(model_id, self.root):
+            if await asyncio.to_thread(installed, model_id, self.root, full=True):
                 return self.root / model_id
             destination = self.root / model_id
             if destination.is_symlink():

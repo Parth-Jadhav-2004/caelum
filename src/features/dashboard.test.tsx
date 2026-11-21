@@ -52,6 +52,19 @@ beforeEach(() => {
   }) as typeof ipc);
 });
 describe("recording controls", () => {
+  it("flags an inactive portal shortcut alongside the usable Record button", () => {
+    useApp.setState({
+      status: {
+        ...useApp.getState().status!,
+        backend: "portable",
+        shortcut_mode: "manual",
+        shortcut_description: "Shortcut inactive. Use Record / Finish recording.",
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Shortcut inactive. Use Record / Finish recording.");
+    expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
+  });
   it("starts and finishes recording through the typed boundary", async () => {
     const user = userEvent.setup();
     mount(<Dashboard config={config} />);
@@ -92,11 +105,35 @@ describe("recording controls", () => {
       screen.getByRole("button", { name: "Discard recording" }),
     ).toBeEnabled();
   });
+  it("offers explicit Copy when the finished transcript is only in memory", async () => {
+    useApp.setState({
+      status: {
+        running: true, state: "ready_to_copy", title: "Transcript ready",
+        detail: "Choose Copy transcript.", paused: false, can_copy: true,
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(ipc).not.toHaveBeenCalledWith("control", { action: "copy" });
+    await userEvent.click(screen.getByRole("button", { name: "Copy transcript" }));
+    expect(ipc).toHaveBeenCalledWith("control", { action: "copy" });
+  });
   it("uses only supplied microphone levels", () => {
     const { container } = render(<Waveform values={[0, 0.5, 1]} />);
     expect(
       [...container.querySelectorAll("span")].map((e) => e.style.height),
     ).toEqual(["4px", "27px", "50px"]);
+  });
+  it("shows the last Windows notice when Home opens after retry expired", () => {
+    const notice = "Retry window expired. Pending audio discarded; record again.";
+    useApp.setState({
+      status: {
+        running: true, backend: "windows", state: "hidden", paused: false,
+        title: "Ready", detail: "Hold your shortcut.", notice,
+      },
+    });
+    mount(<Dashboard config={config} />);
+    expect(screen.getByText(notice).closest('[role="status"]')).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Retry dictation" })).not.toBeInTheDocument();
   });
   it("only marks a configured microphone missing after discovery finishes", async () => {
     mount(<DeviceSelect value="missing" onChange={vi.fn()} />);

@@ -79,7 +79,10 @@ async def notify(message, actions=False):
         pass
 
 
-async def insert(text, target):
+async def insert(text, target, *, auto_copy=True):
+    if not auto_copy:
+        # Hyprland paste uses the selection even when the original target is focused.
+        return False
     await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
     current = await hypr_json("activewindow")
     if (

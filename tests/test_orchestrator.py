@@ -1,7 +1,7 @@
 import asyncio
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config
@@ -104,6 +104,100 @@ async def test_clipboard_fallback_is_distinct(core, monkeypatch):
     await core.finalize(core.session)
     assert core.state == "copied"
     assert core.pcm is None
+
+
+async def test_retry_copies_exact_finished_transcript_with_history_off(core):
+    from caelum.desktop_services import service_presentation
+    from caelum.orchestrator import notify
+
+    core.config.desktop.history_enabled = False
+    core.bindings.insert = AsyncMock(side_effect=RuntimeError("Clipboard changed"))
+    core.bindings.copy_result = AsyncMock(side_effect=[RuntimeError("Clipboard is busy"), None])
+    await core.finalize(core.session)
+    status = await core.handle("status")
+    assert status["error_kind"] == "clipboard"
+    assert "Retry to copy the finished text" in service_presentation(status)[1]
+    assert "spoken words" not in str(status)
+    await core.handle("retry")
+    await core.work
+    assert core.state == "error"
+    await core.handle("retry")
+    await core.work
+    assert core.state == "copied"
+    assert core.pending_copy is core.pcm is None
+    core.bindings.copy_result.assert_awaited_with("Private spoken words.")
+    core.bindings.insert.assert_awaited_once()
+    core.provider.stt.assert_awaited_once()
+    core.provider.cleanup.assert_awaited_once()
+    notify.assert_awaited_with("Text copied. Paste manually in the intended application.")
+
+
+@pytest.mark.parametrize("history", [False, True])
+@pytest.mark.parametrize("auto_copy", [False, True])
+async def test_in_app_clipboard_notice_survives_hud_changes(core, history, auto_copy):
+    from caelum.orchestrator import notify
+
+    core.in_app_notifications = True
+    core.config.desktop.history_enabled = history
+    core.config.desktop.auto_copy = auto_copy
+    core.on_completed = Mock()
+    core.bindings.insert = AsyncMock(return_value=False)  # Focus moved: no direct insertion.
+    core.bindings.copy_result = AsyncMock()
+    await core.finalize(core.session)
+    core.bindings.insert.assert_awaited_once_with("Private spoken words.", core.target, auto_copy=auto_copy)
+    assert core.state == ("copied" if auto_copy else "ready_to_copy")
+    if history:
+        core.on_completed.assert_called_once_with(core.session, "Private spoken words.", core.metrics, True, auto_copy)
+    else:
+        core.on_completed.assert_not_called()
+    await core.event("model_loading")
+    status = await core.handle("status")
+    assert status["can_copy"] is (not auto_copy)
+    if auto_copy:
+        assert "copied to the clipboard" in status["notice"]
+    else:
+        assert "Automatic copy is off" in status["notice"] and "Copy transcript" in status["notice"]
+        assert "copied" not in status["notice"]
+        core.bindings.copy_result.assert_not_awaited()
+        await core.handle("copy")
+        core.bindings.copy_result.assert_awaited_once_with("Private spoken words.")
+        assert "copied to the clipboard" in (await core.handle("status"))["notice"]
+    assert "Ctrl+V" in status["notice"]
+    assert "spoken words" not in str(status)
+    notify.assert_not_awaited()
+
+
+async def test_in_app_retry_expiry_explains_discard_after_hud_hides(core):
+    from caelum.orchestrator import notify, recovery_notification
+
+    core.in_app_notifications = True
+    core.config.app.retry_expiry_seconds = 0
+    core.provider.stt.side_effect = ProviderError("offline")
+    await core.finalize(core.session)
+    await core.expiry
+    status = await core.handle("status")
+    assert status["state"] == "hidden" and not status["pending_audio"]
+    assert "expired" in status["notice"] and "record again" in status["notice"]
+    notify.assert_not_awaited()
+    recovery_notification.assert_not_called()
+
+
+@pytest.mark.parametrize("ending", ["cancel", "expire", "locked"])
+async def test_pending_transcript_discarded_on_cancel_expiry_or_lock(core, ending):
+    core.bindings.insert = AsyncMock(side_effect=RuntimeError("Clipboard unavailable"))
+    core.bindings.copy_result = AsyncMock()
+    await core.finalize(core.session)
+    if ending == "expire":
+        await core.expire(core.session, 0)
+    elif ending == "locked":
+        core.bindings.locked = AsyncMock(return_value=True)
+        await core.handle("retry")
+        await core.work
+    else:
+        await core.handle("cancel")
+    await core.handle("retry")
+    assert core.pending_copy is core.pcm is None
+    core.bindings.copy_result.assert_not_awaited()
 
 
 async def test_error_retains_audio_and_blocks_new_recording(core):
@@ -286,6 +380,47 @@ async def test_portable_history_off_copies_once_without_storage(core, monkeypatc
     assert "Private spoken words" not in str(core.hud.events) + str(core.recent_metrics)
 
 
+@pytest.mark.parametrize("backend", ["hyprland", "portable", "windows-failed", "windows-inserted"])
+@pytest.mark.parametrize("history", [True, False])
+async def test_auto_copy_off_preserves_clipboard_and_manual_delivery(core, monkeypatch, backend, history):
+    core.config.desktop.auto_copy = False
+    core.config.desktop.history_enabled = history
+    core.on_completed = Mock()
+    clipboard = AsyncMock()
+    monkeypatch.setattr("caelum.portable.copy_private_result", clipboard)
+    # Exercise the actual Hyprland insertion path: it must not run wl-copy or dispatch paste.
+    command = AsyncMock()
+    monkeypatch.setattr("caelum.linux.command", command)
+    if backend == "portable":
+        core.bindings.save_only = True
+    elif backend.startswith("windows"):
+        core.bindings.insert = AsyncMock(return_value=True, side_effect=(
+            RuntimeError("Incomplete insertion") if backend == "windows-failed" else None
+        ))
+        core.bindings.copy_result = clipboard
+
+    await core.finalize(core.session)
+    status = await core.handle("status")
+    command.assert_not_awaited()
+    clipboard.assert_not_awaited()
+    if backend.startswith("windows"):
+        core.bindings.insert.assert_awaited_once_with("Private spoken words.", core.target, auto_copy=False)
+    assert core.state == ("success" if backend == "windows-inserted" else "ready_to_copy")
+    assert core.pcm is None
+    assert "Private spoken words." not in str(status) + str(core.hud.events)
+    if history:
+        core.on_completed.assert_called_once_with(core.session, "Private spoken words.", core.metrics, True, False)
+    else:
+        core.on_completed.assert_not_called()
+    if not history or backend != "windows-inserted":
+        assert status["can_copy"]
+        await core.handle("copy")
+        clipboard.assert_awaited_once_with("Private spoken words.")
+        core.provider.stt.assert_awaited_once()
+        await core.handle("pause")
+        assert not (await core.handle("status"))["can_copy"]
+
+
 async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, monkeypatch):
     core.config.desktop.history_enabled = False
     core.bindings.save_only = True
@@ -345,6 +480,34 @@ async def test_microphone_start_failure_restores_media(core, monkeypatch):
     core.media.resume.assert_awaited_once()
     assert core.state == "error"
     assert core.capture is None
+
+
+@pytest.mark.parametrize("at_start", [True, False], ids=["unavailable", "interrupted"])
+async def test_in_app_microphone_notice_until_next_recording(core, monkeypatch, at_start):
+    from unittest.mock import Mock
+
+    from caelum.orchestrator import notify
+
+    core.in_app_notifications = True
+    core.pcm = None
+    core.bindings.target = AsyncMock(return_value=core.target)
+    capture = SimpleNamespace(
+        start=Mock(side_effect=OSError() if at_start else None), stop=Mock(), discard=Mock(),
+        history=[], level=0, error="disconnected",
+    )
+    monkeypatch.setattr("caelum.orchestrator.Capture", lambda _: capture)
+    await core.handle("start", "broken-mic")
+    if not at_start:
+        await core.poll_task
+    status = await core.handle("status")
+    assert status["error_kind"] == ("microphone" if at_start else "capture")
+    assert ("Caelum Settings" if at_start else "record again") in status["notice"]
+    notify.assert_not_awaited()
+
+    capture.start.side_effect = None
+    await core.handle("start", "replacement-mic")
+    assert "notice" not in await core.handle("status")
+    await core.cancel()
 
 
 async def test_feedback_failure_during_release_still_stops_capture_and_restores_media(core):

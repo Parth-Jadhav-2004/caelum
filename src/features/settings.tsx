@@ -9,9 +9,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, FlaskConical, Check } from "lucide-react";
 import { ipc, type Config } from "@/lib/ipc";
-import { formatShortcut } from "@/lib/shortcut";
+import { formatShortcut, portalShortcutStatus } from "@/lib/shortcut";
 import { action, Heading, Confirm } from "@/components/common";
 import { useApp } from "@/stores/app";
 import { Button } from "@/components/ui/button";
@@ -173,6 +174,9 @@ export function Settings({
   }
   const navigate = useApp((s) => s.navigate);
   const running = useApp((s) => s.status?.running);
+  const portalStatus = useApp((s) => portalShortcutStatus(s.status));
+  const sessionHotkey = useApp((s) => s.status?.hotkey);
+  const [restarting, setRestarting] = useState(false);
   const [stopService, setStopService] = useState(false);
   const bootstrap = useQuery({
     queryKey: ["bootstrap"],
@@ -181,6 +185,9 @@ export function Settings({
   const [testing, setTesting] = useState(false),
     [preparingMic, setPreparingMic] = useState(false),
     [connectionChecking, setConnectionChecking] = useState(false);
+  const savedHotkey = bootstrap.data?.config?.app.hotkey;
+  const pendingHotkey = portalStatus && sessionHotkey && savedHotkey !== sessionHotkey
+    ? savedHotkey : null;
   const [connection, setConnection] = useState(""),
     [autostart, setAutostart] = useState(bootstrap.data?.autostart ?? false);
   useEffect(() => {
@@ -270,12 +277,26 @@ export function Settings({
         >
           {group === "General" && (
             <>
-              <Row title="Recording shortcut">
+              <Row title="Recording shortcut" detail={portalStatus}>
                 <Shortcut
                   value={config.app.hotkey}
                   change={(v) => set("app", "hotkey", v)}
                 />
               </Row>
+              {pendingHotkey && (
+                <Row title={`Pending shortcut: ${formatShortcut(pendingHotkey)}`}
+                  detail="Restart Caelum to request this shortcut from your desktop.">
+                  <Button variant="outline"
+                    disabled={restarting || saveState === "Saving…" || saveState.startsWith("Not saved")}
+                    onClick={() => {
+                      setRestarting(true);
+                      void action(() => invoke("restart_app", { discard: false }))
+                        .finally(() => setRestarting(false));
+                    }}>
+                    Restart Caelum
+                  </Button>
+                </Row>
+              )}
               <Row title="Recording mode">
                 <Choice
                   label="Recording mode"
@@ -561,6 +582,16 @@ export function Settings({
               <p className="mb-4 text-meta text-muted-foreground">
                 Text only, stored on this device
               </p>
+              <Row
+                title="Copy transcripts to clipboard automatically"
+                detail="Turn off to keep your clipboard unchanged, including when Caelum can’t insert text into your app."
+              >
+                <Switch
+                  aria-label="Copy transcripts to clipboard automatically"
+                  checked={config.desktop.auto_copy}
+                  onCheckedChange={(v) => set("desktop", "auto_copy", v)}
+                />
+              </Row>
               <Row title="Save dictation history">
                 <Switch
                   aria-label="Save dictation history"

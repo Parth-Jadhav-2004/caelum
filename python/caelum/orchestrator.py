@@ -20,6 +20,10 @@ from .media import RecordingMedia
 from .providers import ProviderError
 from .segmenter import Chunker
 
+WINDOWS_COPIED_NOTICE = (
+    "Your transcript was copied to the clipboard. Switch to the intended app and press Ctrl+V."
+)
+
 
 class HUD:
     def __init__(self, config):
@@ -57,13 +61,17 @@ class HUD:
 
 
 class Orchestrator:
-    def __init__(self, config, provider, hud, bindings):
+    def __init__(self, config, provider, hud, bindings, *, in_app_notifications=False):
         self.config, self.provider, self.hud, self.bindings = config, provider, hud, bindings
+        self.in_app_notifications = in_app_notifications
+        self.notice = None
         self.session = None
         self.state = "hidden"
         self.sequence = 0
         self.capture = None
         self.pcm = None
+        self.pending_copy = None
+        self.manual_result = None
         self.chunker = None
         self.work = None
         self.expiry = None
@@ -85,6 +93,12 @@ class Orchestrator:
         self.error_kind = ""
         self.feedback = {}
         self.media = RecordingMedia()
+
+    async def notify(self, message):
+        if self.in_app_notifications:
+            self.notice = message
+        else:
+            await notify(message)
 
     async def event(self, state=None, error_code=""):
         if state:
@@ -113,9 +127,13 @@ class Orchestrator:
         # Native model staging can hold the control lock for seconds. Status is
         # read-only and must remain available to the sidecar throughout loading.
         if action == "status":
-            return {"feedback": self.feedback, "paused": self.paused, "state": self.state,
-                    "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
-                    "metrics": self.recent_metrics[-1:]}
+            return {
+                "feedback": self.feedback, "paused": self.paused, "state": self.state,
+                "pending_audio": self.pcm is not None, "error_kind": self.error_kind,
+                "can_copy": self.manual_result is not None,
+                "metrics": self.recent_metrics[-1:],
+                **({"notice": self.notice} if self.notice else {}),
+            }
         async with self.control_lock:
             if self.stopping and action != "status":
                 return
@@ -143,6 +161,8 @@ class Orchestrator:
                     await self.bindings.active(False)
                     return
                 self.session = uuid.uuid4().hex
+                self.notice = None
+                self.manual_result = None
                 self.sequence = 0
                 self.token = token
                 self.started = time.monotonic()
@@ -161,7 +181,9 @@ class Orchestrator:
                     await self.abort_capture()
                     await self.event("error", "microphone")
                     await self.bindings.active(False)
-                    await notify(
+                    await self.notify(
+                        "Microphone unavailable. Choose a microphone in Caelum Settings and test it."
+                        if self.in_app_notifications else
                         "Microphone unavailable. Run caelum devices and caelum doctor; check microphone configuration."
                     )
                     return
@@ -190,6 +212,7 @@ class Orchestrator:
                 # Reserve the retry before scheduling work: two queued UI clicks
                 # must not create concurrent finalization tasks.
                 self.state = "processing"
+                self.notice = None
                 if self.expiry:
                     self.expiry.cancel()
                 self.work = asyncio.create_task(self.finalize(self.session))
@@ -198,15 +221,17 @@ class Orchestrator:
                 self.paused = True
             elif action == "resume":
                 self.paused = False
-            elif action == "status":
-                return {
-                    "feedback": self.feedback,
-                    "paused": self.paused,
-                    "state": self.state,
-                    "pending_audio": self.pcm is not None,
-                    "error_kind": self.error_kind,
-                    "metrics": self.recent_metrics[-1:],
-                }
+            elif action == "copy":
+                if self.manual_result is None or await getattr(self.bindings, "locked", session_locked)():
+                    raise ProviderError("No finished transcript available to copy.", "clipboard")
+                from .portable import copy_private_result
+
+                try:
+                    await getattr(self.bindings, "copy_result", copy_private_result)(self.manual_result)
+                except (RuntimeError, OSError, TimeoutError):
+                    raise ProviderError("Clipboard unavailable. Try Copy transcript again.", "clipboard") from None
+                if self.in_app_notifications:
+                    await self.notify(WINDOWS_COPIED_NOTICE)
 
     async def poll(self):
         try:
@@ -218,7 +243,7 @@ class Orchestrator:
                         self.chunker.cancel()
                     await self.event("error", "capture")
                     await self.bindings.active(False)
-                    await notify(
+                    await self.notify(
                         "Capture interrupted; no text inserted. Check the microphone and record again."
                     )
                     return
@@ -226,7 +251,7 @@ class Orchestrator:
                     async with self.control_lock:
                         if self.capture:
                             await self.release()
-                    await notify("Recording reached its configured limit and was finalized.")
+                    await self.notify("Recording reached its configured limit and was finalized.")
                     return
                 if self.chunker:
                     self.chunker.feed(capture.snapshot, capture.size // 2)
@@ -234,7 +259,7 @@ class Orchestrator:
                 await asyncio.sleep(1 / 30)
         except (RuntimeError, BrokenPipeError, TimeoutError, ConnectionError):
             await self.cancel(feedback=False)
-            await notify(
+            await self.notify(
                 "Recording stopped because the feedback pill is unavailable. Restart Caelum."
             )
 
@@ -279,6 +304,47 @@ class Orchestrator:
         capture.discard()
         self.work = asyncio.create_task(self.finalize(self.session))
 
+    async def finished_transcript(self):
+        if self.pending_copy is not None:
+            return self.pending_copy
+        began = time.monotonic()
+        raw = (
+            await self.chunker.finish(self.pcm)
+            if self.chunker
+            else (await self.provider.stt(self.pcm)).text
+        )
+        self.metrics["remaining_stt_ms"] = (time.monotonic() - began) * 1000
+        if raw:
+            return await self.provider.cleanup(raw, lambda: self.event("refining"))
+        return None
+
+    async def deliver(self, transcript):
+        text, _ = transcript
+        auto_copy = self.config.desktop.auto_copy
+        if getattr(self.bindings, "save_only", False):
+            if not auto_copy:
+                return "ready_to_copy"
+            if self.config.desktop.history_enabled:
+                return "saved"
+            from .portable import copy_private_result
+
+            await copy_private_result(text)
+            return "copied"
+        try:
+            if self.pending_copy is not None:
+                await self.bindings.copy_result(text)
+                return "copied"
+            if await getattr(self.bindings, "insert", insert)(text, self.target, auto_copy=auto_copy):
+                return "inserted"
+        except (RuntimeError, OSError, TimeoutError):
+            if not auto_copy:
+                return "ready_to_copy"
+            if hasattr(self.bindings, "copy_result"):
+                self.pending_copy = transcript
+                raise ProviderError("Choose Retry to copy the finished text.", "clipboard") from None
+            raise ProviderError("Insertion unavailable; retry or cancel") from None
+        return "copied" if auto_copy else "ready_to_copy"
+
     async def finalize(self, session):
         try:
             async with asyncio.timeout(
@@ -287,45 +353,36 @@ class Orchestrator:
                  else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
             ):
                 await self.event("processing")
-                began = time.monotonic()
-                raw = (
-                    await self.chunker.finish(self.pcm)
-                    if self.chunker
-                    else (await self.provider.stt(self.pcm)).text
-                )
-                self.metrics["remaining_stt_ms"] = (time.monotonic() - began) * 1000
-                if not raw:
+                transcript = await self.finished_transcript()
+                if session != self.session:
+                    return
+                if transcript is None:
                     self.pcm = None
                     await self.event("no_speech")
                     await self.bindings.active(False)
                     return
-                text, refined = await self.provider.cleanup(raw, lambda: self.event("refining"))
-                if session != self.session:
-                    return
+                text, refined = transcript
                 await self.event("processing")
                 began = time.monotonic()
                 if await getattr(self.bindings, "locked", session_locked)():
                     await self.cancel()
                     return
-                if getattr(self.bindings, "save_only", False):
-                    self.metrics.update(self.provider.metrics)
-                    self.metrics["release_to_dispatch_ms"] = (
-                        time.monotonic() - self.released
-                    ) * 1000
+                delivery = await self.deliver(transcript)
+                portable = getattr(self.bindings, "save_only", False)
+                copied = delivery == "copied" and not portable
+                self.metrics.update(self.provider.metrics)
+                if portable:
                     self.metrics["manual_copy"] = True
-                    self.metrics["clipboard_fallback"] = False
-                    self.metrics["visible_insertion_observed"] = False
-                    if not self.config.desktop.history_enabled:
-                        from .portable import copy_private_result
-
-                        await copy_private_result(text)
-                        self.recent_metrics.append(self.metrics.copy())
-                        self.recent_metrics = self.recent_metrics[-100:]
-                        self.pcm = self.chunker = self.failed_at = None
-                        await self.bindings.active(False)
-                        await self.event("copied")
-                        await notify("Text copied. Paste manually; history saving is off.")
-                        return
+                else:
+                    self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000
+                self.metrics["release_to_dispatch_ms"] = (time.monotonic() - self.released) * 1000
+                self.metrics["visible_insertion_observed"] = False
+                self.metrics["clipboard_fallback"] = copied
+                if delivery == "ready_to_copy" or (
+                    not self.config.desktop.auto_copy and not self.config.desktop.history_enabled
+                ):
+                    self.manual_result = text
+                if delivery == "saved":
                     if not self.on_completed:
                         raise RuntimeError("History storage is required for portable delivery")
                     result = self.on_completed(session, text, self.metrics.copy(), refined, False)
@@ -333,41 +390,28 @@ class Orchestrator:
                         result = await result
                     if result is False:
                         raise RuntimeError("Could not save dictation")
-                    self.recent_metrics.append(self.metrics.copy())
-                    self.recent_metrics = self.recent_metrics[-100:]
-                    self.pcm = self.chunker = self.failed_at = None
-                    await self.bindings.active(False)
-                    await self.event("saved")
-                    return
-                try:
-                    dispatched = await getattr(self.bindings, "insert", insert)(text, self.target)
-                except (RuntimeError, OSError, TimeoutError):
-                    # Retain audio for explicit retry if even clipboard dispatch fails.
-                    raise ProviderError("Insertion unavailable; retry or cancel") from None
-                self.metrics.update(self.provider.metrics)
-                self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000
-                self.metrics["release_to_dispatch_ms"] = (time.monotonic() - self.released) * 1000
-                self.metrics["visible_insertion_observed"] = False
-                self.metrics["clipboard_fallback"] = not dispatched
+                elif self.on_completed and self.config.desktop.history_enabled:
+                    with suppress(Exception):
+                        self.on_completed(session, text, self.metrics.copy(), refined, copied)
                 self.recent_metrics.append(self.metrics.copy())
                 self.recent_metrics = self.recent_metrics[-100:]
-                self.pcm = None
-                self.chunker = None
-                self.failed_at = None
+                self.pending_copy = self.pcm = self.chunker = self.failed_at = None
                 await self.bindings.active(False)
                 await self.event(
                     ("success_fallback_" + self.provider.metrics["fallback"]
                      if self.provider.metrics.get("fallback") else
-                     ("success" if refined else "unrefined")) if dispatched else "copied"
+                     ("success" if refined else "unrefined")) if delivery == "inserted" else delivery
                 )
-                if self.on_completed:
-                    with suppress(Exception):
-                        self.on_completed(
-                            session, text, self.metrics.copy(), refined, not dispatched
-                        )
-                if not dispatched:
-                    await notify(
-                        "Target focus changed. Text copied; paste manually in the intended application."
+                if delivery == "copied":
+                    await self.notify(
+                        WINDOWS_COPIED_NOTICE if self.in_app_notifications else
+                        "Text copied. Paste manually; history saving is off." if portable else
+                        "Text copied. Paste manually in the intended application."
+                    )
+                elif delivery == "ready_to_copy" and self.in_app_notifications:
+                    await self.notify(
+                        "Automatic copy is off. Choose Copy transcript in Caelum, "
+                        "then switch to the intended app and press Ctrl+V."
                     )
         except asyncio.CancelledError:
             raise
@@ -382,27 +426,30 @@ class Orchestrator:
             await self.event(
                 "missing_model" if self.error_kind == "missing_model" else "error",
                 "missing_model" if self.error_kind == "missing_model" else
+                "clipboard" if self.error_kind == "clipboard" else
                 "local_setup" if self.error_kind == "local_setup" else
                 "local_decode" if self.config.stt.engine == "local" else "network",
             )
             self.error_kind = error.kind if isinstance(error, ProviderError) else "unavailable"
             if isinstance(error, ProviderError):
                 with suppress(RuntimeError, OSError, TimeoutError):
-                    await notify(str(error))
+                    await self.notify(str(error))
             remaining = self.config.app.retry_expiry_seconds - (time.monotonic() - self.failed_at)
             self.expiry = asyncio.create_task(self.expire(session, max(0, remaining)))
-            self.recovery_task = asyncio.create_task(
-                recovery_notification(self, session, max(0, remaining))
-            )
+            if not self.in_app_notifications:  # The dashboard already offers Retry and Discard.
+                self.recovery_task = asyncio.create_task(
+                    recovery_notification(self, session, max(0, remaining))
+                )
 
     async def expire(self, session, seconds):
         await asyncio.sleep(seconds)
         async with self.control_lock:
             if session == self.session and self.pcm is not None:
                 await self.cancel()
-                await notify("Retry window expired. Pending audio discarded; record again.")
+                await self.notify("Retry window expired. Pending audio discarded; record again.")
 
     async def cancel(self, feedback=True):
+        self.notice = None
         self.session = uuid.uuid4().hex  # invalidate every late callback
         current = asyncio.current_task()
         for task in (self.work, self.poll_task, self.expiry, self.recovery_task):
@@ -413,7 +460,7 @@ class Orchestrator:
         if self.chunker:
             self.chunker.cancel()
         await self.abort_capture()
-        self.chunker, self.pcm, self.failed_at = None, None, None
+        self.chunker = self.pcm = self.pending_copy = self.manual_result = self.failed_at = None
         await self.bindings.active(False)
         if feedback:
             await self.event("hidden")
