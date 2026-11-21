@@ -6,13 +6,15 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sys
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
 
-async def command(*args, data=None, timeout=3, capture_output=True):
+async def command(*args, data=None, timeout=3, capture_output=True, interrupt_on_cancel=False):
     process = await asyncio.create_subprocess_exec(
         *map(str, args),
         stdin=asyncio.subprocess.PIPE if data is not None else asyncio.subprocess.DEVNULL,
@@ -22,7 +24,14 @@ async def command(*args, data=None, timeout=3, capture_output=True):
     try:
         out, _ = await asyncio.wait_for(process.communicate(data), timeout)
     except BaseException:
-        process.kill()
+        if interrupt_on_cancel:
+            # notify-send --wait handles SIGINT by closing the notification.
+            with suppress(ProcessLookupError, TimeoutError):
+                process.send_signal(signal.SIGINT)
+                await asyncio.wait_for(process.wait(), 1)
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.kill()
         await process.wait()
         raise
     if process.returncode:
@@ -254,6 +263,7 @@ async def recovery_notification(core, session, seconds):
             "Caelum · dictation paused",
             "Retry or cancel. CLI: caelum control retry / cancel. Audio expires in memory.",
             timeout=seconds + 1,
+            interrupt_on_cancel=True,
         )
         if action in ("retry", "cancel") and session == core.session:
             await core.handle(action)

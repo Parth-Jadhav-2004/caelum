@@ -25,6 +25,15 @@ WINDOWS_COPIED_NOTICE = (
 )
 
 
+async def cancel_tasks(*tasks):
+    current = asyncio.current_task()
+    for task in tasks:
+        if task and task is not current and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
 class HUD:
     def __init__(self, config):
         self.config = config
@@ -213,8 +222,10 @@ class Orchestrator:
                 # must not create concurrent finalization tasks.
                 self.state = "processing"
                 self.notice = None
-                if self.expiry:
-                    self.expiry.cancel()
+                # The failed finalizer may still be posting its error notice.
+                # Stop it before it can install a late expiry or recovery prompt.
+                await cancel_tasks(self.work, self.expiry, self.recovery_task)
+                self.expiry = self.recovery_task = None
                 self.work = asyncio.create_task(self.finalize(self.session))
             elif action == "pause":
                 await self.cancel()
@@ -451,12 +462,7 @@ class Orchestrator:
     async def cancel(self, feedback=True):
         self.notice = None
         self.session = uuid.uuid4().hex  # invalidate every late callback
-        current = asyncio.current_task()
-        for task in (self.work, self.poll_task, self.expiry, self.recovery_task):
-            if task and task is not current and not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+        await cancel_tasks(self.work, self.poll_task, self.expiry, self.recovery_task)
         if self.chunker:
             self.chunker.cancel()
         await self.abort_capture()
