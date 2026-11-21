@@ -5,6 +5,7 @@ Release notes, newest first.
 ## 0.5.2
 
 - On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
+- On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
 - Appearance and sidebar changes save quietly during dictation. Changes to recording mode, clipboard copying, and history settings take effect after dictation finishes or is cancelled, without restarting Caelum.
 
 ## 0.5.1
