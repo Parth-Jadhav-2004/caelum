@@ -92,14 +92,22 @@ async def safety_monitor(core):
 
 
 async def lock_monitor(core, locked=session_locked):
+    loop = asyncio.get_running_loop()
+    # Linux also receives lock signals. Rate-limit its subprocess fallback
+    # for finished transcripts, but check for newly active audio every tick.
+    manual_interval = 0.0 if sys.platform == "win32" else 2.0
+    next_manual_check = loop.time()
     while True:
-        if core.capture or core.pcm is not None or core.manual_result is not None:
+        if core.capture or core.pcm is not None or (
+            core.manual_result is not None and loop.time() >= next_manual_check
+        ):
             try:
                 is_locked = await locked()
             except (OSError, RuntimeError, TimeoutError):
                 is_locked = True  # missing capture safety feedback fails closed
             if is_locked:
                 await core.handle("cancel")
+            next_manual_check = loop.time() + manual_interval
         await asyncio.sleep(0.2)
 
 
