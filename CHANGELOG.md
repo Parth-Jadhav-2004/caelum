@@ -4,6 +4,7 @@ Release notes, newest first.
 
 ## 0.5.1
 
+- The desktop sidebar toggle sits beside the Caelum logo and replaces it when collapsed, giving pages more vertical space.
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
 - Windows dictation preserves the clipboard when inserting into a focused Edit or RichEdit field. If direct insertion fails and the clipboard has changed, choose Retry to copy the finished transcript.
 - Turn off automatic clipboard copying in Settings to keep your clipboard intact, including when insertion fails. **Copy transcript** on Home works even with history disabled. When a transcript is ready to copy, you can start the next recording from the tray.
