@@ -1,4 +1,7 @@
+import sys
+
 import pytest
+from caelum import cli
 from caelum.benchmark import percentile, wer
 from caelum.config import load
 
@@ -24,6 +27,19 @@ def test_reject_unsafe_or_invalid_config(tmp_path, content):
     path.write_text(content)
     with pytest.raises(ValueError):
         load(path)
+
+
+@pytest.mark.parametrize(("section", "value"), [
+    ("app", "1"), ("stt", "[]"), ("cleanup", "false"), ("desktop", '"dark"'),
+])
+def test_cli_reports_non_table_section(tmp_path, monkeypatch, capsys, section, value):
+    path = tmp_path / "config.toml"
+    path.write_text(f"{section} = {value}")
+    monkeypatch.setattr(sys, "argv", ["caelum", "--config", str(path), "doctor"])
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 1
+    assert capsys.readouterr().err == f"Caelum: [{section}] must be a table\n"
 
 
 def test_metrics_math():
