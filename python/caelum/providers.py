@@ -407,8 +407,14 @@ class Providers:
             return raw, False
         prefix, content, suffix = "", raw, ""
         if raw != dictated and cfg.style != "code":
-            # Non-Code cleanup trims its result. Keep explicit boundary breaks outside it.
-            prefix, content, suffix = raw.partition(raw.strip())
+            # A final empty bullet is an insertion point just like a trailing line break.
+            lines = raw.split("\n")
+            while lines and lines[-1].strip() in ("", "-"):
+                lines.pop()
+            content = "\n".join(lines).strip()
+            if not content:
+                return raw, False
+            prefix, content, suffix = raw.partition(content)
         began = time.monotonic()
         try:
             async with asyncio.timeout(cfg.timeout_seconds):

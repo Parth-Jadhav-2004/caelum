@@ -19,7 +19,8 @@ is spoken, keep its wording and end it with a colon followed by a blank line.
 Never invent a title. Remove spoken cue words from the start of items.
 Capitalize each item; omit trailing periods on short items. Never add, drop,
 merge, reorder or reword items. Keep text before and after the list as normal
-prose. Respect explicit line and paragraph breaks. Never turn ordinary prose
+prose. Respect explicit line and paragraph breaks and existing bullets, even a
+single dictated bullet. Never turn ordinary prose
 or a single sentence without distinct enumerated items into a list.
 
 Input: shopping list first rice second onion third oil
@@ -64,8 +65,15 @@ _CARDINALS = "one two three four five six seven eight nine ten".split()
 _ORDINALS = "first second third fourth fifth sixth seventh eighth ninth tenth".split()
 
 
-def _list_preserves_words(raw_words, lines):
+def _list_preserves_words(raw, lines):
     """Consume every dictated word in order; only item boundaries may consume cues."""
+    raw_words = []
+    explicit_bullets = set()
+    for line in raw.splitlines():
+        if line.startswith("- "):
+            explicit_bullets.add(len(raw_words))
+        raw_words.extend(re.findall(r"\w+", line.casefold()))
+    minimum_items = 1 if explicit_bullets else 2
     pos = items = 0
     for line in lines:
         marker = _LIST_MARKER.match(line)
@@ -74,6 +82,10 @@ def _list_preserves_words(raw_words, lines):
             items += 1
             if not words:
                 return False
+        if marker and not marker[1] and pos in explicit_bullets:
+            # The command already supplied the marker. Even "next" is item text here.
+            explicit_bullets.remove(pos)
+        elif marker:
             cues = {"also", "next", "then", "finally"}
             if number := marker[1]:
                 cues.update((number, f"number {number}"))
@@ -91,7 +103,7 @@ def _list_preserves_words(raw_words, lines):
         if raw_words[pos:pos + len(words)] != words:
             return False
         pos += len(words)
-    return items >= 2 and pos == len(raw_words)
+    return not explicit_bullets and items >= minimum_items and pos == len(raw_words)
 
 
 def validate_cleanup(raw, result, *, preserve_whitespace=False, allow_lists=False):
@@ -99,12 +111,12 @@ def validate_cleanup(raw, result, *, preserve_whitespace=False, allow_lists=Fals
         raw, result = normalize(raw), normalize(result)
     if not result.strip() or "\x00" in result:
         return raw, False
-    a, b = re.findall(r"\w+", raw.casefold()), re.findall(r"\w+", result.casefold())
     lines = result.splitlines()
-    if allow_lists and any(_LIST_MARKER.match(line) for line in lines):
-        if not _list_preserves_words(a, lines):
+    if allow_lists and (re.search(r"(?m)^- ", raw) or any(_LIST_MARKER.match(line) for line in lines)):
+        if not _list_preserves_words(raw, lines):
             return raw, False
     else:
+        a, b = re.findall(r"\w+", raw.casefold()), re.findall(r"\w+", result.casefold())
         if not a or not 0.65 <= len(b) / len(a) <= 1.35:
             return raw, False
         if SequenceMatcher(None, a, b, autojunk=False).ratio() < 0.70:

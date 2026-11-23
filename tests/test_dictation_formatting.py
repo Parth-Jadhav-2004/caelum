@@ -116,3 +116,42 @@ async def test_commands_without_llm(engine, model):
         provider.metrics["language"] = "fr"
         assert await provider.cleanup("new line") == ("new line", False)
     respond.assert_not_called()
+
+
+@pytest.mark.parametrize("style", ["light", "thorough"])
+@pytest.mark.parametrize("response,expected", [
+    ("Notes.\n\n- Rice.", ("Notes.\n\n- Rice.", True)),
+    ("Notes. Rice.", ("Notes.\n\n- rice.", False)),
+    ("- Notes.\n\nRice.", ("Notes.\n\n- rice.", False)),
+])
+async def test_cleanup_keeps_explicit_single_bullet(style, response, expected, monkeypatch):
+    config = Config()
+    config.cleanup.style = style
+    config.cleanup.model = "test-model"
+    monkeypatch.setenv(config.cleanup.key_env, "test-key")
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": response}}]})
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert await Providers(config, client).cleanup("Notes. New paragraph. Bullet point. rice.") == expected
+
+
+def test_cleanup_rejects_inferred_single_bullet():
+    assert validate_cleanup("Rice.", "- Rice.", allow_lists=True) == ("Rice.", False)
+
+
+@pytest.mark.parametrize("commands,suffix", [
+    ("Bullet point.", "\n- "),
+    ("New paragraph. Bullet point. Bullet point.", "\n\n- \n- "),
+])
+async def test_trailing_empty_bullets_stay_outside_cleanup(commands, suffix, monkeypatch):
+    config = Config()
+    config.cleanup.model = "test-model"
+    monkeypatch.setenv(config.cleanup.key_env, "test-key")
+
+    def respond(request):
+        assert json.loads(request.content)["messages"][-1]["content"] == "notes."
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Notes."}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await Providers(config, client).cleanup("notes. " + commands) == ("Notes." + suffix, True)
