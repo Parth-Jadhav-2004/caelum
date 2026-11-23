@@ -22,7 +22,7 @@ import {
 import { Choice, Shortcut } from "./settings";
 import { MicrophoneMeter, useMicrophoneLevel } from "./microphone";
 import { DeviceSelect, Waveform } from "./dashboard";
-import { ModelPicker, ModelDownloadLine } from "./models";
+import { ModelPicker, ModelDownloadLine, modelBlocked, size } from "./models";
 import { useModels } from "@/hooks/use-models";
 const titles = [
   "Welcome to Caelum",
@@ -53,7 +53,7 @@ export function Setup({
     queryFn: () => ipc("bootstrap", {}),
   });
   const [mode, setMode] = useState(config.stt.engine);
-  const [selectedModel, setSelectedModel] = useState(config.stt.local_model);
+  const [selectedModel, setSelectedModel] = useState("");
   const [skipPractice, setSkipPractice] = useState(false);
   const modelList = useModels(config.stt.language);
   const desiredModel =
@@ -63,6 +63,15 @@ export function Setup({
     modelList.data?.recommended?.id ||
     "";
   const selected = modelList.models.find((model) => model.id === desiredModel);
+  const needsDownload =
+    selected?.state === "not_installed" || selected?.state === "failed";
+  const canContinueWithModel =
+    selected &&
+    !modelList.error &&
+    !modelBlocked(selected) &&
+    (needsDownload ||
+      selected.state === "installed" ||
+      desiredModel === modelList.data?.pending_use);
   const localReady =
     config.stt.engine === "local" &&
     (!desiredModel || config.stt.local_model === desiredModel) &&
@@ -256,18 +265,22 @@ export function Setup({
       if (step === 0) {
         if (mode === "local") {
           let saved = config;
-          if (
-            !withoutModel &&
-            desiredModel &&
-            desiredModel !== modelList.data?.pending_use &&
-            !(
-              config.stt.engine === "local" &&
-              config.stt.local_model === desiredModel
-            )
-          ) {
-            await ipc("models.use", { id: desiredModel, when_ready: true });
-            saved = (await bootstrap.refetch()).data?.config ?? config;
-            await modelList.refetch();
+          if (!withoutModel) {
+            if (!canContinueWithModel) return;
+            setSelectedModel(desiredModel);
+            if (
+              needsDownload ||
+              (selected.state === "installed" && !localReady)
+            ) {
+              await ipc(
+                "models.use",
+                needsDownload
+                  ? { id: desiredModel, when_ready: true }
+                  : { id: desiredModel },
+              );
+              saved = (await bootstrap.refetch()).data?.config ?? config;
+              await modelList.refetch();
+            }
           }
           // Empty local mode permits setup while a pending model downloads. The
           // model id itself is committed only after the candidate loads.
@@ -486,15 +499,8 @@ export function Setup({
                     <ModelPicker
                       layout="grid"
                       language={config.stt.language}
-                      selected={selectedModel}
-                      onSelect={(id) => {
-                        setSelectedModel(id);
-                        void action(async () => {
-                          await ipc("models.use", { id, when_ready: true });
-                          await bootstrap.refetch();
-                          await modelList.refetch();
-                        });
-                      }}
+                      selected={desiredModel}
+                      onSelect={setSelectedModel}
                     />
                   </>
                 )}
@@ -779,8 +785,13 @@ export function Setup({
           </div>
         </section>
         <footer className="shrink-0 space-y-4 border-t px-6 py-5 md:px-8 lg:px-12">
-          {step > 0 && mode === "local" && desiredModel && (
-            <ModelDownloadLine modelId={desiredModel} />
+          {step > 0 && mode === "local" && selected && (
+            <ModelDownloadLine model={selected} refetch={modelList.refetch} />
+          )}
+          {step === 0 && mode === "local" && selected && needsDownload && (
+            <p className="text-meta text-muted-foreground">
+              Download {selected.label} · {size(selected.download_bytes)}
+            </p>
           )}
           {step === 4 && mode === "local" && !practicePassed && (
             <Button
@@ -847,6 +858,7 @@ export function Setup({
             <Button
               disabled={
                 busy ||
+                (step === 0 && mode === "local" && !canContinueWithModel) ||
                 (step === 1 && !consent) ||
                 (step === 2 && !micPassed) ||
                 (step === 4 && mode === "local" && !localReady)
@@ -861,7 +873,7 @@ export function Setup({
                   ? "Save keys"
                   : step === 0
                     ? mode === "local"
-                      ? desiredModel && selected?.state === "not_installed"
+                      ? needsDownload
                         ? "Download and continue"
                         : "Continue"
                       : "Get started"
