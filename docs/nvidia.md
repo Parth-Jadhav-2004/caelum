@@ -88,6 +88,11 @@ CUDA compute events rather than memory copies. Repeat with `--model <id>` or
   `ed5d745623472f97cfc2e6c2916ee248798fc5a8`. The speech sessions recorded
   **5,039 CUDA node executions**, including 72 MatMul, 24 Softmax and 96
   LayerNormalization operations. This does not imply all operations ran on GPU.
+  The same package's desktop `practice` IPC returned 18 words including the
+  reference keyword with explicit GPU selected: the WAV was streamed live into
+  a private PulseAudio pipe-source, with upload, clipboard and history disabled.
+  Tested source `2b7979db587f5e6d8b0f899776bdd3dd04c5e8b5`;
+  Arch package SHA-256 `19027d7680cb2b844984a7987b0ea59de89e12976e7d9f48503bc0db1bb5a731`.
 - **Other Linux models:** Parakeet v2, 110M, Canary 180M, Moonshine Base and
   Cohere Transcribe each returned 18 words including the reference word;
   their profiles recorded 5,063 / 4,117 / 24,358 / 35,548 / 37,350 CUDA node
@@ -100,6 +105,8 @@ CUDA compute events rather than memory copies. Repeat with `--model <id>` or
   while the real GPU remained visible, GPU returned a setup error. Auto decoded
   the reference on CPU (18 words, zero CUDA speech events) in all three cases.
   The no-device case emulated a CPU-only host; it was not a second physical machine.
+  Separately, with no cuBLAS on the loader path, Whisper Turbo rejected explicit
+  GPU and decoded the reference on CPU in Auto.
 - **Windows:** No Windows machine with an accessible NVIDIA GPU was available
   for qualification. The Windows wheel and CUDA DLLs exist, but that does not
   establish successful Windows inference for **any** model. The manual
