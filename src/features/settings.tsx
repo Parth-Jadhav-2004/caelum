@@ -587,7 +587,7 @@ export function Settings({
               </p>
               <Row
                 title="Copy transcripts to clipboard automatically"
-                detail="Turn off to keep your clipboard unchanged, including when Caelum can’t insert text into your app."
+                detail="Off by default. Dictation still inserts into supported focused text fields without changing your clipboard. If insertion isn’t available, choose Copy transcript on Home."
               >
                 <Switch
                   aria-label="Copy transcripts to clipboard automatically"

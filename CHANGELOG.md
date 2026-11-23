@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- Automatic clipboard copying is now off by default. Dictating with the shortcut can insert directly at the caret in supported Linux text fields without replacing your clipboard. Existing explicit clipboard preferences are preserved.
+
 ## 0.5.2
 
 Changes since stable v0.5.0, including the v0.5.1 testing releases.

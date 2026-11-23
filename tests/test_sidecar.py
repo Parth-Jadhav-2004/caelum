@@ -111,12 +111,12 @@ async def test_busy_settings_apply_latest_save_once_idle(backend, monkeypatch):
     request = Mock(side_effect=reload)
     monkeypatch.setattr("caelum.sidecar.request", request)
     for patch in ({"app": {"recording_mode": "toggle"}},
-                  {"desktop": {"auto_copy": False, "theme": "light"}},
+                  {"desktop": {"auto_copy": True, "theme": "light"}},
                   {"desktop": {"sidebar_visible": False}}):
         assert await backend.dispatch("settings.save", {"config": patch}) == {"saved": True}
     assert request.call_count == 2
     latest = load(backend.path)
-    assert latest.app.recording_mode == "toggle" and not latest.desktop.auto_copy
+    assert latest.app.recording_mode == "toggle" and latest.desktop.auto_copy
     for state, pending in (("recording", False), ("processing", False), ("error", True)):
         await backend.apply_pending_settings({**status, "state": state, "pending_audio": pending})
     assert request.call_count == 2
@@ -555,6 +555,9 @@ async def test_bootstrap_exposes_credential_storage(backend, monkeypatch, tmp_pa
 async def test_interactive_practice_uses_release_signal_and_existing_insertion(backend, monkeypatch):
     from caelum.linux import Target
 
+    config = load(backend.path)
+    config.desktop.auto_copy = True
+    save(config, backend.path)
     target = Target("0x123", 42, 0, "monitor")
     monkeypatch.setattr("caelum.sidecar.os.getppid", lambda: 42)
     monkeypatch.setattr(backend, "idle", AsyncMock())
