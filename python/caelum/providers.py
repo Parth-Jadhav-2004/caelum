@@ -398,12 +398,17 @@ class Providers:
         language = self.metrics.get("language") or self.config.stt.language
         if self.metrics.get("engine", self.config.stt.engine) == "local":
             return offline_cleanup(raw, cfg.replacements, language), False
-        raw = spoken_formatting(raw, language)
+        dictated = raw
+        raw = spoken_formatting(dictated, language)
         if not cfg.model or not raw.strip() or raw == "- ":
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
             return raw, False
+        prefix, content, suffix = "", raw, ""
+        if raw != dictated and cfg.style != "code":
+            # Non-Code cleanup trims its result. Keep explicit boundary breaks outside it.
+            prefix, content, suffix = raw.partition(raw.strip())
         began = time.monotonic()
         try:
             async with asyncio.timeout(cfg.timeout_seconds):
@@ -441,7 +446,7 @@ class Providers:
                         ),
                         "messages": [
                             {"role": "system", "content": cleanup_prompt(cfg.style)},
-                            {"role": "user", "content": raw},
+                            {"role": "user", "content": content},
                         ],
                     },
                     timeout=cfg.timeout_seconds,
@@ -455,7 +460,7 @@ class Providers:
                     self.metrics["cleanup_refined"] = False
                     return raw, False
                 result, refined = validate_cleanup(
-                    raw, choice["message"]["content"],
+                    content, choice["message"]["content"],
                     preserve_whitespace=cfg.style == "code",
                     allow_lists=cfg.style in ("light", "thorough"),
                 )
@@ -467,7 +472,7 @@ class Providers:
                         if k in ("prompt_tokens", "completion_tokens", "total_tokens")
                         and isinstance(v, int)
                     }
-                return result, refined
+                return prefix + result + suffix, refined
         except ProviderError as error:
             self.metrics["cleanup_error"] = error.kind
             return raw, False

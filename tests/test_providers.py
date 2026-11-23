@@ -305,6 +305,22 @@ async def test_code_cleanup_preserves_whitespace(config, text):
         assert await provider.cleanup(text) == (text, True)
 
 
+@pytest.mark.parametrize("style", ["light", "thorough", "email", "casual"])
+@pytest.mark.parametrize("response,expected", [
+    ("\n\nHello.\n", ("\n\nHello.\n", True)),
+    ("Hello.", ("\n\nHello.\n", True)),
+    ("Unrelated invented text.", ("\n\nhello\n", False)),
+])
+async def test_online_cleanup_preserves_dictated_boundary_breaks(config, style, response, expected):
+    config.cleanup.style = style
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": response}}]})
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = Providers(config, client)
+        assert await provider.cleanup("New paragraph, hello, new line.") == expected
+
+
 @pytest.mark.parametrize("result", ["", "   ", "unrelated fabricated words", "bad\x00text"])
 def test_code_cleanup_rejection_preserves_raw_whitespace(result):
     raw = "if ready:\n\tlaunch()\n"
