@@ -60,6 +60,34 @@ def normalize(text):
     ).strip()
 
 
+def _words_and_breaks(text):
+    words, breaks = [], {}
+    for token in re.findall(r"\w+|\n+", text.casefold()):
+        if token.startswith("\n"):
+            breaks.setdefault(len(words), []).append(len(token))
+        else:
+            words.append(token)
+    return words, breaks
+
+
+def preserves_dictated_breaks(raw, result):
+    """Require each line/paragraph break at the same place among the dictated words."""
+    words, required = _words_and_breaks(raw)
+    cleaned, available = _words_and_breaks(result)
+    if words == cleaned:
+        return all(available.get(pos) == breaks for pos, breaks in required.items())
+    # Cleanup may consume list cues or correct words. Align breaks to neighboring
+    # surviving words, allowing additional list layout elsewhere in the response.
+    for old, new, size in SequenceMatcher(None, words, cleaned).get_matching_blocks():
+        if not size:
+            continue
+        for offset in range(size + 1):
+            src, dst = old + offset, new + offset
+            if src in required and required[src] == available.get(dst):
+                del required[src], available[dst]
+    return not required
+
+
 _LIST_MARKER = re.compile(r"^(?:-|([1-9]\d*)\.) ")
 _CARDINALS = "one two three four five six seven eight nine ten".split()
 _ORDINALS = "first second third fourth fifth sixth seventh eighth ninth tenth".split()

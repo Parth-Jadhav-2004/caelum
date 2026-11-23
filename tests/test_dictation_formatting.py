@@ -144,6 +144,22 @@ def test_cleanup_rejects_inferred_single_bullet():
     assert validate_cleanup("Rice.", "- Rice.", allow_lists=True) == ("Rice.", False)
 
 
+@pytest.mark.parametrize("raw,formatted", [SHOPPING, ISSUES])
+@pytest.mark.parametrize("keep_paragraph", [True, False])
+async def test_command_break_after_inferred_list(raw, formatted, keep_paragraph, monkeypatch):
+    config = Config()
+    config.cleanup.model = "test-model"
+    monkeypatch.setenv(config.cleanup.key_env, "test-key")
+    content = formatted + ("\n\n" if keep_paragraph else " ") + "That's all."
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert await Providers(config, client).cleanup(raw + ". New paragraph. That's all.") == (
+            content if keep_paragraph else raw + ".\n\nThat's all.", keep_paragraph,
+        )
+
+
 @pytest.mark.parametrize("commands,suffix", [
     ("Bullet point.", "\n- "),
     ("New paragraph. Bullet point. Bullet point.", "\n\n- \n- "),

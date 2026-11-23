@@ -325,3 +325,23 @@ async def test_online_cleanup_preserves_dictated_boundary_breaks(config, style, 
 def test_code_cleanup_rejection_preserves_raw_whitespace(result):
     raw = "if ready:\n\tlaunch()\n"
     assert validate_cleanup(raw, result, preserve_whitespace=True) == (raw, False)
+
+
+@pytest.mark.parametrize("style", ["light", "thorough", "email", "casual"])
+@pytest.mark.parametrize("response,valid", [
+    ("Hello there.\n\nWorld.\nAgain.", True),
+    ("Hello there. World.\nAgain.", False),
+    ("Hello there.\nWorld.\nAgain.", False),
+    ("Hello\n\nthere. World.\nAgain.", False),
+])
+async def test_internal_command_breaks_survive_cleanup(config, style, response, valid):
+    config.cleanup.style = style
+    dictated = "hello there. New paragraph. world. New line. again."
+    fallback = "hello there.\n\nworld.\nagain."
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": response}}]})
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert await Providers(config, client).cleanup(dictated) == (
+            response if valid else fallback, valid,
+        )
