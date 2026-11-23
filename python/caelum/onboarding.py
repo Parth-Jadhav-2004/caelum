@@ -39,8 +39,6 @@ def privacy(config):
         "Audio stays on this computer. Caelum downloads speech models once from Hugging Face "
         "or GitHub."
     )
-    if config.cleanup.local_style != "off" and config.cleanup.local_model:
-        prefix += " For local transcription, text is sent to your selected text model on this computer."
     return prefix + " Regular dictations" + PRIVACY.split("Regular dictations", 1)[1]
 
 

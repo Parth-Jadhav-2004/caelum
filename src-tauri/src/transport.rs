@@ -374,8 +374,8 @@ pub fn deadline(method: &str) -> Duration {
         "shutdown" | "service.stop" => 12,
         "service.start" | "settings.save" | "shortcut.check" => 20,
         "updates.stage" => 180,
-        // Allow 1800s for local speech, 15s for capture and 45s for the local text model.
-        "practice" => 1875,
+        // Local inference permits 1800 seconds, plus interactive capture and cleanup.
+        "practice" => 1830,
         _ => 90,
     })
 }
@@ -415,7 +415,7 @@ mod tests {
     }
     #[test]
     fn practice_allows_maximum_local_inference_without_slowing_cancellation() {
-        assert!(deadline("practice") >= Duration::from_secs(1800 + 15 + 45));
+        assert!(deadline("practice") >= Duration::from_secs(1800 + 15 + 10));
         assert_eq!(deadline("sample.cancel"), Duration::from_secs(10));
         assert_eq!(deadline("status"), Duration::from_secs(10));
     }

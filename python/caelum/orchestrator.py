@@ -9,6 +9,7 @@ from contextlib import suppress
 
 from .audio import RATE, Capture
 from .linux import (
+    Target,
     insert,
     notify,
     recovery_notification,
@@ -17,7 +18,7 @@ from .linux import (
     wayland_env,
 )
 from .media import RecordingMedia
-from .providers import LOCAL_REFINEMENT_TIMEOUT, ProviderError
+from .providers import ProviderError
 from .segmenter import Chunker
 
 WINDOWS_COPIED_NOTICE = (
@@ -181,11 +182,19 @@ class Orchestrator:
                 self.metrics = {}
                 await self.event("starting")
                 await self.bindings.active(True)
+                # Do not delay opening the microphone while desktop apps answer.
+                field_lookup = None
+                if not self.config.desktop.auto_copy and isinstance(self.target, Target):
+                    field_lookup = asyncio.create_task(self.target.remember_field(
+                        portable=getattr(self.bindings, "save_only", False)
+                    ))
                 try:
                     await self.media.pause()
                     self.capture = Capture(self.config.app)
                     await asyncio.to_thread(self.capture.start)
                     await self.event("listening")
+                    if field_lookup:
+                        await field_lookup
                 except Exception:
                     await self.abort_capture()
                     await self.event("error", "microphone")
@@ -196,6 +205,8 @@ class Orchestrator:
                         "Microphone unavailable. Run caelum devices and caelum doctor; check microphone configuration."
                     )
                     return
+                finally:
+                    await cancel_tasks(field_lookup)
                 self.chunker = (
                     Chunker(self.provider, self.config.stt)
                     if self.config.app.strategy == "chunked"
@@ -334,6 +345,10 @@ class Orchestrator:
         auto_copy = self.config.desktop.auto_copy
         if getattr(self.bindings, "save_only", False):
             if not auto_copy:
+                from .field_input import insert_field
+
+                if await insert_field(text, getattr(self.target, "field", None)):
+                    return "inserted"
                 return "ready_to_copy"
             if self.config.desktop.history_enabled:
                 return "saved"
@@ -358,14 +373,10 @@ class Orchestrator:
 
     async def finalize(self, session):
         try:
-            local_possible = self.config.stt.engine == "local" or self.config.stt.fallback == "local"
-            cleanup_budget = (
-                LOCAL_REFINEMENT_TIMEOUT if local_possible and self.config.cleanup.local_model
-                else self.config.cleanup.timeout_seconds
-            )
             async with asyncio.timeout(
-                (self.config.stt.local_timeout_seconds if local_possible
-                 else self.config.stt.timeout_seconds) * 2 + cleanup_budget + 5
+                (self.config.stt.local_timeout_seconds if self.config.stt.engine == "local"
+                 or self.config.stt.fallback == "local"
+                 else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
             ):
                 await self.event("processing")
                 transcript = await self.finished_transcript()
@@ -386,7 +397,7 @@ class Orchestrator:
                 portable = getattr(self.bindings, "save_only", False)
                 copied = delivery == "copied" and not portable
                 self.metrics.update(self.provider.metrics)
-                if portable:
+                if portable and delivery != "inserted":
                     self.metrics["manual_copy"] = True
                 else:
                     self.metrics["insertion_dispatch_ms"] = (time.monotonic() - began) * 1000

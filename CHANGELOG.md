@@ -4,7 +4,9 @@ Release notes, newest first.
 
 ## Unreleased
 
-- On-device transcription now has its own refinement controls. Format clearly dictated English lists without a second model, or use an installed local text model for further cleanup. If that model is unavailable, dictation still returns the built-in result.
+- Choose an online refinement style in **Styles** and preview an example. Local speech models format clear English lists using built-in rules, without a separate text model. Removed the sidebar status/pause card and the accent picker in Appearance.
+
+- Automatic clipboard copying is now off by default. Dictating with the shortcut can insert directly at the caret in supported Linux text fields without replacing your clipboard. Existing explicit clipboard preferences are preserved.
 
 ## 0.5.2
 

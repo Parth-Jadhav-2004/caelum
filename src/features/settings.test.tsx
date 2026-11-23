@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -230,40 +229,6 @@ it("saves Forever without changing the existing day limit", async () => {
         history_forever: true,
         retention_days: 30,
       }),
-    }),
-  );
-});
-
-it("persists an accent selected with the keyboard", async () => {
-  const change = vi.fn();
-  function AccentSettings() {
-    const [config, setConfig] = useState(testConfig);
-    return (
-      <Settings
-        config={config}
-        change={(next) => {
-          setConfig(next);
-          change(next);
-        }}
-        saveState="Saved"
-        initialGroup="Appearance"
-      />
-    );
-  }
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <TooltipProvider>
-        <AccentSettings />
-      </TooltipProvider>
-    </QueryClientProvider>,
-  );
-  const accent = screen.getByRole("combobox", { name: "Caelum accent" });
-  accent.focus();
-  await userEvent.keyboard("{ArrowDown}{Home}{ArrowDown}{Enter}");
-  expect(accent).toHaveTextContent("Iris");
-  expect(change).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      desktop: expect.objectContaining({ color_theme: "caelum-iris" }),
     }),
   );
 });
@@ -520,62 +485,31 @@ it("retains a queued update after failure and shows its installation error", asy
 });
 
 
-function mountLocalSettings() {
+it("preserves cloud preferences while editing offline transcription settings", async () => {
   const change = vi.fn();
   vi.mocked(ipc).mockImplementation((async (method: string) => method === "models.list" ? testModels : {}) as typeof ipc);
   const config = {
     ...testConfig,
     stt: { ...testConfig.stt, engine: "local", local_model: "parakeet-110m" },
-    cleanup: {
-      ...testConfig.cleanup,
-      model: "cloud-cleanup",
-      style: "code",
-      local_style: "light",
-      local_model: "",
-      local_base_url: "http://127.0.0.1:11434/v1",
-    },
+    cleanup: { ...testConfig.cleanup, model: "cloud-cleanup", style: "code" },
   };
-  function Harness() {
-    const [draft, setDraft] = useState<typeof testConfig>(config);
-    return (
-      <Settings
-        config={draft}
-        change={(next) => { change(next); setDraft(next); }}
-        saveState="Saved"
-        initialGroup="Transcription"
-      />
-    );
-  }
   render(
     <QueryClientProvider client={new QueryClient()}>
       <TooltipProvider>
-        <Harness />
+        <Settings config={config} change={change} saveState="Saved" initialGroup="Transcription" />
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  return { config, change };
-}
-
-it("lets keyboard users choose local refinement independently of their online style", async () => {
-  const { config, change } = mountLocalSettings();
-  const localStyle = screen.getByRole("combobox", { name: "Local refinement" });
-  expect(localStyle).toHaveTextContent("Light");
-  expect(localStyle).toHaveAccessibleDescription(/rules.*on this computer/i);
-  localStyle.focus();
-  await userEvent.keyboard("{ArrowDown}");
-  expect(screen.getAllByRole("option").map((option) => option.textContent))
-    .toEqual(["Off", "Light", "Thorough"]);
-  await userEvent.keyboard("{End}{Enter}");
-  expect(change).toHaveBeenLastCalledWith({
-    ...config, cleanup: { ...config.cleanup, local_style: "thorough" },
-  });
+  expect(screen.queryByRole("combobox", { name: "Text cleanup" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("combobox", { name: "Transcription engine" }));
   await userEvent.click(screen.getByRole("option", { name: "Online" }));
-  expect(screen.getByRole("combobox", { name: "Text cleanup" })).toHaveTextContent("Code");
-  expect(screen.queryByRole("combobox", { name: "Local refinement" })).not.toBeInTheDocument();
+  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
+    stt: expect.objectContaining({ engine: "online", local_model: "parakeet-110m" }),
+    cleanup: config.cleanup,
+  }));
 });
 
-it("saves the selected cleanup style through the generated settings contract", async () => {
+it("opens Styles from online transcription settings", async () => {
   const change = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -584,48 +518,7 @@ it("saves the selected cleanup style through the generated settings contract", a
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  await userEvent.click(screen.getByRole("combobox", { name: "Text cleanup" }));
-  await userEvent.click(screen.getByRole("option", { name: "Code" }));
-  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
-    cleanup: expect.objectContaining({ style: "code", reasoning_effort: "low" }),
-  }));
-});
-
-it("can edit refinement for a local fallback without switching away from online transcription", async () => {
-  const { change } = mountLocalSettings();
-  await userEvent.click(screen.getByRole("combobox", { name: "Transcription engine" }));
-  await userEvent.click(screen.getByRole("option", { name: "Online" }));
-  await userEvent.click(screen.getByRole("combobox", { name: "Online fallback" }));
-  await userEvent.click(screen.getByRole("option", { name: "Use a local model" }));
-  await userEvent.click(screen.getByRole("combobox", { name: "Local refinement" }));
-  await userEvent.click(screen.getByRole("option", { name: "Off" }));
-  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
-    stt: expect.objectContaining({ engine: "online", fallback: "local" }),
-    cleanup: expect.objectContaining({ local_style: "off", model: "cloud-cleanup", style: "code" }),
-  }));
-});
-
-it("configures an optional local model and retains it while refinement is off", async () => {
-  const { config, change } = mountLocalSettings();
-  await userEvent.click(screen.getByText("Optional local refinement model"));
-  const model = screen.getByRole("textbox", { name: "Local refinement model" });
-  const url = screen.getByRole("textbox", { name: "Local server URL" });
-  expect(model).toHaveValue("");
-  expect(model).toHaveAccessibleDescription(/built-in rules.*unavailable/i);
-  expect(url).toHaveAccessibleDescription(/loopback/i);
-  await userEvent.type(model, "my-installed-model");
-  await userEvent.clear(url);
-  await userEvent.type(url, "http://127.0.0.1:8080/v1");
-  await userEvent.click(screen.getByRole("combobox", { name: "Local refinement" }));
-  await userEvent.click(screen.getByRole("option", { name: "Off" }));
-  expect(screen.queryByText("Optional local refinement model")).not.toBeInTheDocument();
-  expect(change).toHaveBeenLastCalledWith({
-    ...config,
-    cleanup: {
-      ...config.cleanup,
-      local_style: "off",
-      local_model: "my-installed-model",
-      local_base_url: "http://127.0.0.1:8080/v1",
-    },
-  });
+  await userEvent.click(screen.getByRole("button", { name: "Open Styles" }));
+  expect(useApp.getState().page).toBe("styles");
+  expect(change).not.toHaveBeenCalled();
 });

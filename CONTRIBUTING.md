@@ -5,7 +5,7 @@ Branch from `dev` and target changes at `dev`, including website, documentation 
 Stable is GitHub Latest (`vX.Y.Z`). Testing releases use `vX.Y.Z-rc.N`. Ordinary builds stay in Actions. Include user-visible changes in the next version’s CHANGELOG section.
 
 Use the pinned Node/Rust toolchains, locked npm/Python/Cargo dependencies, and the
-commands in [README.md](README.md) and [docs/releasing.md](docs/releasing.md).
+commands in the [desktop development reference](docs/desktop-reference.md#development) and [release procedure](docs/releasing.md).
 Run relevant tests before opening a change. For IPC changes, regenerate both
 contracts and add a failure-path test; see [docs/ipc.md](docs/ipc.md).
 

@@ -32,9 +32,6 @@ export const testConfig: Config = {
     concurrency: 2,
   },
   cleanup: {
-    local_style: "light",
-    local_model: "",
-    local_base_url: "http://127.0.0.1:11434/v1",
     base_url: "https://api.groq.com/openai/v1",
     key_env: "GROQ_API_KEY",
     model: "",
@@ -46,7 +43,7 @@ export const testConfig: Config = {
   },
   desktop: {
     history_enabled: true,
-    auto_copy: true,
+    auto_copy: false,
     check_updates: true,
     theme: "dark",
     color_theme: "t3-code",

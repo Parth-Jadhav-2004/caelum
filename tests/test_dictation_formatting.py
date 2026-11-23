@@ -135,7 +135,6 @@ def test_spoken_formatting(raw, formatted):
     assert spoken_formatting(raw, "en-US") == formatted
 
 
-@pytest.mark.parametrize("style", ["light", "thorough"])
 @pytest.mark.parametrize("raw,expected", [
     SHOPPING, SPOKEN_SHOPPING,
     (SPOKEN_SHOPPING[0].replace(",", ""), SPOKEN_SHOPPING[1]),
@@ -150,8 +149,8 @@ def test_spoken_formatting(raw, formatted):
      "Grocery list:\n\n1. 2.5 kg of red onions\n2. Extra virgin oil and vinegar"
      "\n3. iPhone cables\n4. C++ books"),
 ])
-def test_offline_spoken_list(style, raw, expected):
-    assert offline_cleanup(raw, {}, "en-US", style=style) == expected
+def test_offline_spoken_list(raw, expected):
+    assert offline_cleanup(raw, {}, "en-US") == expected
 
 
 @pytest.mark.parametrize("raw", [
@@ -168,24 +167,11 @@ def test_offline_spoken_list(style, raw, expected):
     "Shopping list: rice and beans.",
 ])
 def test_ambiguous_speech_stays_prose(raw):
-    assert offline_cleanup(raw, {}, "en", style="light") == raw
-
-
-def test_off_keeps_fillers_and_only_honors_explicit_commands_and_dictionary():
-    raw = "Um, " + SPOKEN_SHOPPING[0] + ", new line, sea lum."
-    assert offline_cleanup(raw, {"sea lum": "Caelum"}, "en", style="off") == (
-        "Um, " + SPOKEN_SHOPPING[0] + "\nCaelum."
-    )
+    assert offline_cleanup(raw, {}, "en") == raw
 
 
 def test_non_english_transcription_does_not_infer_english_list_commands():
-    assert offline_cleanup(SPOKEN_SHOPPING[0], {}, "de", style="thorough") == SPOKEN_SHOPPING[0]
-
-
-def test_thorough_only_punctuates_plain_declarative_prose():
-    assert offline_cleanup("this is ready", {}, "en", style="thorough") == "This is ready."
-    assert offline_cleanup("this is ready", {}, "en", style="light") == "this is ready"
-    assert offline_cleanup("this is example.py", {}, "en", style="thorough") == "this is example.py"
+    assert offline_cleanup(SPOKEN_SHOPPING[0], {}, "de") == SPOKEN_SHOPPING[0]
 
 
 @pytest.mark.parametrize("wrong", [
@@ -204,7 +190,6 @@ async def test_commands_without_llm(engine, model):
     config = Config()
     config.stt.engine = engine
     config.cleanup.model = model
-    config.cleanup.local_style = "off"
     respond = Mock()
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         provider = Providers(config, client)
@@ -212,21 +197,21 @@ async def test_commands_without_llm(engine, model):
             "Shopping list\n\n- rice", False,
         )
         assert await provider.cleanup("new line") == ("\n", False)
-        assert await provider.cleanup(SHOPPING[0]) == (SHOPPING[0], False)
+        assert await provider.cleanup(SHOPPING[0]) == (SHOPPING[1] if engine == "local" else SHOPPING[0], False)
         provider.metrics["language"] = "fr"
         assert await provider.cleanup("new line") == ("new line", False)
     respond.assert_not_called()
 
 
-@pytest.mark.parametrize("style", ["light", "thorough"])
-async def test_local_engine_formats_spoken_list_without_network(style):
+async def test_local_engine_formats_spoken_list_without_network_even_with_online_model():
     config = Config()
     config.stt.engine = "local"
-    config.cleanup.local_style = style
+    config.cleanup.model = "configured-online-editor"
+    config.cleanup.style = "email"
     respond = Mock()
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         assert await Providers(config, client).cleanup(SPOKEN_SHOPPING[0]) == (
-            SPOKEN_SHOPPING[1], True,
+            SPOKEN_SHOPPING[1], False,
         )
     respond.assert_not_called()
 

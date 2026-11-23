@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 import httpx
 
 from .audio import RATE, wav_bytes
-from .config import local_refinement_url
 from .credentials import get as credential
 from .quality import (
     cleanup_prompt,
@@ -20,8 +19,6 @@ from .quality import (
     preserves_dictated_layout,
     validate_cleanup,
 )
-
-LOCAL_REFINEMENT_TIMEOUT = 45
 
 
 def contributor_scope(provider):
@@ -402,51 +399,11 @@ class Providers:
             except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
                 raise ProviderError("Transcription unavailable; retry or cancel") from None
 
-    async def _local_cleanup(self, raw, language, on_refining):
-        cfg = self.config.cleanup
-        baseline = offline_cleanup(raw, cfg.replacements, language, style=cfg.local_style)
-        active = cfg.local_style != "off"
-        changed = active and baseline != raw
-        self.metrics.update(cleanup_mode="local_rules" if active else "off", cleanup_refined=changed)
-        if not active or not cfg.local_model or not baseline.strip() or baseline.strip() == "-":
-            return baseline, changed
-        began = time.monotonic()
-        try:
-            url = local_refinement_url(cfg.local_base_url)
-            indication = on_refining()
-            if inspect.isawaitable(indication):
-                await indication
-            # Never reuse the online provider's credentials, proxy or client.
-            async with asyncio.timeout(LOCAL_REFINEMENT_TIMEOUT), httpx.AsyncClient(
-                trust_env=False, follow_redirects=False, timeout=LOCAL_REFINEMENT_TIMEOUT
-            ) as client:
-                response = await client.post(url, json={
-                    "model": cfg.local_model,
-                    "messages": [{"role": "system", "content": cleanup_prompt(cfg.local_style)},
-                                 {"role": "user", "content": baseline}],
-                    "stream": False, "temperature": 0, "max_tokens": max(256, min(8192, len(baseline) * 2)),
-                })
-                response.raise_for_status()
-                choice = response.json()["choices"][0]
-                answer = choice["message"]["content"]
-                if not isinstance(answer, str) or choice.get("finish_reason") not in ("stop", None):
-                    raise ValueError("Incomplete refinement")
-                text, ok = validate_cleanup(baseline, answer, allow_lists=True)
-                if not ok or not preserves_dictated_layout(baseline, text):
-                    raise ValueError("Unfaithful refinement")
-                self.metrics.update(cleanup_mode="local_model", cleanup_refined=True)
-                return text, True
-        except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError, IndexError, AttributeError):
-            self.metrics["cleanup_error"] = "local_refinement_fallback"
-            return baseline, changed
-        finally:
-            self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000
-
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
         language = self.metrics.get("language") or self.config.stt.language
         if self.metrics.get("engine", self.config.stt.engine) == "local":
-            return await self._local_cleanup(raw, language, on_refining)
+            return offline_cleanup(raw, cfg.replacements, language), False
         dictated = raw
         raw = spoken_formatting(dictated, language)
         if not cfg.model or not raw.strip() or raw == "- ":
@@ -584,29 +541,16 @@ def spoken_formatting(text, language=""):
     return "".join(parts)
 
 
-def offline_cleanup(text, replacements, language="", *, style="light"):
+def offline_cleanup(text, replacements, language=""):
     """Deterministic local cleanup. Dictionary replacements run once, without cascades."""
-    lang = language.lower().replace("_", "-").split("-")[0]
-    if style != "off" and lang in ("en", "english"):
+    if language.lower().replace("_", "-").split("-")[0] == "en":
         text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
-    text = spoken_formatting(text if style == "off" else text.strip(), language)
-    if style in ("light", "thorough") and lang in ("en", "english", "", "auto"):
-        text = format_spoken_list(text)
-        # Limit prose edits to recognizable English declaratives. A path, code
-        # snippet, ambiguous fragment, or dictated layout should remain literal.
-        if style == "thorough" and re.fullmatch(
-            r"(?:i (?:am|was|have)|we (?:are|were|have)|(?:this|that|it) (?:is|was))"
-            r" [a-zA-Z ,’'-]+[.!?]?", text, re.I,
-        ):
-            text = text[0].upper() + text[1:]
-            if text[-1].isalpha():
-                text += "."
+    text = spoken_formatting(text.strip(), language)
+    text = format_spoken_list(text, language)
     if replacements:
         keys = sorted(replacements, key=len, reverse=True)
         pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"
         # The capture index identifies the dictionary entry even when re.I
         # equates characters whose casefolds differ (for example İ and i).
         text = re.sub(pattern, lambda m: replacements[keys[m.lastindex - 1]], text, flags=re.I)
-    if style == "off":
-        return text
     return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text))

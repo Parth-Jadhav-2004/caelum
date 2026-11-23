@@ -261,15 +261,7 @@ def service_presentation(status):
     }
     title, detail = labels.get(state, ("Ready", "Use your shortcut or Record to begin."))
     metrics = status.get("metrics") or []
-    completed = state in ("success", "unrefined", "saved", "copied", "ready_to_copy", "success_fallback_local")
-    last = metrics[-1] if metrics else {}
-    if completed and last.get("cleanup_error") == "local_refinement_fallback":
-        if state == "unrefined":
-            title, detail = "Done", "Transcription was sent to the original application."
-        detail += " Used built-in formatting; the local text model did not return a usable edit."
-    elif state == "unrefined" and last.get("cleanup_mode") == "local_rules":
-        title, detail = "Done", "Local formatting finished. No edits were needed."
-    elif state in ("saved", "copied") and metrics and not last.get("cleanup_refined") and last.get("cleanup_mode") != "local_rules":
+    if state in ("saved", "copied") and metrics and not metrics[-1].get("cleanup_refined", False):
         detail += " Raw transcription; refinement was skipped or unavailable."
     if state in ("saved", "copied") and metrics and metrics[-1].get("fallback"):
         title = "Done · used Online" if metrics[-1]["fallback"] == "online" else "Done · used this computer"

@@ -87,6 +87,21 @@ it("starts the service after setup without automatically recording", async () =>
   expect(ipc).not.toHaveBeenCalledWith("control", { action: "start" });
   expect(document.documentElement.dataset.reducedMotion).toBe("true");
 });
+it("saves an online writing style from the sidebar and previews the example", async () => {
+  mount();
+  const nav = await screen.findByRole("navigation", { name: "Main navigation" });
+  await userEvent.click(within(nav).getByRole("button", { name: "Styles" }));
+  expect(screen.getByRole("radio", { name: "Off" })).toBeChecked();
+  await userEvent.click(screen.getByRole("radio", { name: "Email" }));
+  expect(screen.getByRole("heading", { name: "Email example" })).toBeVisible();
+  await waitFor(() => expect(ipc).toHaveBeenCalledWith("settings.save", {
+    config: { cleanup: { style: "email", model: "openai/gpt-oss-20b", reasoning_effort: "low" } },
+  }));
+  await userEvent.click(screen.getByRole("radio", { name: "Off" }));
+  await waitFor(() => expect(ipc).toHaveBeenCalledWith("settings.save", {
+    config: { cleanup: { model: "" } },
+  }));
+});
 it("shows the settings path and only resets on request, keeping failure and backup paths visible", async () => {
   let attempts = 0;
   vi.mocked(ipc).mockImplementation((async (method: string) => {

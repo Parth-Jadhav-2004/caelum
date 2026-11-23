@@ -35,10 +35,7 @@ concurrency = 2
 
 [cleanup]
 replacements = {} # e.g. { "sea lum" = "Caelum" }
-style = "light" # online style; model="" disables online model refinement
-local_style = "light" # off, light, thorough; independent of the online model
-local_model = "" # optional installed text model; blank uses built-in local formatting
-local_base_url = "http://127.0.0.1:11434/v1"
+style = "light" # light, thorough, email, casual, code; model="" disables cleanup
 # Free single-key default: raw transcription until refinement is benchmarked.
 # Opt in to Groq refinement with model = "openai/gpt-oss-20b".
 base_url = "https://api.groq.com/openai/v1"
@@ -50,7 +47,7 @@ timeout_seconds = 1.8
 [desktop]
 # Disable to dictate without saving new transcripts. Existing history is kept.
 history_enabled = true
-auto_copy = true
+auto_copy = false
 check_updates = true # Official native packages check GitHub on app launch; never auto-download.
 theme = "dark" # system follows desktop appearance; light and dark override it.
 color_theme = "t3-code" # t3-code, t3-chat, grove, ocean, ember, iris, or caelum.

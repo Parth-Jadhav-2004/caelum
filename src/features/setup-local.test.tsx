@@ -206,21 +206,6 @@ it("uses an existing verified installation with plain Continue", async () => {
   expect(ipc).toHaveBeenCalledWith("models.use", { id: "parakeet-110m" });
   expect(ipc).not.toHaveBeenCalledWith("models.download", expect.anything());
 });
-it("saves the chosen local refinement with an installed speech model and skips provider setup", async () => {
-  list.models[1].state = "installed";
-  current.cleanup.model = "online-model";
-  mount();
-  expect(screen.queryByRole("combobox", { name: "Local refinement" })).not.toBeInTheDocument();
-  await chooseLocal();
-  await userEvent.click(screen.getByRole("combobox", { name: "Local refinement" }));
-  await userEvent.click(screen.getByRole("option", { name: "Thorough" }));
-  await userEvent.click(screen.getByRole("radio", { name: "Small and quick" }));
-  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "Check your microphone" });
-  expect(current.stt.local_model).toBe("parakeet-110m");
-  expect(current.cleanup).toMatchObject({ local_style: "thorough", model: "online-model" });
-  expect(ipc).not.toHaveBeenCalledWith("setup.validate", expect.anything());
-});
 it("can change the recommendation and leave local setup without a transfer", async () => {
   mount();
   await chooseLocal();

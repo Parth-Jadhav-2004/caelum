@@ -79,9 +79,8 @@ class History:
                     len(text.split()),
                     max(0, metrics.get("release_to_dispatch_ms", 0)),
                     metrics.get("model", config.stt.local_model if engine == "local" else config.stt.model),
-                    (config.cleanup.model if engine == "online" else
-                     config.cleanup.local_model if metrics.get("cleanup_mode") == "local_model" else ""),
-                    int(refined and (engine == "online" or metrics.get("cleanup_refined", False))),
+                    config.cleanup.model if engine == "online" else "",
+                    int(refined and engine == "online"),
                     int(copied),
                     0 if engine == "local" else duration / 3_600_000 * rate if rate else None,
                     rate,

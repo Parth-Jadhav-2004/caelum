@@ -40,12 +40,14 @@ Caelum does not install broad keyboard hooks or bypass compositor permissions.
 
 On Hyprland the existing bindings are installed dynamically and removed by exact
 handle; no user compositor config is rewritten. Native insertion targets the
-original app. If focus changes, Caelum skips insertion; paste manually if it
-reports **Copied**. Hyprland insertion uses the clipboard, so turning off
-automatic copy replaces insertion and fallback with manual Copy. Lock/suspend
-signals cancel capture; lock feedback failures fail closed. The native HUD does
-not activate or steal keyboard focus. Portable mode uses notifications and saved
-history/manual copy. This distinction is intentional.
+original app. With automatic copy off (the default), both native and portable
+Linux modes try to insert at the caret in the same focused, editable AT-SPI
+field. Click into the field before pressing the shortcut. Password fields,
+terminals, active selections, apps that do not expose editable text, and changed
+focus fall back to **Copy transcript** on Home. The clipboard is never used for
+this direct insertion. If you enable automatic copy, Hyprland uses clipboard
+paste and portable desktops retain their save/copy workflow. Lock/suspend signals
+cancel capture; lock feedback failures fail closed.
 
 Tauri uses WebKitGTK on Linux. GPU/driver rendering issues require testing on the
 deployment host: https://v2.tauri.app/develop/debug/linux-graphics/ . Do not force

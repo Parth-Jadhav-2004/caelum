@@ -12,7 +12,7 @@ Export is an explicit action with a sensitivity warning. Exported JSONL contains
 
 On this computer, a downloaded model transcribes speech locally without credentials. Provisioning downloads model files; local practice never uploads. Normal local dictation only tries an online provider if you explicitly enable online fallback. Online transcription sends captured speech and custom vocabulary (the request prompt) to your configured provider, Groq by default; when online cleanup is enabled, its provider receives the canonical transcript and conservative system prompt. Background chunking uploads before release when explicitly enabled. Credentials use the desktop Secret Service keyring through secret-tool. If unavailable, setup reports a mode-600 JSON private-file fallback under the Caelum config directory; this fallback is not encrypted. Saved keys override legacy environment keys. Deletion clears managed storage and prevents legacy environment values from returning, but does not edit external shell/environment files. Keys are never part of HUD IPC. OpenAI cleanup requests explicitly use `store=false`; provider retention and abuse-monitoring policies remain independent of local history. Review [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) and your Groq account policies.
 
-To keep your clipboard unchanged, turn off **Copy transcripts to clipboard automatically** in Settings → Privacy & data (`desktop.auto_copy = false`). The default is on. Windows can still insert into supported text fields. Hyprland paste and clipboard fallback are skipped when the switch is off. If both automatic copy and history are off, choose **Copy transcript** on Home before starting another recording, locking, pausing, or quitting. The finished text stays in service memory until then; only an explicit copy puts it on the clipboard.
+**Copy transcripts to clipboard automatically** is off by default in Settings → Privacy & data (`desktop.auto_copy = false`). Explicit saved preferences are preserved. With it off, Caelum attempts direct insertion into the original focused text field. On Linux it uses the desktop accessibility interface; on Windows it uses supported Edit/RichEdit controls. If the target is unavailable or focus changes, choose **Copy transcript** on Home. The clipboard is untouched unless you explicitly copy. With history off, the finished text remains in service memory only until another recording, lock, pause, or quit.
 
 **Desktop clipboard managers, including Omarchy's clipboard manager, may retain copied text independently of Caelum.** Caelum does not disable or clear the user's clipboard manager.
 
@@ -47,12 +47,3 @@ require approval and are stored in the user's private data directory until
 installation or explicit discard. Installation requests administrator privileges
 through the desktop's polkit agent. The background service never performs update
 network requests. See [updater security and lifecycle](updates.md).
-
-### Local text refinement
-
-Built-in formatting runs in the engine. If you name a local text model and turn
-local refinement on, Caelum sends the transcript (not the audio) to the selected
-loopback service. The client does not use HTTP proxy settings, follow redirects,
-or attach your online provider credentials. Run an inference server you trust
-with local weights; its logging and any forwarding it performs are outside
-Caelum's control. Model downloads are separate from dictation.

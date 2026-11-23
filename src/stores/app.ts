@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Status } from "@/lib/ipc";
 export type Page =
-  "dictionary" | "home" | "statistics" | "history" | "settings" | "setup";
+  "dictionary" | "home" | "statistics" | "history" | "settings" | "setup" | "styles";
 interface AppState {
   page: Page;
   settingsGroup: string;
