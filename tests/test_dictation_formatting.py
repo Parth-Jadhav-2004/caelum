@@ -36,6 +36,10 @@ def test_cleanup_prompt_includes_list_rules_and_examples(style):
     SHOPPING, ISSUES, STEPS, (PROSE, PROSE),
     ("number one first aid and number two oil", "1. First aid\n2. Oil"),
     ("issues also two flags and one error", "Issues:\n\n- Two flags\n- One error"),
+    ("shopping list first rice second oil. tasks first wash second cook",
+     "Shopping list:\n\n1. Rice\n2. Oil\n\nTasks:\n\n1. Wash\n2. Cook"),
+    ("issues poor signal and noise. steps number one reconnect number two retry",
+     "Issues:\n\n- Poor signal\n- Noise\n\nSteps:\n\n1. Reconnect\n2. Retry"),
     ("steps " + " ".join(f"number {n} check file {n}" for n in range(1, 101)),
      "Steps:\n\n" + "\n".join(f"{n}. Check file {n}" for n in range(1, 101))),
 ])

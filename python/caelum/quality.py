@@ -63,6 +63,10 @@ def normalize(text):
 _LIST_MARKER = re.compile(r"^(?:-|([1-9]\d*)\.) ")
 _CARDINALS = "one two three four five six seven eight nine ten".split()
 _ORDINALS = "first second third fourth fifth sixth seventh eighth ninth tenth".split()
+_NUMBER_CUES = {
+    str(number): (cardinal, f"number {cardinal}", ordinal)
+    for number, (cardinal, ordinal) in enumerate(zip(_CARDINALS, _ORDINALS, strict=True), start=1)
+}
 
 
 def _list_preserves_words(raw, lines):
@@ -89,9 +93,7 @@ def _list_preserves_words(raw, lines):
             cues = {"also", "next", "then", "finally"}
             if number := marker[1]:
                 cues.update((number, f"number {number}"))
-                if number == str(items) and items <= len(_CARDINALS):
-                    cardinal = _CARDINALS[items - 1]
-                    cues.update((cardinal, f"number {cardinal}", _ORDINALS[items - 1]))
+                cues.update(_NUMBER_CUES.get(number, ()))
             # Prefer literal content, e.g. an item beginning with "first aid".
             for skip in range(4):
                 cue = " ".join(raw_words[pos:pos + skip])
