@@ -190,8 +190,13 @@ class Providers:
         cfg = self.config.stt
         if cfg.engine != "local":
             return {"kind": "online", "model": None, "state": "ready", "message": ""}
+        message = self.local_message
+        if self.local_state == "ready" and self.local_engine:
+            device = getattr(self.local_engine, "active_device", None)
+            if device in ("cpu", "cuda"):
+                message = "Using NVIDIA CUDA" if device == "cuda" else "Using CPU"
         return {"kind": "local", "model": cfg.local_model or None,
-                "state": self.local_state, "message": self.local_message}
+                "state": self.local_state, "message": message}
 
     async def aclose(self):
         self._closing = True

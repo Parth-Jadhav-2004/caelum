@@ -205,6 +205,7 @@ def main():
     )
     sub.add_parser("devices", help="List microphones")
     sub.add_parser("init", help="Create a config file without overwriting an existing one")
+    sub.add_parser("install-nvidia", help="Install optional sherpa CUDA libraries separately from models")
     models = sub.add_parser("models", help="Manage local models or verify provider model identifiers")
     models.add_argument("action", choices=["stt", "cleanup", "list", "download", "remove", "verify", "pin"])
     models.add_argument("id", nargs="?")
@@ -221,6 +222,11 @@ def main():
     replay.add_argument("--seconds", type=float, default=1.2)
     args = parser.parse_args()
     try:
+        if args.command == "install-nvidia":
+            from .cuda_runtime import install
+
+            install()
+            return
         if args.command == "control":
             control(args.action, args.token, args.address)
             return

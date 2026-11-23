@@ -174,6 +174,7 @@ export function Settings({
   }
   const navigate = useApp((s) => s.navigate);
   const running = useApp((s) => s.status?.running);
+  const engine = useApp((s) => s.status?.engine);
   const portalStatus = useApp((s) => portalShortcutStatus(s.status));
   const sessionHotkey = useApp((s) => s.status?.hotkey);
   const [restarting, setRestarting] = useState(false);
@@ -397,7 +398,10 @@ export function Settings({
                     }))}
                     beforeUse={() => commit?.(config) ?? Promise.resolve()}
                   />
-                  <Row title="Run local models on">
+                  <Row
+                    title="Run local models on"
+                    detail={engine?.kind === "local" ? engine.message : undefined}
+                  >
                     <Choice
                       label="Local model device"
                       value={config.stt.local_device}

@@ -1,8 +1,10 @@
 """Offline engines. Native loading, decoding and destruction share one worker."""
 
 import asyncio
+import ctypes
 import os
 import re
+import shutil
 import time
 import unicodedata
 from collections import Counter
@@ -12,8 +14,10 @@ from pathlib import Path
 import numpy as np
 
 from .audio import RATE
+from .cuda_runtime import SherpaCuda
 from .models import get_model, installed, models_dir
 from .providers import ProviderError, Transcript
+from .sherpa_stt import ADAPTERS, hotword_phrases
 
 
 def auto_threads():
@@ -40,145 +44,33 @@ def repetition_guard(text, duration, tokens=()):
     return False
 
 
-def _sherpa_words(result, duration):
-    tokens = list(result.tokens)
-    timestamps = list(result.timestamps)
-    if not tokens or len(tokens) != len(timestamps):
-        return []
-    # SentencePiece word boundaries are used by the Parakeet exports.
-    words = []
-    for token, timestamp in zip(tokens, timestamps, strict=True):
-        if token.startswith(("▁", " ")) or not words:
-            words.append({"word": token.lstrip("▁ "), "start": min(duration, max(0, timestamp))})
-        else:
-            words[-1]["word"] += token
-    words = [word for word in words if word["word"]]
-    for index, word in enumerate(words):
-        word["end"] = words[index + 1]["start"] if index + 1 < len(words) else duration
-    return words
+def whisper_setup_error():
+    windows = os.name == "nt"
+    return ProviderError(
+        "Whisper needs CUDA-capable CTranslate2 with int8_float16 and CUDA 12 cuBLAS "
+        f"on {'Windows (DLLs on PATH)' if windows else 'Linux (libraries on the loader path)'}. "
+        "See docs/nvidia.md or choose Auto or CPU.", "local_setup")
 
 
-class SherpaTransducer:
-    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
-        import sherpa_onnx
-
-        files = {item["role"]: str(path / item["path"]) for item in model["files"]}
-        options = dict(
-            encoder=files["encoder"], decoder=files["decoder"], joiner=files["joiner"],
-            tokens=files["tokens"], model_type="nemo_transducer", num_threads=threads,
-            sample_rate=RATE, provider=device,
-        )
-        pieces = [line.rsplit(" ", 1)[0] for line in Path(files["tokens"]).read_text().splitlines()]
-        characters = {piece for piece in pieces if len(piece) == 1}
-        phrases = [phrase for phrase in hotword_phrases(vocabulary)
-                   if all(char.isspace() or char in characters for char in phrase)]
-        if not phrases:
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**options)
-            return
-        # The catalog contains tokens, not the original SentencePiece scores.
-        # A uniform-cost vocabulary finds a valid minimum-piece segmentation
-        # for biasing only; it does not change the model or its token IDs.
-        vocab = "\n".join(
-            line.rsplit(" ", 1)[0] + "\t-1"
-            for line in Path(files["tokens"]).read_text().splitlines()
-            if line.rsplit(" ", 1)[0]
-        )
-        descriptors = []
-        if os.name == "nt":
-            import tempfile
-
-            with tempfile.TemporaryDirectory(prefix="caelum-vocabulary-") as tmp:
-                vocabulary_path, words = Path(tmp) / "vocab", Path(tmp) / "words"
-                vocabulary_path.write_text(vocab, encoding="utf-8")
-                words.write_text("\n".join(phrases), encoding="utf-8")
-                self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
-                    **options, hotwords_file=str(words), bpe_vocab=str(vocabulary_path),
-                    modeling_unit="bpe", decoding_method="modified_beam_search",
-                )
-            return
-        try:
-            for content in (vocab, "\n".join(phrases)):
-                descriptor = os.memfd_create("caelum-hotwords", flags=0)
-                descriptors.append(descriptor)
-                with os.fdopen(os.dup(descriptor), "wb") as stream:
-                    stream.write(content.encode("utf-8"))
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
-                **options, hotwords_file=f"/proc/self/fd/{descriptors[1]}",
-                bpe_vocab=f"/proc/self/fd/{descriptors[0]}", modeling_unit="bpe",
-                decoding_method="modified_beam_search",
-            )
-        finally:
-            for descriptor in descriptors:
-                os.close(descriptor)
-
-    def transcribe(self, samples):
-        stream = self.recognizer.create_stream()
-        stream.accept_waveform(RATE, samples)
-        self.recognizer.decode_stream(stream)
-        result = stream.result
-        self.detected_language = getattr(result, "lang", "")
-        return result.text, _sherpa_words(result, len(samples) / RATE), list(result.tokens)
-
-
-def hotword_phrases(vocabulary):
-    # Never allow sherpa's score/threshold syntax or slashes to be injected.
-    phrases = []
-    for part in re.split(r"[,\n]", vocabulary[:4000]):
-        phrase = " ".join(re.sub(r"[^\w\s]", " ", part, flags=re.UNICODE).split())[:128]
-        if phrase and phrase not in phrases:
-            phrases.append(phrase)
-    return phrases[:128]
-
-
-class SherpaCohere:
-
-    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
-        import sherpa_onnx
-
-        files = {item["role"]: str(path / item["path"]) for item in model["files"]}
-        self.language = language if language in model["languages"] else "en"
-        self.recognizer = sherpa_onnx.OfflineRecognizer.from_cohere_transcribe(
-            encoder=files["encoder"], decoder=files["decoder"], tokens=files["tokens"],
-            num_threads=threads, language=self.language,
-            use_punct=True, use_itn=True, provider=device,
-        )
-
-    def transcribe(self, samples):
-        stream = self.recognizer.create_stream()
-        stream.accept_waveform(RATE, samples)
-        self.recognizer.decode_stream(stream)
-        self.detected_language = getattr(stream.result, "lang", "") or getattr(self, "language", "en")
-        return stream.result.text, [], []
-
-
-class SherpaCanary(SherpaCohere):
-    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
-        import sherpa_onnx
-
-        files = {item["role"]: str(path / item["path"]) for item in model["files"]}
-        language = language if language in model["languages"] else "en"
-        self.language = language
-        self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_canary(
-            encoder=files["encoder"], decoder=files["decoder"], tokens=files["tokens"],
-            src_lang=language, tgt_lang=language, num_threads=threads, provider=device,
-        )
-
-
-class SherpaMoonshine(SherpaCohere):
-    def __init__(self, model, path, threads, language="", vocabulary="", device="cpu"):
-        import sherpa_onnx
-
-        files = {item["role"]: str(path / item["path"]) for item in model["files"]}
-        self.recognizer = sherpa_onnx.OfflineRecognizer.from_moonshine(
-            preprocessor=files["preprocessor"], encoder=files["encoder"],
-            uncached_decoder=files["uncached_decoder"], cached_decoder=files["cached_decoder"],
-            tokens=files["tokens"], num_threads=threads, provider=device,
-        )
+def whisper_blas():
+    # The pinned CTranslate2 wheel loads cuBLAS lazily. Probe before loading weights.
+    if os.name == "nt":
+        dll = shutil.which("cublas64_12.dll")
+        if not dll:
+            raise OSError("Missing cuBLAS")
+        ctypes.CDLL(dll)
+    else:
+        ctypes.CDLL("libcublas.so.12")
 
 
 class FasterWhisper:
     def __init__(self, model, path, threads, language="", vocabulary="", prefer_cuda=True, device="auto"):
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
+        except (ImportError, OSError):
+            if device == "gpu":
+                raise whisper_setup_error() from None
+            raise
 
         self.path, self.threads = str(path), threads
         # A local directory and local_files_only prevent implicit HF downloads.
@@ -191,14 +83,15 @@ class FasterWhisper:
                 if ctranslate2.get_cuda_device_count() and (
                     "int8_float16" in ctranslate2.get_supported_compute_types("cuda")
                 ):
+                    whisper_blas()
                     self.model = WhisperModel(str(path), device="cuda", compute_type="int8_float16",
                                               cpu_threads=threads, local_files_only=True)
                     self.device = "cuda"
-            except (RuntimeError, OSError):
+            except (ImportError, RuntimeError, OSError):
                 if device == "gpu":
-                    raise ProviderError("GPU is unavailable. Choose Auto or CPU in Settings.", "local_setup") from None
+                    raise whisper_setup_error() from None
         if self.device == "cpu" and device == "gpu":
-            raise ProviderError("GPU is unavailable. Choose Auto or CPU in Settings.", "local_setup")
+            raise whisper_setup_error()
         if self.device == "cpu":
             self.model = WhisperModel(str(path), device="cpu", compute_type="int8",
                                       cpu_threads=threads, num_workers=1, local_files_only=True)
@@ -209,8 +102,11 @@ class FasterWhisper:
         try:
             return self._decode(samples, retry)
         except (RuntimeError, OSError):
-            if self.device != "cuda" or not self.allow_cpu_fallback:
+            if self.device != "cuda":
                 raise
+            if not self.allow_cpu_fallback:
+                raise ProviderError("Whisper CUDA decode failed. Check cuBLAS and free GPU memory, "
+                                    "or choose Auto or CPU.", "local_decode") from None
             # CTranslate2 can construct a CUDA model even when cuBLAS/cuDNN
             # are missing; capability enumeration alone is insufficient.
             from faster_whisper import WhisperModel
@@ -236,31 +132,24 @@ class FasterWhisper:
         return " ".join(segment.text.strip() for segment in segments).strip(), [], []
 
 
-def runtime_adapter(model, path, threads, language, vocabulary, prefer_cuda=True, device="auto"):
-    adapters = {
-        "sherpa-transducer": SherpaTransducer,
-        "sherpa-cohere": SherpaCohere,
-        "sherpa-canary": SherpaCanary,
-        "sherpa-moonshine": SherpaMoonshine,
-        "faster-whisper": FasterWhisper,
-    }
-    adapter = adapters[model["runtime"]]
-    if adapter is FasterWhisper:
-        return adapter(model, path, threads, language, vocabulary, prefer_cuda, device)
-    # The shipped sherpa runtime is CPU-only; an explicit GPU choice must not lie.
-    if device == "gpu":
-        import sherpa_onnx
-
-        if "CUDAExecutionProvider" not in getattr(sherpa_onnx, "get_available_providers", lambda: [])():
-            raise ProviderError("GPU is unavailable for this model. Choose Auto or CPU.", "local_setup")
-    return adapter(model, path, threads, language, vocabulary,
-                   device="cuda" if device == "gpu" else "cpu")
+def runtime_adapter(model, path, threads, language, vocabulary, prefer_cuda=True, device="auto",
+                    profile_dir=None):
+    args = model, path, threads, language, vocabulary
+    if model["runtime"] == "faster-whisper":
+        return FasterWhisper(*args, prefer_cuda, device)
+    if device == "gpu" or prefer_cuda and device == "auto":
+        try:
+            return SherpaCuda(*args, profile_dir=profile_dir)
+        except ProviderError:
+            if device == "gpu":
+                raise
+    return ADAPTERS[model["runtime"]](*args)
 
 
 class LocalEngine:
     def __init__(self, *, root=None, threads=0, language="", vocabulary="",
                  silence_dbfs=-60, adapter_factory=None, prefer_cuda=True, device="auto",
-                 speech_detector=None):
+                 speech_detector=None, cuda_profile_dir=None):
         if type(threads) is not int or not 0 <= threads <= 256:
             raise ValueError("Local thread count must be between 0 and 256")
         self.root = Path(root) if root is not None else models_dir()
@@ -271,6 +160,7 @@ class LocalEngine:
         self.adapter_factory = adapter_factory
         self.prefer_cuda = prefer_cuda
         self.device = device
+        self.cuda_profile_dir = cuda_profile_dir
         self._speech_detector = speech_detector
         self._provided_detector = speech_detector is not None
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="caelum-local")
@@ -332,12 +222,15 @@ class LocalEngine:
                     raise ProviderError("Not enough memory for this speech model. Close apps and try again.",
                                         "local_setup")
             args = (model, self.root / model_id, self.threads, language, self.vocabulary)
-            new = (self.adapter_factory(*args) if self.adapter_factory
-                   else runtime_adapter(*args, prefer_cuda=self.prefer_cuda, device=self.device))
             if self._speech_detector is None:
                 from .vad import Silero
 
                 self._speech_detector = Silero()
+            new = (self.adapter_factory(*args) if self.adapter_factory
+                   else runtime_adapter(*args, prefer_cuda=self.prefer_cuda, device=self.device,
+                                        profile_dir=self.cuda_profile_dir))
+            if isinstance(self._adapter, SherpaCuda):
+                self._adapter.close()
             self._adapter = new
             self.model_id = model_id
             self.load_seconds = time.monotonic() - began
@@ -403,7 +296,13 @@ class LocalEngine:
         finally:
             self.decode_ms = (time.monotonic() - began) * 1000
 
+    @property
+    def active_device(self):
+        return getattr(self._adapter, "device", "cpu") if self._adapter is not None else None
+
     def _unload(self):
+        if isinstance(self._adapter, SherpaCuda):
+            self._adapter.close()
         self._adapter = None
         if not self._provided_detector:
             self._speech_detector = None
