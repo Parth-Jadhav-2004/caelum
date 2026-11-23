@@ -39,7 +39,7 @@ def install():
                        check=True)
     except subprocess.CalledProcessError:
         raise ValueError("NVIDIA runtime installation failed. Check the uv output above.") from None
-    print("NVIDIA runtime installed. Choose Auto or GPU in Settings → Transcription.")
+    print("NVIDIA runtime installed. Choose Auto or GPU in Settings > Transcription.")
 
 
 def setup_error(reason):
