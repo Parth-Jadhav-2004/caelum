@@ -56,8 +56,11 @@ async def test_download_verifies_receipt_and_skips_installed(tmp_path, tiny_cata
     model, payload = tiny_catalog
     handler = Mock(return_value=httpx.Response(200, content=payload))
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        manager = models.ModelManager(tmp_path, client)
+        events = []
+        manager = models.ModelManager(tmp_path, client, events.append)
         path = await manager.download(model["id"])
+        states = [event["state"] for event in events]
+        assert states.index("verifying") < states.index("installing") < states.index("ready")
         assert models.installed(model["id"], tmp_path)
         assert models.verify(model["id"], tmp_path) == {"ok": True, "bad_files": []}
         assert json.loads((path / "receipt.json").read_text())["revision"] == "pinned-commit"
@@ -248,6 +251,53 @@ async def test_queue_pause_cancel_resume_and_one_active(tmp_path, tiny_catalog, 
     assert order == [model["id"], second["id"]]
     release_second.set()
     await manager.aclose()
+
+
+async def test_pause_resume_cancel_tracks_only_the_requested_transfer(tmp_path, tiny_catalog, monkeypatch):
+    model, _ = tiny_catalog
+    chunk = b"x" * (1024 * 1024)
+    total = 3 * len(chunk)
+    model.update(download_bytes=total, disk_bytes=total)
+    model["files"][0].update(bytes=total, sha256=hashlib.sha256(chunk * 3).hexdigest())
+    other = {**model, "id": "not-selected"}
+    monkeypatch.setattr(models, "catalog", lambda: {"version": 1, "models": [model, other]})
+    ranges = []
+    chunks_written = asyncio.Queue()
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield chunk
+            chunks_written.put_nowait(True)
+            await asyncio.Event().wait()
+
+    def serve(request):
+        ranges.append(request.headers["Range"])
+        offset = (len(ranges) - 1) * len(chunk)
+        return httpx.Response(206, headers={"Content-Range": f"bytes {offset}-{total-1}/{total}"},
+                              stream=Stream())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as client:
+        manager = models.ModelManager(tmp_path, client)
+        try:
+            await manager.recover()
+            assert not ranges and not manager.states
+            for index in (1, 2):
+                await manager.submit(model["id"])
+                await asyncio.wait_for(chunks_written.get(), 2)
+                progress = manager.states[model["id"]]
+                assert (progress["state"], progress["received_bytes"], progress["total_bytes"]) == (
+                    "downloading", index * len(chunk), total)
+                if index == 1:
+                    await manager.pause(model["id"])
+                    assert manager.states[model["id"]]["state"] == "paused"
+                    assert models.ModelManager(tmp_path).states[model["id"]]["received_bytes"] == len(chunk)
+            await manager.cancel(model["id"])
+            assert manager.states[model["id"]]["state"] == "cancelled"
+            assert set(manager.states) == {model["id"]}
+            assert not list((tmp_path / ".download").iterdir())
+            assert ranges == ["bytes=0-", f"bytes={len(chunk)}-"]
+        finally:
+            await manager.aclose()
 
 
 async def test_restart_restores_paused_and_rechecks_corrupt_receipt(tmp_path, tiny_catalog):

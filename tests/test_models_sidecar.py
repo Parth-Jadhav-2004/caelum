@@ -24,6 +24,20 @@ def test_model_list_contract_hardware_gate_and_extra(tmp_path, monkeypatch):
     assert manager.list(Config(), replace(hardware, mem_total_mb=16384))["recommended"]["id"] == "parakeet-110m"
 
 
+async def test_fresh_bootstrap_and_language_recommendations_leave_model_directory_empty(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    save(Config(), path)
+    backend = Backend(path)
+    monkeypatch.setattr("caelum.sidecar.credentials.describe", lambda _: "Not set")
+    await backend.dispatch("bootstrap", {})
+    for language in ("en", "hi", "ja"):
+        result = await backend.dispatch("models.list", {"language": language})
+        assert result["models"] and all(m["state"] == "not_installed" for m in result["models"])
+        assert result["pending_use"] is None
+    assert not backend.models.states and not backend.models.queue
+    assert not (backend.models.root / ".download").exists()
+
+
 async def test_models_use_requires_successful_load_and_refuses_busy(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     save(Config(), path)

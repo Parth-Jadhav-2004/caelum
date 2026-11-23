@@ -395,7 +395,6 @@ export function Settings({
                       ...config,
                       stt: { ...config.stt, local_model: id },
                     }))}
-                    beforeUse={() => commit?.(config) ?? Promise.resolve()}
                   />
                   <Row title="Run local models on">
                     <Choice
@@ -555,10 +554,9 @@ export function Settings({
                   </Row>
                   {config.stt.fallback === "local" && (
                     <ModelPicker
-                      requireInstalled
                       language={config.stt.language}
                       selected={config.stt.local_model}
-                      onSelect={(id) => set("stt", "local_model", id)}
+                      applyInstalled={(id) => set("stt", "local_model", id)}
                     />
                   )}
                 </>
