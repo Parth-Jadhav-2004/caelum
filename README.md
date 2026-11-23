@@ -161,6 +161,27 @@ Online and local recognition. Names and technical terms act as recognition hints
 Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
 existing conservative validation and fall back to raw text on failure.
 
+With **Light** or **Thorough** online cleanup, say a heading and at least two
+items, or use clear cues such as “first … second …”. For example, “shopping
+list first rice second onion third oil” pastes as:
+
+```text
+Shopping list:
+
+1. Rice
+2. Onion
+3. Oil
+```
+
+Unordered items, such as a few issues you found, use `- ` bullets. Ordinary
+sentences stay prose. This formatting needs no separate setting. With cleanup
+off or local transcription, Caelum does not infer lists. You can still say
+“new line”, “new paragraph”, or “bullet point” as separate phrases. For
+example, “Notes. New paragraph. Bullet point. Rice.” produces a blank line
+after “Notes.” followed by `- Rice.`. Commands must stand alone in the
+transcript (separated by punctuation or line breaks); “a new line of work”
+stays literal.
+
 ### On this computer
 
 Settings → Transcription offers **On this computer | Online**. The local
@@ -212,7 +233,7 @@ vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
 hints. Silero skips silence and finds pauses before local decoding. Long recordings
 are split at pauses, with maximum windows of 35 seconds for Cohere, 30 seconds
 for Whisper and 60 seconds for Parakeet. Vocabulary echoes and subtitle boilerplate
-are filtered. For known English speech, offline cleanup removes “um” and “uh” and handles “new line”. All languages support
+are filtered. For known English speech, offline cleanup also removes “um” and “uh”. All languages support
 Dictionary replacements without uploading text.
 
 Settings → Transcription offers Auto, GPU and CPU execution and an idle unload

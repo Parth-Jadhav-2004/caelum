@@ -27,7 +27,10 @@ async def test_paste_is_addressed_and_terminal_aware(monkeypatch):
     monkeypatch.setattr(
         "caelum.linux.hypr_json", AsyncMock(return_value={"address": "0xabc", "pid": 1})
     )
-    assert await insert("words", SimpleNamespace(address="0xabc", pid=1, terminal=True))
+    text = "Shopping list:\n\n1. Rice\n2. Onion\n3. Oil"
+    assert await insert(text, SimpleNamespace(address="0xabc", pid=1, terminal=True))
+    assert command.await_args_list[0].args == ("wl-copy", "--type", "text/plain;charset=utf-8")
+    assert command.await_args_list[0].kwargs["data"] == b"Shopping list:\n\n1. Rice\n2. Onion\n3. Oil"
     assert command.call_args.args == (
         "hyprctl",
         "dispatch",
