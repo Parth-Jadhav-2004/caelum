@@ -107,8 +107,10 @@ CUDA compute events rather than memory copies. Repeat with `--model <id>` or
   The no-device case emulated a CPU-only host; it was not a second physical machine.
   Separately, with no cuBLAS on the loader path, Whisper Turbo rejected explicit
   GPU and decoded the reference on CPU in Auto.
-- **Windows:** No Windows machine with an accessible NVIDIA GPU was available
-  for qualification. The Windows wheel and CUDA DLLs exist, but that does not
-  establish successful Windows inference for **any** model. The manual
-  `verify_cpu_recovery` Windows workflow checks the installed NSIS package on a
-  hosted CPU runner; it cannot verify GPU execution.
+- **Windows CPU and recovery:** The [NSIS installer check at `3d01efc`](https://github.com/Parth-Jadhav-2004/caelum/actions/runs/45144183909)
+  passed on the hosted Windows x64 CPU runner. Packaged Parakeet v3 transcribed
+  the same 18 words on CPU. Explicit GPU reported a setup error with the add-on
+  absent, with it installed but no accessible GPU, and with `cudart64_12.dll`
+  removed from the loader path. Auto returned 18 words on CPU in the latter two cases.
+- **Windows GPU:** Not verified for any model. A Windows x64 NVIDIA machine is
+  still needed to run the packaged speech-profile check above.
