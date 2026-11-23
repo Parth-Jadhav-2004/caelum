@@ -60,6 +60,7 @@ afterEach(() => vi.restoreAllMocks());
 it.each<[Page, string]>([
   ["home", "Record, finish, then copy your transcript"],
   ["statistics", "Insights"],
+  ["styles", "Styles"],
   ["history", "History"],
   ["settings", "Settings"],
   ["setup", "Manage keys"],

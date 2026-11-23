@@ -12,7 +12,13 @@ import httpx
 
 from .audio import RATE, wav_bytes
 from .credentials import get as credential
-from .quality import cleanup_prompt, normalize, preserves_dictated_layout, validate_cleanup
+from .quality import (
+    cleanup_prompt,
+    format_spoken_list,
+    normalize,
+    preserves_dictated_layout,
+    validate_cleanup,
+)
 
 
 def contributor_scope(provider):
@@ -402,6 +408,11 @@ class Providers:
         raw = spoken_formatting(dictated, language)
         if not cfg.model or not raw.strip() or raw == "- ":
             return raw, False
+        if cfg.style in ("light", "thorough"):
+            formatted = format_spoken_list(raw, language)
+            if formatted != raw:
+                self.metrics["cleanup_refined"] = True
+                return formatted, True
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
             return raw, False
@@ -535,6 +546,7 @@ def offline_cleanup(text, replacements, language=""):
     if language.lower().replace("_", "-").split("-")[0] == "en":
         text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
     text = spoken_formatting(text.strip(), language)
+    text = format_spoken_list(text, language)
     if replacements:
         keys = sorted(replacements, key=len, reverse=True)
         pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"

@@ -138,7 +138,8 @@ uses `.python-version` (3.14); native packages use their target system Python.
 
 Dictionary includes custom vocabulary (up to 4000 characters), shared by
 Online and local recognition. Names and technical terms act as recognition hints.
-Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
+The **Styles** page offers Off, Light, Thorough, Email, Casual, and Code for
+online dictation, with examples. Enabled styles retain the
 existing conservative validation and fall back to raw text on failure.
 
 With **Light** or **Thorough** online cleanup, say a heading and at least two
@@ -155,7 +156,8 @@ Shopping list:
 
 Unordered items, such as a few issues you found, use `- ` bullets. Ordinary
 sentences stay prose. This formatting needs no separate setting. With cleanup
-off or local transcription, Caelum does not infer lists. You can still say
+off, online transcription does not infer lists. Local dictation uses built-in
+rules for clearly enumerated English lists without a text model or a style setting. You can also say
 “new line”, “new paragraph”, or “bullet point” as separate phrases. For
 example, “Notes. New paragraph. Bullet point. Rice.” produces a blank line
 after “Notes.” followed by `- Rice.`. Commands must stand alone in the

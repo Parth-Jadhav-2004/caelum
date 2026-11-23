@@ -4,6 +4,8 @@ Release notes, newest first.
 
 ## Unreleased
 
+- Choose an online refinement style in **Styles** and preview an example. Local speech models format clear English lists using built-in rules, without a separate text model. Removed the sidebar status/pause card and the accent picker in Appearance.
+
 - Automatic clipboard copying is now off by default. Dictating with the shortcut can insert directly at the caret in supported Linux text fields without replacing your clipboard. Existing explicit clipboard preferences are preserved.
 
 ## 0.5.2
