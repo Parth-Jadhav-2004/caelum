@@ -47,3 +47,12 @@ require approval and are stored in the user's private data directory until
 installation or explicit discard. Installation requests administrator privileges
 through the desktop's polkit agent. The background service never performs update
 network requests. See [updater security and lifecycle](updates.md).
+
+### Local text refinement
+
+Built-in formatting runs in the engine. If you name a local text model and turn
+local refinement on, Caelum sends the transcript (not the audio) to the selected
+loopback service. The client does not use HTTP proxy settings, follow redirects,
+or attach your online provider credentials. Run an inference server you trust
+with local weights; its logging and any forwarding it performs are outside
+Caelum's control. Model downloads are separate from dictation.

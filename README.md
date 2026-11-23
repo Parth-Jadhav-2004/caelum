@@ -158,10 +158,11 @@ uses `.python-version` (3.14); native packages use their target system Python.
 
 Dictionary includes custom vocabulary (up to 4000 characters), shared by
 Online and local recognition. Names and technical terms act as recognition hints.
-Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
-existing conservative validation and fall back to raw text on failure.
+Online refinement offers Light, Thorough, Email, Casual, and Code. Local
+transcription has its own **Off**, **Light** (default), and **Thorough** settings.
+Changing one engine's refinement settings doesn't change the other's.
 
-With **Light** or **Thorough** online cleanup, say a heading and at least two
+With **Light** or **Thorough**, say a heading and at least two
 items, or use clear cues such as “first … second …”. For example, “shopping
 list first rice second onion third oil” pastes as:
 
@@ -173,14 +174,30 @@ Shopping list:
 3. Oil
 ```
 
-Unordered items, such as a few issues you found, use `- ` bullets. Ordinary
-sentences stay prose. This formatting needs no separate setting. With cleanup
-off or local transcription, Caelum does not infer lists. You can still say
+Online refinement can also render unordered items as `- ` bullets. Ordinary
+sentences stay prose. With cleanup off, Caelum does not infer lists. You can still say
 “new line”, “new paragraph”, or “bullet point” as separate phrases. For
 example, “Notes. New paragraph. Bullet point. Rice.” produces a blank line
 after “Notes.” followed by `- Rice.`. Commands must stand alone in the
 transcript (separated by punctuation or line breaks); “a new line of work”
 stays literal.
+
+**What happens offline?** The speech model transcribes audio on CPU or GPU.
+Built-in rules then apply your Dictionary replacements and explicit formatting
+commands. Light and Thorough also format clearly enumerated English lists; no
+second model, API key, or network connection is needed for this.
+
+**Optional model-based refinement:** To edit phrasing and punctuation locally,
+run an OpenAI-compatible inference server on this computer with a downloaded
+*text* model. For example, with Ollama installed and running, run
+`ollama pull qwen2.5:3b` once. In Settings → Transcription, select local
+Light or Thorough, enter `qwen2.5:3b` as the local text model, and leave the
+server URL at `http://127.0.0.1:11434/v1`. Use a locally served model, not a
+proxy or cloud-backed model. Caelum sends only the formatted text to that
+loopback address, without a provider key. If the server is unavailable, takes
+over 45 seconds, or returns an edit that fails validation, Caelum delivers the
+built-in result. Leave the model name blank to use just the rules. Speech GPU
+selection and the text server's device settings are independent.
 
 ### On this computer
 

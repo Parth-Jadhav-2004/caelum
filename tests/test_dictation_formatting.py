@@ -4,12 +4,16 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from caelum.config import Config
-from caelum.providers import Providers, spoken_formatting
+from caelum.providers import Providers, offline_cleanup, spoken_formatting
 from caelum.quality import cleanup_prompt, validate_cleanup
 
 SHOPPING = (
     "shopping list first rice second onion third oil",
     "Shopping list:\n\n1. Rice\n2. Onion\n3. Oil",
+)
+SPOKEN_SHOPPING = (
+    "I want to make a shopping list then first I would like to buy some onion and second oil, third rice, fourth soap",
+    "Shopping list:\n\n1. Some onion\n2. Oil\n3. Rice\n4. Soap",
 )
 ISSUES = (
     "I found a few issues, the sidebar is empty, the toggle is misplaced, and history doesn't refresh",
@@ -28,12 +32,12 @@ def test_cleanup_prompt_includes_list_rules_and_examples(style):
     assert "two or more distinct items with clear list cues" in prompt
     assert "Use a numbered list when order is spoken or implied" in prompt
     assert 'use "- " bullets' in prompt
-    for raw, formatted in (SHOPPING, ISSUES, STEPS, (PROSE, PROSE)):
+    for raw, formatted in (SHOPPING, SPOKEN_SHOPPING, ISSUES, STEPS, (PROSE, PROSE)):
         assert f"Input: {raw}\nOutput:\n{formatted}" in prompt
 
 
 @pytest.mark.parametrize("raw,formatted", [
-    SHOPPING, ISSUES, STEPS, (PROSE, PROSE),
+    SHOPPING, SPOKEN_SHOPPING, ISSUES, STEPS, (PROSE, PROSE),
     ("number one first aid and number two oil", "1. First aid\n2. Oil"),
     ("issues also two flags and one error", "Issues:\n\n- Two flags\n- One error"),
     ("shopping list first rice second oil. tasks first wash second cook",
@@ -63,6 +67,33 @@ async def test_mock_list_cleanup(raw, formatted, style, monkeypatch):
         assert await Providers(config, client).cleanup(raw) == (formatted, True)
 
 
+@pytest.mark.parametrize("style", ["light", "thorough"])
+@pytest.mark.parametrize("reply", [SPOKEN_SHOPPING[0], "Purchase two apples."])
+async def test_explicit_list_needs_no_online_completion(style, reply):
+    config = Config()
+    config.cleanup.model = "test-model"
+    config.cleanup.style = style
+    respond = Mock(return_value=httpx.Response(200, json={"choices": [{"message": {"content": reply}}]}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client, credential_resolver=lambda _: "test-key")
+        assert await provider.cleanup(SPOKEN_SHOPPING[0]) == (SPOKEN_SHOPPING[1], True)
+        assert provider.metrics["http_calls"] == 0 and provider.metrics["cleanup_refined"]
+    respond.assert_not_called()
+
+
+@pytest.mark.parametrize("style", ["code", "casual", "email"])
+async def test_other_online_styles_leave_list_decisions_to_provider(style):
+    config = Config()
+    config.cleanup.model = "test-model"
+    config.cleanup.style = style
+    raw = SPOKEN_SHOPPING[0]
+    respond = Mock(return_value=httpx.Response(200, json={"choices": [{"message": {"content": raw}}]}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client, credential_resolver=lambda _: "test-key")
+        assert await provider.cleanup(raw) == (raw, True)
+    respond.assert_called_once()
+
+
 @pytest.mark.parametrize("result", [
     "Shopping list:\n\n1. Rice\n2. Oil",
     "Shopping list:\n\n1. Oil\n2. Onion\n3. Rice",
@@ -78,7 +109,7 @@ async def test_length_limited_response_never_pastes_a_partial_list(monkeypatch):
     config.cleanup.model = "test-model"
     monkeypatch.setenv(config.cleanup.key_env, "test-key")
     # Even a partial completion that passes word-level validation must be rejected.
-    raw = "steps first open settings second select C++"
+    raw = "steps number one open settings number two select C++"
     partial = {"finish_reason": "length", "message": {"content": "Steps:\n\n1. Open settings\n2. Select C"}}
     transport = httpx.MockTransport(lambda _: httpx.Response(200, json={"choices": [partial]}))
     async with httpx.AsyncClient(transport=transport) as client:
@@ -104,11 +135,76 @@ def test_spoken_formatting(raw, formatted):
     assert spoken_formatting(raw, "en-US") == formatted
 
 
+@pytest.mark.parametrize("style", ["light", "thorough"])
+@pytest.mark.parametrize("raw,expected", [
+    SHOPPING, SPOKEN_SHOPPING,
+    (SPOKEN_SHOPPING[0].replace(",", ""), SPOKEN_SHOPPING[1]),
+    ("if " + SPOKEN_SHOPPING[0], SPOKEN_SHOPPING[1]),
+    ("shopping list 1st onions 2nd oil", "Shopping list:\n\n1. Onions\n2. Oil"),
+    ("first rice and second onions, third oil", "1. Rice\n2. Onions\n3. Oil"),
+    ("shopping list: onions, oil, rice and soap", "Shopping list:\n\n- Onions\n- Oil\n- Rice\n- Soap"),
+    ("I want to make a shopping list. Then, first, I would like to buy some onion. "
+     "And second, oil; third, rice; fourth, soap.", SPOKEN_SHOPPING[1]),
+    ("Grocery list: first 2.5 kg of red onions, second extra virgin oil and vinegar, "
+     "third iPhone cables, fourth C++ books.",
+     "Grocery list:\n\n1. 2.5 kg of red onions\n2. Extra virgin oil and vinegar"
+     "\n3. iPhone cables\n4. C++ books"),
+])
+def test_offline_spoken_list(style, raw, expected):
+    assert offline_cleanup(raw, {}, "en-US", style=style) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    PROSE,
+    "I put first aid supplies and second-hand books on my shopping list.",
+    "I want to make a shopping list then first check the fridge.",
+    "Shopping list first flour third eggs.",
+    "Shopping list first tea second second-hand books. That is all.",
+    "Shopping list first tea and second.",
+    "I want to make a shopping list first thing tomorrow and second guess every purchase.",
+    "First aid is on the second floor of the third building.",
+    "First I wrote a draft, second I revised it, third I sent it.",
+    "First place and second place shared a podium.",
+    "Shopping list: rice and beans.",
+])
+def test_ambiguous_speech_stays_prose(raw):
+    assert offline_cleanup(raw, {}, "en", style="light") == raw
+
+
+def test_off_keeps_fillers_and_only_honors_explicit_commands_and_dictionary():
+    raw = "Um, " + SPOKEN_SHOPPING[0] + ", new line, sea lum."
+    assert offline_cleanup(raw, {"sea lum": "Caelum"}, "en", style="off") == (
+        "Um, " + SPOKEN_SHOPPING[0] + "\nCaelum."
+    )
+
+
+def test_non_english_transcription_does_not_infer_english_list_commands():
+    assert offline_cleanup(SPOKEN_SHOPPING[0], {}, "de", style="thorough") == SPOKEN_SHOPPING[0]
+
+
+def test_thorough_only_punctuates_plain_declarative_prose():
+    assert offline_cleanup("this is ready", {}, "en", style="thorough") == "This is ready."
+    assert offline_cleanup("this is ready", {}, "en", style="light") == "this is ready"
+    assert offline_cleanup("this is example.py", {}, "en", style="thorough") == "this is example.py"
+
+
+@pytest.mark.parametrize("wrong", [
+    SPOKEN_SHOPPING[1].replace("Some onion", "Onion"),
+    SPOKEN_SHOPPING[1].replace("Rice", "Brown rice"),
+    SPOKEN_SHOPPING[1].replace("2. Oil\n3. Rice", "2. Rice\n3. Oil"),
+])
+def test_online_cleanup_preserves_contents_when_shortening_a_spoken_list_request(wrong):
+    assert validate_cleanup(SPOKEN_SHOPPING[0], wrong, allow_lists=True) == (
+        SPOKEN_SHOPPING[0], False,
+    )
+
+
 @pytest.mark.parametrize("engine,model", [("local", "configured"), ("online", "")])
 async def test_commands_without_llm(engine, model):
     config = Config()
     config.stt.engine = engine
     config.cleanup.model = model
+    config.cleanup.local_style = "off"
     respond = Mock()
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         provider = Providers(config, client)
@@ -119,6 +215,19 @@ async def test_commands_without_llm(engine, model):
         assert await provider.cleanup(SHOPPING[0]) == (SHOPPING[0], False)
         provider.metrics["language"] = "fr"
         assert await provider.cleanup("new line") == ("new line", False)
+    respond.assert_not_called()
+
+
+@pytest.mark.parametrize("style", ["light", "thorough"])
+async def test_local_engine_formats_spoken_list_without_network(style):
+    config = Config()
+    config.stt.engine = "local"
+    config.cleanup.local_style = style
+    respond = Mock()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await Providers(config, client).cleanup(SPOKEN_SHOPPING[0]) == (
+            SPOKEN_SHOPPING[1], True,
+        )
     respond.assert_not_called()
 
 

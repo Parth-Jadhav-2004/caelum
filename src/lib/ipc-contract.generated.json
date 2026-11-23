@@ -158,6 +158,15 @@
                   "style": {
                     "type": "string"
                   },
+                  "local_style": {
+                    "type": "string"
+                  },
+                  "local_model": {
+                    "type": "string"
+                  },
+                  "local_base_url": {
+                    "type": "string"
+                  },
                   "replacements": {
                     "type": "object",
                     "additionalProperties": {
@@ -185,6 +194,9 @@
                 },
                 "required": [
                   "style",
+                  "local_style",
+                  "local_model",
+                  "local_base_url",
                   "replacements",
                   "base_url",
                   "key_env",
@@ -763,6 +775,15 @@
                 "type": "object",
                 "properties": {
                   "style": {
+                    "type": "string"
+                  },
+                  "local_style": {
+                    "type": "string"
+                  },
+                  "local_model": {
+                    "type": "string"
+                  },
+                  "local_base_url": {
                     "type": "string"
                   },
                   "replacements": {

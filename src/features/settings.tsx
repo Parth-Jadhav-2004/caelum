@@ -4,6 +4,7 @@ import {
   Suspense,
   useRef,
   useEffect,
+  useId,
   useLayoutEffect,
   type ReactNode,
   type KeyboardEvent,
@@ -40,9 +41,11 @@ export function Choice({
   value,
   items,
   change,
+  describedBy,
   disabled = false,
 }: {
   disabled?: boolean;
+  describedBy?: string;
   label: string;
   value: string;
   items: [string, string][];
@@ -50,7 +53,7 @@ export function Choice({
 }) {
   return (
     <Select value={value} onValueChange={change} disabled={disabled}>
-      <SelectTrigger aria-label={label} className="w-full max-w-full sm:w-56">
+      <SelectTrigger aria-label={label} aria-describedby={describedBy} className="w-full max-w-full sm:w-56">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -66,10 +69,12 @@ export function Choice({
 export function Row({
   title,
   detail,
+  detailId,
   children,
 }: {
   title: string;
   detail?: string;
+  detailId?: string;
   children: ReactNode;
 }) {
   return (
@@ -77,13 +82,41 @@ export function Row({
       <div className="min-w-0 space-y-1 py-2">
         <p className="text-sm font-medium">{title}</p>
         {detail && (
-          <p className="max-w-md whitespace-pre-line text-meta text-muted-foreground">
+          <p id={detailId} className="max-w-md whitespace-pre-line text-meta text-muted-foreground">
             {detail}
           </p>
         )}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
+  );
+}
+export function LocalRefinementChoice({
+  value,
+  change,
+}: {
+  value: string;
+  change: (style: string) => void;
+}) {
+  const detailId = useId();
+  return (
+    <Row
+      title="Local refinement"
+      detailId={detailId}
+      detail="For local transcripts, built-in rules run on this computer. Light removes English fillers like “um” and formats lists. Thorough also capitalizes and punctuates simple English sentences. With Off, spoken commands like “new paragraph” and Dictionary replacements still work."
+    >
+      <Choice
+        label="Local refinement"
+        describedBy={detailId}
+        value={value}
+        items={[
+          ["off", "Off"],
+          ["light", "Light"],
+          ["thorough", "Thorough"],
+        ]}
+        change={change}
+      />
+    </Row>
   );
 }
 export function Shortcut({
@@ -364,7 +397,7 @@ export function Settings({
             <>
               <Row
                 title="Transcription engine"
-                detail="Online sends speech and vocabulary to your provider. Optional cleanup sends the transcript to your cleanup provider. On this computer uses a downloaded model."
+                detail="Online sends speech and vocabulary to your provider. Optional online cleanup sends the transcript to your cleanup provider. On this computer uses a downloaded speech model."
               >
                 <Choice
                   label="Transcription engine"
@@ -454,11 +487,6 @@ export function Settings({
                       change={(v) => set("stt", "fallback", v)}
                     />
                   </Row>
-                  <p className="py-4 text-meta text-muted-foreground">
-                    Offline cleanup applies Dictionary replacements. For English
-                    speech it also removes “um” and “uh”. Say “new line”, “new
-                    paragraph”, or “bullet point” as a separate phrase to format text.
-                  </p>
                 </>
               ) : (
                 <>
@@ -557,12 +585,55 @@ export function Settings({
                       change={(v) => set("stt", "fallback", v)}
                     />
                   </Row>
-                  {config.stt.fallback === "local" && (
+                   {config.stt.fallback === "local" && (
                     <ModelPicker
                       language={config.stt.language}
                       selected={config.stt.local_model}
                       applyInstalled={(id) => set("stt", "local_model", id)}
                     />
+                  )}
+                </>
+              )}
+              {(config.stt.engine === "local" || config.stt.fallback === "local") && (
+                <>
+                  <LocalRefinementChoice
+                    value={config.cleanup.local_style}
+                    change={(v) => set("cleanup", "local_style", v)}
+                  />
+                  {config.cleanup.local_style !== "off" && (
+                    <details className="border-b py-4 text-body">
+                      <summary className="cursor-pointer font-medium">Optional local refinement model</summary>
+                      <p id="local-model-help" className="my-3 max-w-prose text-meta text-muted-foreground">
+                        Leave the model blank to use built-in rules. If your model is unavailable,
+                        Caelum uses those rules. To use a model, start an OpenAI-compatible server on
+                        this computer and download its model separately, for example Ollama with qwen2.5:3b.
+                      </p>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="local-refinement-model">Local refinement model</Label>
+                          <Input
+                            id="local-refinement-model"
+                            aria-describedby="local-model-help"
+                            placeholder="e.g. qwen2.5:3b"
+                            value={config.cleanup.local_model}
+                            onChange={(e) => set("cleanup", "local_model", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="local-server-url">Local server URL</Label>
+                          <Input
+                            id="local-server-url"
+                            type="url"
+                            aria-describedby="local-server-help"
+                            value={config.cleanup.local_base_url}
+                            onChange={(e) => set("cleanup", "local_base_url", e.target.value)}
+                          />
+                          <p id="local-server-help" className="text-meta text-muted-foreground">
+                            Use a loopback address, such as http://127.0.0.1:11434/v1.
+                          </p>
+                        </div>
+                      </div>
+                    </details>
                   )}
                 </>
               )}

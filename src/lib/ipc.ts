@@ -44,6 +44,7 @@ export interface Dictation {
   engine?: "online" | "local";
   language?: string;
   stt_model?: string;
+  cleanup_model?: string;
 }
 export interface Summary {
   total_words: number;

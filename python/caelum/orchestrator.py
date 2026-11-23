@@ -17,7 +17,7 @@ from .linux import (
     wayland_env,
 )
 from .media import RecordingMedia
-from .providers import ProviderError
+from .providers import LOCAL_REFINEMENT_TIMEOUT, ProviderError
 from .segmenter import Chunker
 
 WINDOWS_COPIED_NOTICE = (
@@ -358,10 +358,14 @@ class Orchestrator:
 
     async def finalize(self, session):
         try:
+            local_possible = self.config.stt.engine == "local" or self.config.stt.fallback == "local"
+            cleanup_budget = (
+                LOCAL_REFINEMENT_TIMEOUT if local_possible and self.config.cleanup.local_model
+                else self.config.cleanup.timeout_seconds
+            )
             async with asyncio.timeout(
-                (self.config.stt.local_timeout_seconds if self.config.stt.engine == "local"
-                 or self.config.stt.fallback == "local"
-                 else self.config.stt.timeout_seconds) * 2 + self.config.cleanup.timeout_seconds + 5
+                (self.config.stt.local_timeout_seconds if local_possible
+                 else self.config.stt.timeout_seconds) * 2 + cleanup_budget + 5
             ):
                 await self.event("processing")
                 transcript = await self.finished_transcript()

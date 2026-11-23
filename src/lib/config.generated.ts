@@ -32,6 +32,9 @@ export interface STTConfig {
 }
 export interface CleanupConfig {
   style: string
+  local_style: string
+  local_model: string
+  local_base_url: string
   replacements: Record<string, string>
   base_url: string
   key_env: string

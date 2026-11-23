@@ -60,7 +60,8 @@ export function TranscriptDetails({ entry }: { entry: Dictation }) {
           {entry.copied ? (
             "Not inserted"
           ) : entry.engine === "local" ? (
-            "Offline cleanup"
+            (entry.cleanup_model ? `Local refinement · ${entry.cleanup_model}` :
+              entry.refined ? "Formatted on this computer" : "Transcribed on this computer")
           ) : !entry.refined ? (
             <span>
               <span>Raw</span> · Text cleanup was skipped or unavailable.
@@ -141,7 +142,7 @@ export function Transcript({
           })}
         </time>
         <p
-          className={`min-h-8 min-w-0 flex-1 select-text break-words pt-1.5 text-body ${open && !onDetails ? "whitespace-pre-wrap" : "line-clamp-2"}`}
+          className={`min-h-8 min-w-0 flex-1 select-text whitespace-pre-wrap break-words pt-1.5 text-body ${open && !onDetails ? "" : "line-clamp-2"}`}
         >
           {entry.final_transcript}
         </p>

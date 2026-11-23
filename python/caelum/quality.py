@@ -17,7 +17,9 @@ or a spoken heading such as shopping list, to-do list, issues, or steps.
 Use a numbered list when order is spoken or implied (including steps); otherwise
 use "- " bullets. Put each item on its own line. If a heading or introduction
 is spoken, keep its wording and end it with a colon followed by a blank line.
-Never invent a title. Remove spoken cue words from the start of items.
+Never invent a title. For an explicit request to make a shopping list, use the
+spoken list name as the heading. Remove only list cues and a purchase lead-in
+such as "I would like to buy"; keep all item words, quantities and qualifiers.
 Capitalize each item; omit trailing periods on short items. Never add, drop,
 merge, reorder or reword items. Keep text before and after the list as normal
 prose. Respect explicit line and paragraph breaks and existing bullets, even a
@@ -31,6 +33,15 @@ Shopping list:
 1. Rice
 2. Onion
 3. Oil
+
+Input: I want to make a shopping list then first I would like to buy some onion and second oil, third rice, fourth soap
+Output:
+Shopping list:
+
+1. Some onion
+2. Oil
+3. Rice
+4. Soap
 
 Input: I found a few issues, the sidebar is empty, the toggle is misplaced, and history doesn't refresh
 Output:
@@ -102,10 +113,70 @@ def preserves_dictated_layout(raw, result):
 _LIST_MARKER = re.compile(r"^(?:-|([1-9]\d*)\.) ")
 _CARDINALS = "one two three four five six seven eight nine ten".split()
 _ORDINALS = "first second third fourth fifth sixth seventh eighth ninth tenth".split()
+_ORDINAL_VALUE = {
+    cue: n for n, pair in enumerate(
+        zip(_ORDINALS, "1st 2nd 3rd 4th 5th 6th 7th 8th 9th 10th".split(), strict=True), 1
+    ) for cue in pair
+}
 _NUMBER_CUES = {
     str(number): (cardinal, f"number {cardinal}", ordinal)
     for number, (cardinal, ordinal) in enumerate(zip(_CARDINALS, _ORDINALS, strict=True), start=1)
 }
+
+_HEADING = re.compile(
+    r"(?:(?:if )?(?:I want to|I would like to|I['’]d like to) (?:make|create) a )?"
+    r"(?P<title>(?:shopping|grocery|to[- ]do) list|steps|tasks)"
+    r"[\s,:;.]+(?:then[\s,:;.]+)?", re.I,
+)
+_ORDINAL = re.compile(
+    r"(?<![^\s,;:.])(?:(?:and|then)\s+)?(" + "|".join(_ORDINAL_VALUE)
+    + r")(?=[\s,:;.]|$)(?:[,:;.](?=\s|$))?[ \t]*", re.I,
+)
+_PURCHASE = re.compile(r"^(?:I would like to|I['’]d like to|I want to) buy\s+", re.I)
+
+
+def _item_case(item):
+    return item[0].upper() + item[1:] if re.match(r"[a-z]+(?:\s|$)", item) else item
+
+
+def format_spoken_list(text, language=""):
+    """Require consecutive English ordinals from the start; preserve uncertain prose."""
+    if ("\n" in text or "\r" in text
+            or language.lower().replace("_", "-").split("-")[0] not in ("en", "english", "", "auto")):
+        return text
+    heading = _HEADING.match(text)
+    body = text[heading.end():] if heading else text
+    title = heading["title"].capitalize() if heading else ""
+    shopping = title.lower() in ("shopping list", "grocery list")
+    # A shopping heading, two comma pauses and a final conjunction distinguish
+    # a series of standalone items from a product like "rice and beans".
+    if (shopping and ":" in heading[0] and re.fullmatch(
+        r"(?:[a-z]+,\s*){2,}[a-z]+,?\s+and\s+[a-z]+\.?", body, re.I
+    )):
+        items = re.split(r",\s*(?:and\s+)?|\s+and\s+", body.removesuffix("."), flags=re.I)
+        return title + ":\n\n" + "\n".join("- " + _item_case(item) for item in items)
+    cues = list(_ORDINAL.finditer(body))
+    if (len(cues) < (2 if heading else 3) or cues[0].start() != 0
+            or any(_ORDINAL_VALUE[cue[1].lower()] != i for i, cue in enumerate(cues, 1))):
+        return text
+    items = []
+    for i, cue in enumerate(cues):
+        stop = cues[i + 1].start() if i + 1 < len(cues) else len(body)
+        item = body[cue.end():stop].strip()
+        item = re.sub(r"(?<=[\w)])[,;.]$", "", item)
+        if shopping:
+            item = _PURCHASE.sub("", item)
+        if re.match(r"(?:aid|thing|guess|hand|place|grade|quarter|degree|time|avenue)\b", item, re.I):
+            return text  # E.g. “first aid” or “third degree” may be literal content.
+        if not heading and (len(item.split()) > 6 or re.match(
+            r"(?:I|we|you|he|she|it|they|is|was|are|were)\b", item, re.I,
+        )):
+            return text
+        if not re.search(r"\w", item) or re.search(r"[.!?]\s", item):
+            # Empty items and sentence boundaries inside an item are ambiguous.
+            return text
+        items.append(f"{i + 1}. {_item_case(item)}")
+    return (title + ":\n\n" if title else "") + "\n".join(items)
 
 
 def _list_preserves_words(raw, lines):
@@ -154,6 +225,10 @@ def validate_cleanup(raw, result, *, preserve_whitespace=False, allow_lists=Fals
         return raw, False
     lines = result.splitlines()
     if allow_lists and (re.search(r"(?m)^- ", raw) or any(_LIST_MARKER.match(line) for line in lines)):
+        # The deterministic formatter can additionally consume a shopping request
+        # and its purchase lead-in. Accept that exact, fact-preserving rendering.
+        if result != raw and result == format_spoken_list(raw):
+            return result, True
         if not _list_preserves_words(raw, lines):
             return raw, False
     else:

@@ -61,6 +61,9 @@ class STT:
 @dataclass
 class Cleanup:
     style: str = "light"
+    local_style: str = "light"
+    local_model: str = ""
+    local_base_url: str = "http://127.0.0.1:11434/v1"
     replacements: dict = field(default_factory=dict)
     base_url: str = "https://api.groq.com/openai/v1"
     key_env: str = "GROQ_API_KEY"
@@ -164,6 +167,17 @@ def _parse(text):
     return validate(config)
 
 
+def local_refinement_url(value):
+    # Accept literal loopback addresses only. No DNS, userinfo, query, fragments
+    # or ambiguous URL parsing between the settings validator and HTTP transport.
+    if not re.fullmatch(r"https?://(?:127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?(?:/[\w./-]*)?", value):
+        raise ValueError("Local refinement URL must use 127.0.0.1 or [::1]")
+    port = urlparse(value).port
+    if port == 0:
+        raise ValueError("Invalid local refinement port")
+    return value.rstrip("/") + "/chat/completions"
+
+
 def validate(config):
     a, s, c = config.app, config.stt, config.cleanup
     # The pre-catalog preview called Online "cloud". Preserve those configs.
@@ -197,6 +211,13 @@ def validate(config):
         raise ValueError("Custom vocabulary must be at most 4000 characters")
     if c.style not in ("light", "thorough", "email", "casual", "code"):
         raise ValueError("Unknown cleanup style")
+    if c.local_style not in ("off", "light", "thorough"):
+        raise ValueError("Local refinement must be Off, Light or Thorough")
+    local_refinement_url(c.local_base_url)
+    if len(c.local_model) > 200 or c.local_model != c.local_model.strip() or any(
+        char.isspace() or not char.isprintable() for char in c.local_model
+    ) or c.local_model.lower().endswith((":cloud", "-cloud")):
+        raise ValueError("Choose an installed local text model, not a cloud model")
     if a.backend not in ("auto", "hyprland", "portable"):
         raise ValueError("backend must be auto, hyprland, or portable")
     if config.desktop.theme not in ("system", "light", "dark"):

@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- On-device transcription now has its own refinement controls. Format clearly dictated English lists without a second model, or use an installed local text model for further cleanup. If that model is unavailable, dictation still returns the built-in result.
+
 ## 0.5.2
 
 Changes since stable v0.5.0, including the v0.5.1 testing releases.

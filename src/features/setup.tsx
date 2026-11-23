@@ -19,7 +19,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Choice, Shortcut } from "./settings";
+import { Choice, LocalRefinementChoice, Shortcut } from "./settings";
 import { MicrophoneMeter, useMicrophoneLevel } from "./microphone";
 import { DeviceSelect, Waveform } from "./dashboard";
 import { ModelPicker, ModelDownloadLine, modelBlocked, size } from "./models";
@@ -53,6 +53,7 @@ export function Setup({
     queryFn: () => ipc("bootstrap", {}),
   });
   const [mode, setMode] = useState(config.stt.engine);
+  const [localStyle, setLocalStyle] = useState(config.cleanup.local_style);
   const [selectedModel, setSelectedModel] = useState("");
   const [skipPractice, setSkipPractice] = useState(false);
   const modelList = useModels(config.stt.language);
@@ -284,15 +285,16 @@ export function Setup({
           }
           // Empty local mode permits setup while a pending model downloads. The
           // model id itself is committed only after the candidate loads.
-          if (saved.stt.engine !== "local")
+          if (saved.stt.engine !== "local" || saved.cleanup.local_style !== localStyle)
             await commit({
               ...saved,
-              stt: {
+              stt: saved.stt.engine === "local" ? saved.stt : {
                 ...saved.stt,
                 engine: "local",
                 local_model: "",
                 fallback: "none",
               },
+              cleanup: { ...saved.cleanup, local_style: localStyle },
             });
           setStep(2);
           return;
@@ -502,6 +504,7 @@ export function Setup({
                       selected={desiredModel}
                       onSelect={setSelectedModel}
                     />
+                    <LocalRefinementChoice value={localStyle} change={setLocalStyle} />
                   </>
                 )}
               </>
