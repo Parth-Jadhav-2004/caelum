@@ -174,6 +174,7 @@ export function Settings({
   }
   const navigate = useApp((s) => s.navigate);
   const running = useApp((s) => s.status?.running);
+  const engine = useApp((s) => s.status?.engine);
   const portalStatus = useApp((s) => portalShortcutStatus(s.status));
   const sessionHotkey = useApp((s) => s.status?.hotkey);
   const [restarting, setRestarting] = useState(false);
@@ -395,9 +396,11 @@ export function Settings({
                       ...config,
                       stt: { ...config.stt, local_model: id },
                     }))}
-                    beforeUse={() => commit?.(config) ?? Promise.resolve()}
                   />
-                  <Row title="Run local models on">
+                  <Row
+                    title="Run local models on"
+                    detail={engine?.kind === "local" ? engine.message : undefined}
+                  >
                     <Choice
                       label="Local model device"
                       value={config.stt.local_device}
@@ -453,7 +456,8 @@ export function Settings({
                   </Row>
                   <p className="py-4 text-meta text-muted-foreground">
                     Offline cleanup applies Dictionary replacements. For English
-                    speech it also removes “um” and “uh” and handles “new line”.
+                    speech it also removes “um” and “uh”. Say “new line”, “new
+                    paragraph”, or “bullet point” as a separate phrase to format text.
                   </p>
                 </>
               ) : (
@@ -555,10 +559,9 @@ export function Settings({
                   </Row>
                   {config.stt.fallback === "local" && (
                     <ModelPicker
-                      requireInstalled
                       language={config.stt.language}
                       selected={config.stt.local_model}
-                      onSelect={(id) => set("stt", "local_model", id)}
+                      applyInstalled={(id) => set("stt", "local_model", id)}
                     />
                   )}
                 </>

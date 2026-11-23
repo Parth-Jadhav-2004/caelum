@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
-import { ipc, errorText, type Config, type ConfigPatch } from "@/lib/ipc";
+import { ipc, errorText, IpcError, type Config, type ConfigPatch } from "@/lib/ipc";
 import { formatShortcut } from "@/lib/shortcut";
 import { action, Confirm } from "@/components/common";
 import {
@@ -38,6 +38,7 @@ import {
   SidebarMenuButton,
   SidebarInset,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   CommandDialog,
@@ -108,6 +109,52 @@ function FrontendReady() {
     return () => window.clearTimeout(timer);
   }, []);
   return null;
+}
+function InvalidSettings({ message, retry }: { message: string; retry: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
+  const [backup, setBackup] = useState("");
+  async function reset() {
+    setBusy(true);
+    setFailure("");
+    try {
+      const result = await ipc("settings.reset_invalid", {});
+      setBackup(result.backup_path);
+    } catch (error) {
+      setFailure(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="mx-auto max-w-lg space-y-5 p-8">
+      <h1 className="text-xl font-medium">{backup ? "Settings reset" : "Caelum couldn’t read your settings."}</h1>
+      {backup ? (
+        <>
+          <p role="status" className="break-all">Your original settings are backed up at {backup}.</p>
+          <Button onClick={() => window.location.reload()}>Continue to setup</Button>
+        </>
+      ) : (
+        <>
+          <p className="break-all">{message}</p>
+          <p>Edit the file and retry, or back it up and start setup again with default settings.</p>
+          {failure && <p role="alert">{failure}</p>}
+          <Button disabled={busy} onClick={retry}>Retry connection</Button>{" "}
+          <Button disabled={busy} variant="outline" onClick={() => void reset()}>
+            Back up and reset settings
+          </Button>
+        </>
+      )}
+    </main>
+  );
+}
+function MobileSidebarOpener() {
+  const { isMobile } = useSidebar();
+  return isMobile ? (
+    <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
+      <SidebarTrigger />
+    </header>
+  ) : null;
 }
 export default function App() {
   const settingsGroup = useApp((s) => s.settingsGroup);
@@ -266,6 +313,8 @@ export default function App() {
       void action(() => commit(draft.current ?? next));
     }, 200);
   }
+  if (bootstrap.isError && bootstrap.error instanceof IpcError && bootstrap.error.code === "invalid_config")
+    return <InvalidSettings message={bootstrap.error.message} retry={() => void bootstrap.refetch()} />;
   if (bootstrap.isError)
     return (
       <main className="mx-auto max-w-lg space-y-5 p-8">
@@ -303,7 +352,7 @@ export default function App() {
             <Skeleton key={i} className="h-9" />
           ))}
         </div>
-        <div className="min-w-0 flex-1 pt-12">
+        <div className="min-w-0 flex-1 pt-12 md:pt-0">
           <div className="mx-auto max-w-5xl space-y-8 p-8">
             <Skeleton className="h-10 w-64 max-w-full" />
             <Skeleton className="h-40" />
@@ -347,19 +396,16 @@ export default function App() {
                 role="navigation"
                 aria-label="Main navigation"
               >
-                <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-2">
-                  <SidebarMenu>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        size="lg"
-                        aria-label="Caelum home"
-                        tooltip="Caelum home"
-                        onClick={() => navigate("home")}
-                      >
-                        <CaelumBrand />
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
+                <SidebarHeader className="h-24 flex-row items-center px-2">
+                  <SidebarMenuButton
+                    size="lg"
+                    aria-label="Caelum home"
+                    onClick={() => navigate("home")}
+                    className="min-w-0 group-data-[collapsible=icon]:hidden"
+                  >
+                    <CaelumBrand />
+                  </SidebarMenuButton>
+                  <SidebarTrigger className="ml-auto shrink-0" />
                 </SidebarHeader>
                 <SidebarContent className="px-2">
                   {[pages.slice(0, 3), pages.slice(3)].map((group, i) => (
@@ -476,11 +522,7 @@ export default function App() {
               </Sidebar>
             )}
             <SidebarInset>
-              {page !== "setup" && (
-                <header className="flex h-12 shrink-0 items-center px-4 sm:px-8">
-                  <SidebarTrigger />
-                </header>
-              )}
+              {page !== "setup" && <MobileSidebarOpener />}
               <div
                 ref={content}
                 id="main-content"

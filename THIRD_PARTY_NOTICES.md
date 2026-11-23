@@ -58,3 +58,10 @@ retrieved November 17, 2026; SHA-256:
 `9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6`.
 The upstream [Silero license](https://github.com/snakers4/silero-vad/blob/master/LICENSE)
 is included verbatim in `python/caelum/data/Silero-LICENSE.txt` and the Python wheel.
+
+## Optional NVIDIA runtime
+
+`caelum install-nvidia` downloads upstream sherpa-onnx, NumPy and NVIDIA CUDA
+user-space wheels into a separate environment. The base app does not redistribute
+those GPU binaries. Their upstream licenses and notices accompany the installed
+wheels; exact versions and wheel digests are in `python/caelum/data/nvidia-cu12.txt`.

@@ -12,7 +12,7 @@ import httpx
 
 from .audio import RATE, wav_bytes
 from .credentials import get as credential
-from .quality import cleanup_prompt, normalize, validate_cleanup
+from .quality import cleanup_prompt, normalize, preserves_dictated_layout, validate_cleanup
 
 
 def contributor_scope(provider):
@@ -190,8 +190,13 @@ class Providers:
         cfg = self.config.stt
         if cfg.engine != "local":
             return {"kind": "online", "model": None, "state": "ready", "message": ""}
+        message = self.local_message
+        if self.local_state == "ready" and self.local_engine:
+            device = getattr(self.local_engine, "active_device", None)
+            if device in ("cpu", "cuda"):
+                message = "Using NVIDIA CUDA" if device == "cuda" else "Using CPU"
         return {"kind": "local", "model": cfg.local_model or None,
-                "state": self.local_state, "message": self.local_message}
+                "state": self.local_state, "message": message}
 
     async def aclose(self):
         self._closing = True
@@ -390,14 +395,26 @@ class Providers:
 
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
+        language = self.metrics.get("language") or self.config.stt.language
         if self.metrics.get("engine", self.config.stt.engine) == "local":
-            language = self.metrics.get("language") or self.config.stt.language
             return offline_cleanup(raw, cfg.replacements, language), False
-        if not cfg.model:
+        dictated = raw
+        raw = spoken_formatting(dictated, language)
+        if not cfg.model or not raw.strip() or raw == "- ":
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
             return raw, False
+        prefix, content, suffix = "", raw, ""
+        if raw != dictated and cfg.style != "code":
+            # A final empty bullet is an insertion point just like a trailing line break.
+            lines = raw.split("\n")
+            while lines and lines[-1].strip() in ("", "-"):
+                lines.pop()
+            content = "\n".join(lines).strip()
+            if not content:
+                return raw, False
+            prefix, content, suffix = raw.partition(content)
         began = time.monotonic()
         try:
             async with asyncio.timeout(cfg.timeout_seconds):
@@ -435,7 +452,7 @@ class Providers:
                         ),
                         "messages": [
                             {"role": "system", "content": cleanup_prompt(cfg.style)},
-                            {"role": "user", "content": raw},
+                            {"role": "user", "content": content},
                         ],
                     },
                     timeout=cfg.timeout_seconds,
@@ -443,10 +460,18 @@ class Providers:
                 if response.is_error:
                     raise response_error(response)
                 body = response.json()
+                choice = body["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    # The provider hit its output budget, even if the prefix looks plausible.
+                    self.metrics["cleanup_refined"] = False
+                    return raw, False
                 result, refined = validate_cleanup(
-                    raw, body["choices"][0]["message"]["content"],
+                    content, choice["message"]["content"],
                     preserve_whitespace=cfg.style == "code",
+                    allow_lists=cfg.style in ("light", "thorough"),
                 )
+                if refined and raw != dictated:
+                    refined = preserves_dictated_layout(content, result)
                 self.metrics["cleanup_refined"] = refined
                 if isinstance(body.get("usage"), dict):
                     self.metrics["token_usage"] = {
@@ -455,7 +480,9 @@ class Providers:
                         if k in ("prompt_tokens", "completion_tokens", "total_tokens")
                         and isinstance(v, int)
                     }
-                return result, refined
+                if not refined and raw != dictated:
+                    return raw, False
+                return prefix + result + suffix, refined
         except ProviderError as error:
             self.metrics["cleanup_error"] = error.kind
             return raw, False
@@ -472,15 +499,46 @@ class Providers:
             self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000
 
 
+_COMMAND = re.compile(
+    r"(?:^|(?<=\n)|(?<=[,.;:!?])(?=[ \t]))[ \t]*(new line|new paragraph|bullet point)"
+    r"[ \t]*(?:[,.;:!?]+(?=[ \t\n]|$)\n?|\n|$)", re.I,
+)
+
+
+def spoken_formatting(text, language=""):
+    """Require a whole utterance or punctuation-delimited phrase, not just word boundaries."""
+    if language.lower().replace("_", "-").split("-")[0] not in ("en", "english", "", "auto"):
+        return text
+    parts = []
+    end = 0
+    for match in _COMMAND.finditer(text):
+        before = text[end:match.start()].rstrip(" \t,;")
+        if parts:
+            before = before.lstrip(" \t")
+        command = match[1].lower()
+        if command == "bullet point":
+            preceding = before or (parts[-1] if parts else "")
+            if preceding and not preceding.endswith("\n"):
+                before += "\n"
+            parts.extend((before, "- "))
+        else:
+            parts.extend((before.removesuffix("\n"), "\n" if command == "new line" else "\n\n"))
+        end = match.end()
+    if not parts:
+        return text
+    parts.append(text[end:].lstrip(" \t"))
+    return "".join(parts)
+
+
 def offline_cleanup(text, replacements, language=""):
     """Deterministic local cleanup. Dictionary replacements run once, without cascades."""
     if language.lower().replace("_", "-").split("-")[0] == "en":
         text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
-        text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
+    text = spoken_formatting(text.strip(), language)
     if replacements:
         keys = sorted(replacements, key=len, reverse=True)
         pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"
         # The capture index identifies the dictionary entry even when re.I
         # equates characters whose casefolds differ (for example İ and i).
         text = re.sub(pattern, lambda m: replacements[keys[m.lastindex - 1]], text, flags=re.I)
-    return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text)).strip()
+    return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text))

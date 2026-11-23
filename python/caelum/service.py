@@ -9,6 +9,7 @@ import sys
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
+from functools import partial
 
 from .config import STT, App, Cleanup, Config, Desktop, load, save, validate
 from .credentials import get as credential
@@ -91,14 +92,22 @@ async def safety_monitor(core):
 
 
 async def lock_monitor(core, locked=session_locked):
+    loop = asyncio.get_running_loop()
+    # Linux also receives lock signals. Rate-limit its subprocess fallback
+    # for finished transcripts, but check for newly active audio every tick.
+    manual_interval = 0.0 if sys.platform == "win32" else 2.0
+    next_manual_check = loop.time()
     while True:
-        if core.capture or core.pcm is not None or core.manual_result is not None:
+        if core.capture or core.pcm is not None or (
+            core.manual_result is not None and loop.time() >= next_manual_check
+        ):
             try:
                 is_locked = await locked()
             except (OSError, RuntimeError, TimeoutError):
                 is_locked = True  # missing capture safety feedback fails closed
             if is_locked:
                 await core.handle("cancel")
+            next_manual_check = loop.time() + manual_interval
         await asyncio.sleep(0.2)
 
 
@@ -139,7 +148,7 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
             # policy, backend, or other settings. Retry remains an explicit action.
             expected = replace(core.config, stt=replace(core.config.stt, local_model=updated.stt.local_model))
             if (getattr(core, "state", "") != "missing_model" or updated.stt.engine != "local"
-                    or not updated.stt.local_model or expected != updated):
+                    or not updated.stt.local_model or not expected.same_runtime_settings(updated)):
                 raise SettingsBusy("Finish or cancel dictation before applying settings")
         previous = bindings.hotkey
         previous_mode = getattr(bindings, "recording_mode", "hold")
@@ -200,6 +209,35 @@ async def reload_settings(core, bindings, provider, path=None, updated=None, per
                     await core.event("model_ready")
         elif hasattr(provider, "arm_idle"):
             provider.arm_idle()
+
+
+async def handle_control_request(reader, writer, *, dispatch):
+    try:
+        peer = writer.get_extra_info("socket").getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, 12
+        )
+        if struct.unpack("3i", peer)[1] != os.getuid():
+            return
+        try:
+            line = await asyncio.wait_for(reader.readuntil(b"\n"), 1)
+            message = json.loads(line)
+            if not isinstance(message, dict):
+                raise ValueError("Expected a request object")
+        except (
+            ValueError, RecursionError, TimeoutError, asyncio.LimitOverrunError,
+            asyncio.IncompleteReadError,
+        ):
+            result = {"error": "Invalid request"}
+        else:
+            result = await dispatch(message)
+        writer.write(json.dumps(result).encode() + b"\n")
+        await writer.drain()
+    except ConnectionError:
+        pass  # The peer disconnected before the exchange finished.
+    finally:
+        writer.close()
+        with suppress(ConnectionError):
+            await writer.wait_closed()
 
 
 async def serve(config, config_path=None):
@@ -348,21 +386,6 @@ async def serve(config, config_path=None):
                 payload["error_code"] = "settings_busy"
             return payload
 
-    async def handle(reader, writer):
-        try:
-            peer = writer.get_extra_info("socket").getsockopt(
-                socket.SOL_SOCKET, socket.SO_PEERCRED, 12
-            )
-            if struct.unpack("3i", peer)[1] != os.getuid():
-                return
-            line = await asyncio.wait_for(reader.readline(), 1)
-            result = await dispatch(json.loads(line))
-            writer.write(json.dumps(result).encode() + b"\n")
-        finally:
-            with suppress(ConnectionError):
-                await writer.drain()
-            writer.close()
-
     async def monitor_shortcut():
         if native:
             await compositor_monitor(core, bindings)
@@ -381,7 +404,11 @@ async def serve(config, config_path=None):
         if windows:
             windows_desktop.endpoint = loop, dispatch
         else:
-            server = await asyncio.start_unix_server(handle, path=str(path), limit=CONTROL_FRAME_LIMIT)
+            server = await asyncio.start_unix_server(
+                partial(handle_control_request, dispatch=dispatch),
+                path=str(path),
+                limit=CONTROL_FRAME_LIMIT,
+            )
             path.chmod(0o600)
         provider.on_loading = lambda: core.event("loading") if core.capture is None else asyncio.sleep(0)
         provider.on_processing = lambda: core.event("processing") if core.capture is None else asyncio.sleep(0)

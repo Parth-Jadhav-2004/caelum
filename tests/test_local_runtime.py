@@ -89,7 +89,7 @@ async def test_unclear_speech_or_pending_load_never_uploads(kind):
 
 
 def test_offline_cleanup_and_dictionary_are_bounded_and_non_cascading():
-    assert offline_cleanup("Um, hello uh world new line sea lum.", {"sea lum": "Caelum"}, "en-US") == "hello world\nCaelum."
+    assert offline_cleanup("Um, hello uh world, new line, sea lum.", {"sea lum": "Caelum"}, "en-US") == "hello world\nCaelum."
     assert offline_cleanup("human UHF umbrella", {}) == "human UHF umbrella"
     assert offline_cleanup("Acme Acme Labs", {"Acme Labs": "Studio", "Acme": "Acme Labs"}) == "Acme Labs Studio"
     assert offline_cleanup("a+b", {"a+b": "$1"}) == "$1"
@@ -232,6 +232,10 @@ async def test_download_recovers_retained_local_audio_only_on_explicit_retry(tmp
         await reload_settings(core, bindings, provider, path, updated, True)
     monkeypatch.setattr(backend, "save_settings", daemon_save)
     try:
+        # UI-only saves need not have been reloaded into the running daemon.
+        appearance = deepcopy(cfg)
+        appearance.desktop.sidebar_visible = False
+        save(appearance, path)
         unsafe = deepcopy(cfg)
         unsafe.stt.fallback = "online"
         unsafe.stt.local_model = "parakeet-110m"

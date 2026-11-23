@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import tempfile
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -169,13 +170,16 @@ class History:
     def export(self, destination):
         if not self.path.exists():
             raise ValueError("There are no saved dictations to export")
-        with closing(self.connect()) as connection, connection:
-            self.prune(connection)
-            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            try:
-                with os.fdopen(descriptor, "w") as output:
+        destination = Path(destination)
+        if destination.resolve() == self.path.resolve():
+            raise ValueError("Choose an export file other than the history database")
+        descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".caelum-")
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                with closing(self.connect()) as connection, connection:
+                    self.prune(connection)
                     for row in connection.execute("SELECT * FROM dictations ORDER BY created_at"):
                         output.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
-            except BaseException:
-                Path(destination).unlink(missing_ok=True)
-                raise
+            os.replace(temporary, destination)
+        finally:
+            Path(temporary).unlink(missing_ok=True)

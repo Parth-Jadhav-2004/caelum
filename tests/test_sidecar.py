@@ -1,15 +1,39 @@
 """Desktop boundary tests use temporary XDG roots and never touch real microphones."""
 
+import ast
 import asyncio
 import json
 import os
 import sys
 from dataclasses import asdict
-from unittest.mock import AsyncMock
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from caelum.config import Config, load, save
+from caelum.desktop_services import SettingsBusy
+from caelum.ipc_contract import MODEL_PROGRESS, STATUS, matches
+from caelum.onboarding import Progress
 from caelum.sidecar import Backend
+
+
+def test_rust_event_fixtures_cover_sidecar_emitters():
+    root = Path(__file__).resolve().parents[1]
+    tree = ast.parse((root / "python/caelum/sidecar.py").read_text(encoding="utf-8"))
+    emitted = set()
+    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+        if ((isinstance(call.func, ast.Name) and call.func.id == "emit")
+                or (isinstance(call.func, ast.Attribute) and call.func.attr == "emit")):
+            emitted.add(ast.literal_eval(call.args[0]))
+
+    fixture = root / "tests/fixtures/sidecar-events.json"
+    frames = json.loads(fixture.read_text(encoding="utf-8"))
+    assert {frame["event"] for frame in frames} == emitted
+    for frame in frames:
+        if frame["event"] == "model-download":
+            assert matches(MODEL_PROGRESS, frame["data"])
+        elif frame["event"] == "status":
+            assert matches(STATUS, frame["data"])
 
 
 @pytest.fixture
@@ -56,12 +80,53 @@ async def test_busy_stop_does_not_discard_without_confirmation(backend, monkeypa
 
 async def test_reload_failure_reports_saved_but_not_applied(backend, monkeypatch):
     monkeypatch.setattr(backend, "status", AsyncMock(return_value={"running": True}))
-    monkeypatch.setattr(
-        "caelum.sidecar.request", lambda _: (_ for _ in ()).throw(RuntimeError("Busy"))
-    )
-    result = await backend.dispatch("settings.save", {"config": {"desktop": {"theme": "light"}}})
-    assert result["saved"] and "service not updated" in result["warning"]
-    assert load(backend.path).desktop.theme == "light"
+    reload = Mock(side_effect=RuntimeError("Shortcut conflict"))
+    monkeypatch.setattr("caelum.sidecar.request", reload)
+    result = await backend.dispatch("settings.save", {"config": {"app": {"recording_mode": "toggle"}}})
+    assert result == {"saved": True, "warning": "Saved; service not updated: Shortcut conflict"}
+    assert load(backend.path).app.recording_mode == "toggle"
+    await backend.apply_pending_settings({"running": True, "state": "hidden"})
+    reload.assert_called_once_with("reload")
+
+
+async def test_appearance_only_save_needs_no_daemon(backend, monkeypatch):
+    monkeypatch.setattr("caelum.sidecar.request", lambda *args: pytest.fail(f"Unexpected IPC: {args}"))
+    config = load(backend.path)
+    config.desktop.theme, config.desktop.color_theme, config.desktop.sidebar_visible = "light", "ocean", False
+    assert await backend.dispatch("settings.save", {"config": asdict(config)}) == {"saved": True}
+    assert load(backend.path) == config
+
+
+async def test_busy_settings_apply_latest_save_once_idle(backend, monkeypatch):
+    status = {"running": True, "state": "recording"}
+    monkeypatch.setattr(backend, "status", AsyncMock(return_value=status))
+    applied = []
+
+    def reload(action):
+        assert action == "reload"
+        if status["state"] != "hidden":
+            raise SettingsBusy("Finish or cancel dictation")
+        applied.append(load(backend.path))
+
+    request = Mock(side_effect=reload)
+    monkeypatch.setattr("caelum.sidecar.request", request)
+    for patch in ({"app": {"recording_mode": "toggle"}},
+                  {"desktop": {"auto_copy": False, "theme": "light"}},
+                  {"desktop": {"sidebar_visible": False}}):
+        assert await backend.dispatch("settings.save", {"config": patch}) == {"saved": True}
+    assert request.call_count == 2
+    latest = load(backend.path)
+    assert latest.app.recording_mode == "toggle" and not latest.desktop.auto_copy
+    for state, pending in (("recording", False), ("processing", False), ("error", True)):
+        await backend.apply_pending_settings({**status, "state": state, "pending_audio": pending})
+    assert request.call_count == 2
+    idle_snapshot = {**status, "state": "hidden"}
+    await backend.apply_pending_settings(idle_snapshot)  # A new capture beat the idle snapshot.
+    assert not applied
+    status.update(idle_snapshot)
+    await backend.apply_pending_settings(idle_snapshot)
+    await backend.apply_pending_settings(idle_snapshot)
+    assert applied == [latest]
 
 
 async def test_onboarding_requires_all_checks_and_upload_consent(backend, monkeypatch):
@@ -142,6 +207,71 @@ async def test_json_lines_process_eof_and_unknown_method(tmp_path):
     assert not any("value" in item for item in replies[1]["result"]["credentials"].values())
 
 
+async def test_invalid_settings_recover_over_live_json_lines(tmp_path):
+    path = tmp_path / "config.toml"
+    original = b'[app]\nhotkey = "ctrl+x"\n'
+    path.write_bytes(original)
+    Progress(4, True).save(path)
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "caelum.sidecar",
+        env={**os.environ, "CAELUM_CONFIG": str(path)},
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+    )
+
+    async def call(method):
+        process.stdin.write(json.dumps({"v": 1, "id": 1, "method": method}).encode() + b"\n")
+        await process.stdin.drain()
+        while line := await asyncio.wait_for(process.stdout.readline(), 10):
+            frame = json.loads(line)
+            if frame.get("id") == 1:
+                return frame
+        pytest.fail("Sidecar exited without a reply")
+
+    try:
+        for method in ("bootstrap", "status"):
+            assert (await call(method))["error_info"] == {
+                "code": "invalid_config", "message": f"Invalid settings file: {path}",
+                "retryable": False,
+            }
+        assert path.read_bytes() == original
+        backup = Path((await call("settings.reset_invalid"))["result"]["backup_path"])
+        assert backup.parent == path.parent and backup.read_bytes() == original
+        if os.name != "nt":
+            assert backup.stat().st_mode & 0o077 == 0
+        result = (await call("bootstrap"))["result"]
+        assert result["setup"] == {"stage": 0, "complete": False}
+        assert result["config"] == asdict(Config())
+        assert "error" in await call("settings.reset_invalid")
+    finally:
+        process.stdin.close()
+        await asyncio.wait_for(process.wait(), 10)
+
+
+@pytest.mark.parametrize("contents", [b"[app", b"app = 5", b"\xff"])
+async def test_editing_invalid_config_allows_retry_without_reset(backend, contents):
+    backend.path.write_bytes(contents)
+    with pytest.raises(ValueError):
+        await backend.dispatch("bootstrap", {})
+    backend.path.write_text('[desktop]\ntheme = "light"\n')
+    with pytest.raises(ValueError, match="already valid"):
+        await backend.dispatch("settings.reset_invalid", {})
+    assert (await backend.dispatch("bootstrap", {}))["config"]["desktop"]["theme"] == "light"
+    assert not list(backend.path.parent.glob("*.bak"))
+
+
+async def test_failed_backup_leaves_invalid_config_and_onboarding(backend, monkeypatch):
+    backend.path.write_bytes(b"[broken")
+    Progress(4, True).save(backend.path)
+    def fail(*args, **kwargs):
+        raise OSError("Disk full")
+    monkeypatch.setattr("caelum.config.os.fsync", fail)
+    with pytest.raises(OSError, match="Disk full"):
+        await backend.dispatch("settings.reset_invalid", {})
+    assert backend.path.read_bytes() == b"[broken"
+    assert Progress.load(backend.path).complete
+    assert not list(backend.path.parent.glob("*.bak"))
+
+
 async def test_supervised_process_terminates_after_grace_deadline(backend, monkeypatch):
     class Process:
         returncode = None
@@ -211,7 +341,6 @@ async def test_slow_update_check_does_not_block_shutdown(tmp_path):
 
 async def test_configuration_contract_matches_python_dataclasses():
     import importlib.util
-    from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     output = root / "src/lib/config.generated.ts"

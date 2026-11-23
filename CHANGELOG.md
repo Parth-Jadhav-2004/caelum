@@ -2,16 +2,39 @@
 
 Release notes, newest first.
 
-## 0.5.1
+## 0.5.2
 
+Changes since stable v0.5.0, including the v0.5.1 testing releases.
+
+### Dictation and local models
+
+- Light and Thorough cleanup format clearly dictated lists with a spoken heading, numbered steps or unordered bullets. Standalone English commands “new line”, “new paragraph”, and “bullet point” also work offline and with cleanup off.
+- Local models can use a separately installed NVIDIA runtime. Settings shows whether the loaded model uses CUDA or CPU, and an explicit GPU request reports setup failures instead of accepting CPU fallback.
+- Browse speech models in Setup and Settings without starting a download. Choose **Download** or **Download and continue** after checking the size, then follow progress, pause, resume, or cancel.
+
+### Settings, history and Linux fixes
+
+- If a settings file prevents startup, Caelum shows its path. Edit it and retry, or choose **Back up and reset settings** to keep a copy and return to setup.
+- On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
+- On Hyprland, retrying a failed dictation dismisses its Retry/Cancel notification. If the retry fails too, only the new notification can act on it.
+- History export now replaces the selected file after you confirm the overwrite. If the export fails, the previous file stays intact.
+- On Linux, keeping a transcript available for manual copying now runs fewer background lock checks while idle.
+- On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
+- Appearance and sidebar changes save quietly during dictation. Changes to recording mode, clipboard copying, and history settings take effect after dictation finishes or is cancelled, without restarting Caelum.
+
+### Also included from 0.5.1 testing
+
+- The desktop sidebar toggle sits beside the Caelum logo and replaces it when collapsed, giving pages more vertical space.
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
 - Windows dictation preserves the clipboard when inserting into a focused Edit or RichEdit field. If direct insertion fails and the clipboard has changed, choose Retry to copy the finished transcript.
-- Turn off automatic clipboard copying in Settings to keep your clipboard intact, including when insertion fails. **Copy transcript** on Home works even with history disabled. When a transcript is ready to copy, you can start the next recording from the tray.
+- Turn off automatic clipboard copying in Settings to keep your clipboard intact, including when insertion fails. **Copy transcript** on Home works even with history disabled. You can start the next recording from the tray when a transcript is saved or ready to copy, or after an error with no audio left to retry.
 - Windows keeps recovery notices on Home for clipboard fallback, microphone errors and expired retries. The updater says **Installer opened** and checks the running version on next launch; a cancelled installer can be reopened.
 - Windows setup uses your regional language and detects NVIDIA display adapters when recommending a speech model. An explicit language selection takes priority.
 - If Windows Credential Manager is unavailable, Caelum protects saved provider keys with your Windows account using DPAPI. Existing plaintext fallback entries are migrated on access.
 - New profiles start with an empty custom vocabulary. Existing vocabulary is preserved.
+- CLI commands now name the config section that must be a TOML table instead of printing a Python traceback.
 - Caelum verifies local model content before loading it and offers repair for damaged downloads. Desktop engine startup and connection failures now report errors and allow the app to quit.
+- Downloading or switching local speech models in setup or Settings no longer disconnects the desktop app from the engine.
 - The website demo now shows the full transcript after hold-to-talk recording and processing finish. The FAQ explains how to copy or insert it on each supported desktop.
 
 ## 0.5.0

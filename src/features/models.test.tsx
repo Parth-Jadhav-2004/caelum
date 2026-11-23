@@ -23,8 +23,7 @@ beforeEach(() => {
 });
 function mount(
   onSelect?: (id: string) => void,
-  beforeUse?: () => Promise<void>,
-  requireInstalled = false,
+  applyInstalled?: (id: string) => void,
 ) {
   return render(
     <QueryClientProvider
@@ -35,8 +34,7 @@ function mount(
       <TooltipProvider>
         <ModelPicker
           onSelect={onSelect}
-          requireInstalled={requireInstalled}
-          beforeUse={beforeUse}
+          applyInstalled={applyInstalled}
           selected={onSelect ? "parakeet-v3" : undefined}
         />
       </TooltipProvider>
@@ -45,13 +43,13 @@ function mount(
 }
 it.each<[SpeechModel["state"], string]>([
   ["not_installed", "Download"],
-  ["queued", "Waiting…"],
+  ["queued", "Queued"],
   ["downloading", "Pause"],
   ["paused", "Resume"],
-  ["verifying", "Checking files…"],
-  ["installing", "Checking files…"],
+  ["verifying", "Verifying files"],
+  ["installing", "Installing"],
   ["installed", "Use"],
-  ["failed", "Try again"],
+  ["failed", "Download again"],
 ])("renders %s calmly", async (state, label) => {
   data.models[0].state = state;
   mount();
@@ -66,14 +64,16 @@ it("downloads a fallback without changing engines, then offers it for selection"
     if (method === "models.download") data.models[0].state = "installed";
     return { ok: true };
   }) as typeof ipc);
-  mount(select, undefined, true);
-  expect(await screen.findByRole("radio")).toBeDisabled();
+  mount(undefined, select);
+  await userEvent.click(await screen.findByRole("radio"));
+  expect(select).not.toHaveBeenCalled();
+  expect(ipc).not.toHaveBeenCalledWith("models.download", expect.anything());
   await userEvent.click(
     screen.getByRole("button", { name: "Download Parakeet" }),
   );
   expect(select).not.toHaveBeenCalled();
   expect(ipc).not.toHaveBeenCalledWith("models.use", expect.anything());
-  await userEvent.click(await screen.findByRole("button", { name: "Choose" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Use" }));
   expect(select).toHaveBeenCalledWith("parakeet-v3");
 });
 it("shows in-use and loading states without offering removal", async () => {
@@ -114,7 +114,10 @@ it("has accessible progress and state-only live announcements", async () => {
   });
   mount();
   const progress = await screen.findByRole("progressbar");
-  expect(progress).toHaveAttribute("aria-valuetext", "212 megabytes of 671");
+  expect(progress).toHaveAttribute(
+    "aria-valuetext",
+    "Downloading · 32% · 212 MB / 671 MB",
+  );
   expect(progress).toHaveAttribute("aria-valuenow", "32");
   act(() =>
     useDownloads.getState().update({
@@ -173,19 +176,16 @@ it("keeps jargon out of primary model views", async () => {
   expect(clone.textContent).not.toMatch(/WER|int8|ONNX|sherpa|CTranslate/);
 });
 
-it("flushes pending settings before applying a model", async () => {
+it("uses an installed model without authorizing a download", async () => {
   data.models[0].state = "installed";
-  const order: string[] = [];
-  vi.mocked(ipc).mockImplementation((async (method: string) => {
-    if (method === "models.list") return data;
-    if (method === "models.use") order.push("use");
-    return { ok: true };
-  }) as typeof ipc);
-  mount(undefined, async () => {
-    order.push("flush");
-  });
+  mount();
+  await userEvent.click(await screen.findByRole("radio"));
+  expect(ipc).not.toHaveBeenCalledWith("models.use", expect.anything());
   await userEvent.click(await screen.findByRole("button", { name: "Use" }));
-  await waitFor(() => expect(order).toEqual(["flush", "use"]));
+  await waitFor(() =>
+    expect(ipc).toHaveBeenCalledWith("models.use", { id: "parakeet-v3" }),
+  );
+  expect(ipc).not.toHaveBeenCalledWith("models.download", expect.anything());
 });
 
 it("has no detectable semantic accessibility violations in the local picker", async () => {

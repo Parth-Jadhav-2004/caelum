@@ -149,6 +149,7 @@ interface Methods {
   devices: [Record<string, never>, Device[]];
   "history.delete": [{ id?: string }, Ack];
   "history.export": [{ path: string }, Ack];
+  "settings.reset_invalid": [Record<string, never>, { backup_path: string }];
   "settings.save": [
     { config: ConfigPatch },
     { saved: boolean; warning?: string },

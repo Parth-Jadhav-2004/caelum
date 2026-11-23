@@ -107,9 +107,48 @@ def test_retention_and_export(storage, tmp_path):
     history.export(destination)
     assert [json.loads(line)["id"] for line in destination.read_text().splitlines()] == ["new"]
     assert destination.stat().st_mode & 0o777 == 0o600
-    with pytest.raises(FileExistsError):
-        history.export(destination)
     assert history.summary()["sessions"] == 1
+
+
+def test_export_replaces_previous_snapshot_privately(storage, tmp_path):
+    history = storage[2]
+    destination = tmp_path / "history.jsonl"
+    record(storage, "first")
+    history.export(destination)
+    destination.chmod(0o644)
+    history.delete("first")
+    record(storage, "second", "café")
+
+    history.export(destination)
+
+    row = json.loads(destination.read_text(encoding="utf-8"))
+    assert (row["id"], row["final_transcript"]) == ("second", "café")
+    assert destination.stat().st_mode & 0o777 == 0o600
+
+
+def test_failed_export_preserves_previous_file(storage, tmp_path, monkeypatch):
+    record(storage)
+    folder = tmp_path / "exports"
+    folder.mkdir()
+    destination = folder / "history.jsonl"
+    destination.write_bytes(b"previous export\n")
+
+    def fail_serialization(*args, **kwargs):
+        raise TypeError("cannot serialize row")
+
+    monkeypatch.setattr(json, "dumps", fail_serialization)
+    with pytest.raises(TypeError, match="cannot serialize row"):
+        storage[2].export(destination)
+    assert destination.read_bytes() == b"previous export\n"
+    assert list(folder.iterdir()) == [destination]
+
+
+def test_export_cannot_overwrite_history_database(storage):
+    record(storage)
+    history = storage[2]
+    with pytest.raises(ValueError, match="database"):
+        history.export(history.path)
+    assert history.read()[0]["id"] == "session"
 
 
 def test_rate_is_snapshotted_not_retroactive(storage):

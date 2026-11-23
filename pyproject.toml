@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caelum-dictation"
-version = "0.5.1"
+version = "0.5.2"
 description = "Private-by-default dictation for Linux and Windows desktops"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
@@ -15,7 +15,7 @@ dependencies = [
     "numpy>=2,<3",
     "sounddevice>=0.5,<1",
     "pywin32>=311; sys_platform == 'win32'",
-    "cryptography>=45,<50; sys_platform == 'win32'",
+    "cryptography>=45,<51; sys_platform == 'win32'",
     "winrt-Windows.Media.Control>=3.2,<4; sys_platform == 'win32'",
     "winrt-Windows.Foundation>=3.2,<4; sys_platform == 'win32'",
     "winrt-Windows.Foundation.Collections>=3.2,<4; sys_platform == 'win32'",

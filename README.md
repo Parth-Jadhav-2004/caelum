@@ -161,6 +161,27 @@ Online and local recognition. Names and technical terms act as recognition hints
 Cleanup offers Light, Thorough, Email, Casual, and Code styles; all retain the
 existing conservative validation and fall back to raw text on failure.
 
+With **Light** or **Thorough** online cleanup, say a heading and at least two
+items, or use clear cues such as “first … second …”. For example, “shopping
+list first rice second onion third oil” pastes as:
+
+```text
+Shopping list:
+
+1. Rice
+2. Onion
+3. Oil
+```
+
+Unordered items, such as a few issues you found, use `- ` bullets. Ordinary
+sentences stay prose. This formatting needs no separate setting. With cleanup
+off or local transcription, Caelum does not infer lists. You can still say
+“new line”, “new paragraph”, or “bullet point” as separate phrases. For
+example, “Notes. New paragraph. Bullet point. Rice.” produces a blank line
+after “Notes.” followed by `- Rice.`. Commands must stand alone in the
+transcript (separated by punctuation or line breaks); “a new line of work”
+stays literal.
+
 ### On this computer
 
 Settings → Transcription offers **On this computer | Online**. The local
@@ -212,14 +233,15 @@ vocabulary as an initial prompt. Canary, Cohere and Moonshine do not use these
 hints. Silero skips silence and finds pauses before local decoding. Long recordings
 are split at pauses, with maximum windows of 35 seconds for Cohere, 30 seconds
 for Whisper and 60 seconds for Parakeet. Vocabulary echoes and subtitle boilerplate
-are filtered. For known English speech, offline cleanup removes “um” and “uh” and handles “new line”. All languages support
+are filtered. For known English speech, offline cleanup also removes “um” and “uh”. All languages support
 Dictionary replacements without uploading text.
 
 Settings → Transcription offers Auto, GPU and CPU execution and an idle unload
-period (five minutes by default; Never keeps the model resident). Auto uses CUDA
-for Whisper when available and otherwise uses CPU. The packaged sherpa runtime
-is CPU-only, so an explicit GPU choice for those models explains that it is
-unavailable. x86-64 processors without AVX2 are directed to Online before native
+period (five minutes by default; Never keeps the model resident). The base install
+includes CPU inference. For Parakeet and other sherpa models, see
+[optional NVIDIA setup and platform verification](docs/nvidia.md). Auto checks
+the selected backend; GPU requires it to activate CUDA. Settings reports the
+loaded device. x86-64 processors without AVX2 are directed to Online before native
 runtimes are imported.
 
 Model switches load the candidate before saving the new selection. A failure keeps
@@ -252,9 +274,8 @@ uv pip install --python /usr/bin/python3 --target "$component_dir" 'faster-whisp
 
 Restart Caelum, then download Any language. Component folders are appended after
 packaged dependencies; `.pth` files are not executed. Remove/reinstall the folder
-for a new Python minor version. NVIDIA acceleration is attempted only when
-CTranslate2 reports support; missing CUDA libraries or a failed CUDA decode
-retry locally on CPU, never Online.
+for a new Python minor version. Whisper uses CTranslate2's CUDA support, not the
+sherpa component. In Auto, a failed CUDA decode retries on CPU.
 
 The experimental `build_package.py appimage` target is separate from the candidate workflow’s Ubuntu-based `scripts/build-appimage.sh`. The experimental target requires
 linuxdeploy, its GTK plugin, and appimagetool. It targets **system Python 3.14**;

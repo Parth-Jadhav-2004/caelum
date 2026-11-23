@@ -3,7 +3,7 @@ import os
 import re
 import tempfile
 import tomllib
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -90,6 +90,13 @@ class Config:
     cleanup: Cleanup = field(default_factory=Cleanup)
     desktop: Desktop = field(default_factory=Desktop)
 
+    def same_runtime_settings(self, other):
+        desktop = replace(
+            self.desktop, theme=other.desktop.theme, color_theme=other.desktop.color_theme,
+            sidebar_visible=other.desktop.sidebar_visible,
+        )
+        return replace(self, desktop=desktop) == other
+
 
 def config_path():
     if os.name == "nt":
@@ -103,14 +110,35 @@ def data_dir():
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "caelum"
 
 
+class InvalidConfig(ValueError):
+    """A malformed settings file, as distinct from an invalid settings patch."""
+
+    def __init__(self, path, reason):
+        super().__init__(reason)
+        self.path = path
+
+
 def load(path=None):
     path = Path(path) if path else config_path()
-    data = tomllib.loads(path.read_text()) if path.exists() else {}
+    try:
+        try:
+            text = path.read_text()
+        except FileNotFoundError:
+            return Config()
+        return _parse(text)
+    except ValueError as error:
+        raise InvalidConfig(path, str(error)) from error
+
+
+def _parse(text):
+    data = tomllib.loads(text)
     if set(data) - {"app", "stt", "cleanup", "desktop"}:
         raise ValueError("Unknown configuration section")
     config = Config()
     for section, cls in (("app", App), ("stt", STT), ("cleanup", Cleanup), ("desktop", Desktop)):
-        values = data.get(section, {}).copy()
+        values = data.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"[{section}] must be a table")
         if section == "app" and "hotkey" not in values:
             values["hotkey"] = default_hotkey(values.get("backend", "auto"))
         if section == "stt":
@@ -242,3 +270,26 @@ def save(config, path=None):
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def backup_invalid_config(path):
+    """Keep an owner-only, byte-for-byte backup; refuse a missing or repaired file."""
+    data = path.read_bytes()
+    try:
+        load(path)
+    except InvalidConfig:
+        pass
+    else:
+        raise ValueError("Settings are already valid. Retry the connection.")
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".bak")
+    try:
+        with os.fdopen(fd, "wb") as backup:
+            backup.write(data)
+            backup.flush()
+            os.fsync(backup.fileno())
+        if path.read_bytes() != data:
+            raise ValueError("Settings changed during backup. Retry the connection.")
+    except Exception:
+        Path(name).unlink(missing_ok=True)
+        raise
+    return Path(name)
