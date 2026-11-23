@@ -122,9 +122,10 @@ async def test_commands_without_llm(engine, model):
     respond.assert_not_called()
 
 
-@pytest.mark.parametrize("style", ["light", "thorough"])
+@pytest.mark.parametrize("style", ["light", "thorough", "email", "casual", "code"])
 @pytest.mark.parametrize("response,expected", [
     ("Notes.\n\n- Rice.", ("Notes.\n\n- Rice.", True)),
+    ("Notes.\n\nRice.", ("Notes.\n\n- rice.", False)),
     ("Notes. Rice.", ("Notes.\n\n- rice.", False)),
     ("- Notes.\n\nRice.", ("Notes.\n\n- rice.", False)),
 ])
@@ -138,6 +139,22 @@ async def test_cleanup_keeps_explicit_single_bullet(style, response, expected, m
     )
     async with httpx.AsyncClient(transport=transport) as client:
         assert await Providers(config, client).cleanup("Notes. New paragraph. Bullet point. rice.") == expected
+
+
+@pytest.mark.parametrize("style", ["email", "casual", "code"])
+@pytest.mark.parametrize("response,valid", [("Rice.", False), ("- Rice.", True)])
+async def test_explicit_bullet_without_any_newline(monkeypatch, style, response, valid):
+    config = Config()
+    config.cleanup.model = "test-model"
+    config.cleanup.style = style
+    monkeypatch.setenv(config.cleanup.key_env, "test-key")
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": response}}]})
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert await Providers(config, client).cleanup("Bullet point. rice.") == (
+            response if valid else "- rice.", valid,
+        )
 
 
 def test_cleanup_rejects_inferred_single_bullet():

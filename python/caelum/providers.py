@@ -12,7 +12,7 @@ import httpx
 
 from .audio import RATE, wav_bytes
 from .credentials import get as credential
-from .quality import cleanup_prompt, normalize, preserves_dictated_breaks, validate_cleanup
+from .quality import cleanup_prompt, normalize, preserves_dictated_layout, validate_cleanup
 
 
 def contributor_scope(provider):
@@ -470,8 +470,8 @@ class Providers:
                     preserve_whitespace=cfg.style == "code",
                     allow_lists=cfg.style in ("light", "thorough"),
                 )
-                if refined and raw != dictated and "\n" in content:
-                    refined = preserves_dictated_breaks(content, result)
+                if refined and raw != dictated:
+                    refined = preserves_dictated_layout(content, result)
                 self.metrics["cleanup_refined"] = refined
                 if isinstance(body.get("usage"), dict):
                     self.metrics["token_usage"] = {
