@@ -2,6 +2,10 @@
 
 Release notes, newest first.
 
+## Unreleased
+
+- Light and Thorough cleanup format clearly dictated lists with a spoken heading, numbered steps or unordered bullets. Standalone English commands “new line”, “new paragraph”, and “bullet point” also work offline and with cleanup off.
+
 ## 0.5.2
 
 - Local models can use a separately installed NVIDIA runtime. Settings shows whether the loaded model uses CUDA or CPU, and an explicit GPU request reports setup failures instead of accepting CPU fallback.

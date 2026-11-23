@@ -395,10 +395,11 @@ class Providers:
 
     async def cleanup(self, raw, on_refining=lambda: None):
         cfg = self.config.cleanup
+        language = self.metrics.get("language") or self.config.stt.language
         if self.metrics.get("engine", self.config.stt.engine) == "local":
-            language = self.metrics.get("language") or self.config.stt.language
             return offline_cleanup(raw, cfg.replacements, language), False
-        if not cfg.model:
+        raw = spoken_formatting(raw, language)
+        if not cfg.model or not raw.strip() or raw == "- ":
             return raw, False
         if needs_contributor_consent(cfg) and cfg.contributor_consent != contributor_scope(cfg):
             self.metrics["cleanup_error"] = "consent_required"
@@ -448,9 +449,15 @@ class Providers:
                 if response.is_error:
                     raise response_error(response)
                 body = response.json()
+                choice = body["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    # The provider hit its output budget, even if the prefix looks plausible.
+                    self.metrics["cleanup_refined"] = False
+                    return raw, False
                 result, refined = validate_cleanup(
-                    raw, body["choices"][0]["message"]["content"],
+                    raw, choice["message"]["content"],
                     preserve_whitespace=cfg.style == "code",
+                    allow_lists=cfg.style in ("light", "thorough"),
                 )
                 self.metrics["cleanup_refined"] = refined
                 if isinstance(body.get("usage"), dict):
@@ -477,15 +484,46 @@ class Providers:
             self.metrics["cleanup_ms"] = (time.monotonic() - began) * 1000
 
 
+_COMMAND = re.compile(
+    r"(?:^|(?<=\n)|(?<=[,.;:!?])(?=[ \t]))[ \t]*(new line|new paragraph|bullet point)"
+    r"[ \t]*(?:[,.;:!?]+(?=[ \t\n]|$)\n?|\n|$)", re.I,
+)
+
+
+def spoken_formatting(text, language=""):
+    """Require a whole utterance or punctuation-delimited phrase, not just word boundaries."""
+    if language.lower().replace("_", "-").split("-")[0] not in ("en", "english", "", "auto"):
+        return text
+    parts = []
+    end = 0
+    for match in _COMMAND.finditer(text):
+        before = text[end:match.start()].rstrip(" \t,;")
+        if parts:
+            before = before.lstrip(" \t")
+        command = match[1].lower()
+        if command == "bullet point":
+            preceding = before or (parts[-1] if parts else "")
+            if preceding and not preceding.endswith("\n"):
+                before += "\n"
+            parts.extend((before, "- "))
+        else:
+            parts.extend((before.removesuffix("\n"), "\n" if command == "new line" else "\n\n"))
+        end = match.end()
+    if not parts:
+        return text
+    parts.append(text[end:].lstrip(" \t"))
+    return "".join(parts)
+
+
 def offline_cleanup(text, replacements, language=""):
     """Deterministic local cleanup. Dictionary replacements run once, without cascades."""
     if language.lower().replace("_", "-").split("-")[0] == "en":
         text = re.sub(r"(?<!\w)(?:um+|uh+)(?!\w)[,.!?;:]?\s*", "", text, flags=re.I)
-        text = re.sub(r"[ \t]*\bnew line\b[,.]?[ \t]*", "\n", text, flags=re.I)
+    text = spoken_formatting(text.strip(), language)
     if replacements:
         keys = sorted(replacements, key=len, reverse=True)
         pattern = r"(?<!\w)(?:" + "|".join(f"({re.escape(key)})" for key in keys) + r")(?!\w)"
         # The capture index identifies the dictionary entry even when re.I
         # equates characters whose casefolds differ (for example İ and i).
         text = re.sub(pattern, lambda m: replacements[keys[m.lastindex - 1]], text, flags=re.I)
-    return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text)).strip()
+    return re.sub(r"[ \t]+([,.!?;:])", r"\1", re.sub(r"[ \t]{2,}", " ", text))
