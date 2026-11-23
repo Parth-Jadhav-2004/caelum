@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
@@ -24,6 +24,21 @@ export function size(bytes: number) {
 function displaySize(model: SpeechModel) {
   return size(model.download_bytes);
 }
+const transferLabels: Partial<Record<SpeechModel["state"], string>> = {
+  queued: "Queued",
+  downloading: "Downloading",
+  stalled: "Stalled · waiting for connection",
+  paused: "Paused",
+  verifying: "Verifying files",
+  installing: "Installing",
+};
+export function modelBlocked(model: SpeechModel) {
+  return (
+    !!model.disabled_reason &&
+    (model.state !== "installed" ||
+      model.disabled_reason === "Needs an extra component.")
+  );
+}
 export function languageName(code: string) {
   try {
     return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
@@ -38,13 +53,14 @@ export function DownloadProgress({ model }: { model: SpeechModel }) {
     Math.max(0, (model.received_bytes / Math.max(1, total)) * 100),
   );
   const checking = ["verifying", "installing"].includes(model.state);
+  const detail = `${transferLabels[model.state]} · ${Math.round(percent)}% · ${size(model.received_bytes)} / ${size(total)}`;
   return (
     <div className="space-y-2">
       {checking ? (
         <div
           role="progressbar"
           aria-label={`${model.label} download`}
-          aria-valuetext="Checking files"
+          aria-valuetext={detail}
           className="h-2 overflow-hidden rounded-full bg-muted"
         >
           <span className="block h-full w-1/3 bg-muted-foreground motion-safe:animate-pulse" />
@@ -55,14 +71,12 @@ export function DownloadProgress({ model }: { model: SpeechModel }) {
           aria-label={`${model.label} download`}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={checking ? undefined : Math.round(percent)}
-          aria-valuetext={`${Math.round(model.received_bytes / 1e6)} megabytes of ${Math.round(total / 1e6)}`}
+          aria-valuenow={Math.round(percent)}
+          aria-valuetext={detail}
         />
       )}
       <p className="text-meta text-muted-foreground">
-        {checking
-          ? "Checking files…"
-          : `${model.state === "queued" ? "Queued" : model.state === "paused" ? "Paused" : model.state === "stalled" ? "Stalled · waiting for connection" : "Downloading"} · ${size(model.received_bytes)} of ${size(total)}`}
+        {detail}
         {!checking &&
           model.state !== "paused" &&
           model.eta_seconds !== null &&
@@ -72,11 +86,50 @@ export function DownloadProgress({ model }: { model: SpeechModel }) {
   );
 }
 
+function TransferControls({
+  model,
+  busy,
+  run,
+}: {
+  model: SpeechModel;
+  busy: boolean;
+  run: (method: "models.pause" | "models.resume" | "models.cancel") => void;
+}) {
+  if (!["queued", "downloading", "stalled", "paused"].includes(model.state))
+    return null;
+  return (
+    <div
+      role="group"
+      aria-label={`${model.label} download controls`}
+      className="flex items-center gap-1"
+    >
+      {model.state !== "queued" && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() =>
+            run(model.state === "paused" ? "models.resume" : "models.pause")
+          }
+        >
+          {model.state === "paused" ? "Resume" : "Pause"}
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={() => run("models.cancel")}
+      >
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 export function ModelPicker({
   selected,
   onSelect,
-  requireInstalled = false,
-  beforeUse,
   applyInstalled,
   language,
   layout = "list",
@@ -85,15 +138,14 @@ export function ModelPicker({
   layout?: "list" | "grid";
   selected?: string;
   onSelect?: (id: string) => void;
-  requireInstalled?: boolean;
-  beforeUse?: () => Promise<void>;
-  applyInstalled?: (id: string) => Promise<void>;
+  applyInstalled?: (id: string) => Promise<void> | void;
 }) {
   const { data, models, isPending, error, refetch } = useModels(language);
   const client = useQueryClient();
   const status = useApp((s) => s.status);
   const announcement = useDownloads((s) => s.announcement);
   const [all, setAll] = useState(false);
+  const [draft, setDraft] = useState<string>();
   const [remove, setRemove] = useState<SpeechModel | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [damaged, setDamaged] = useState<Record<string, boolean>>({});
@@ -106,22 +158,12 @@ export function ModelPicker({
     await client.invalidateQueries({ queryKey: ["bootstrap"] });
     setBusy(null);
   }
-  function select(model: SpeechModel) {
-    if (onSelect) {
-      onSelect(model.id);
-      return;
-    }
-    void run(model.id, async () => {
-      if (model.state === "installed" && applyInstalled) {
-        await applyInstalled(model.id);
-        return;
-      }
-      await beforeUse?.();
-      await ipc("models.use", { id: model.id, when_ready: true });
-    });
+  function select(id: string) {
+    if (onSelect) onSelect(id);
+    else setDraft(id);
   }
   const chosen =
-    selected ?? data?.pending_use ?? models.find((m) => m.in_use)?.id;
+    draft ?? selected ?? data?.pending_use ?? models.find((m) => m.in_use)?.id;
   if (isPending)
     return (
       <p role="status" className="py-4 text-sm text-muted-foreground">
@@ -143,7 +185,10 @@ export function ModelPicker({
         {data.recommended.reason_text}
       </p>
     );
-  const visible = models.filter((m) => all || m.visible);
+  const collapsed = models.filter(
+    (m) => m.visible || m.state !== "not_installed" || m.id === chosen,
+  );
+  const visible = all ? models : collapsed;
   return (
     <div className="space-y-4">
       <div aria-live="polite" aria-atomic="true" className="sr-only">
@@ -172,17 +217,9 @@ export function ModelPicker({
           const loading =
             model.runtime_state === "loading" ||
             (model.in_use && status?.engine?.state === "loading");
-          const active = [
-            "downloading",
-            "stalled",
-            "paused",
-            "verifying",
-            "installing",
-          ].includes(model.state);
+          const active = !!transferLabels[model.state];
           const ready = model.state === "installed";
-          const disabled =
-            !!model.disabled_reason &&
-            (!ready || model.disabled_reason === "Needs an extra component.");
+          const disabled = modelBlocked(model);
           const id = `${group}-${model.id}`;
           return (
             <div
@@ -198,17 +235,13 @@ export function ModelPicker({
                     value={model.id}
                     className="mt-1 size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
                     checked={chosen === model.id}
-                    disabled={
-                      disabled ||
-                      loading ||
-                      busy === model.id ||
-                      (requireInstalled && !ready)
-                    }
-                    onChange={() => select(model)}
+                    aria-describedby={`${id}-size ${id}-state`}
+                    disabled={disabled || loading || busy === model.id}
+                    onChange={() => select(model.id)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        select(model);
+                        select(model.id);
                       }
                       if (
                         ![
@@ -296,86 +329,36 @@ export function ModelPicker({
                               : model.languages.map(languageName).join(", ")}
                         </dd>
                       </div>
-                      <div>
+                      <div id={`${id}-size`}>
                         <dt className="inline">Download: </dt>
                         <dd className="inline">{displaySize(model)}</dd>
                       </div>
                     </dl>
+                    <p
+                      id={`${id}-state`}
+                      className="text-meta text-muted-foreground"
+                    >
+                      {transferLabels[model.state] ??
+                        (ready
+                          ? !onSelect && model.id === selected
+                            ? "Installed · in use"
+                            : "Installed"
+                          : model.state === "failed"
+                            ? "Download failed"
+                            : "Not installed")}
+                    </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
-                  {onSelect &&
-                  (!requireInstalled || ready) &&
-                  ![
-                    "queued",
-                    "downloading",
-                    "stalled",
-                    "paused",
-                    "verifying",
-                    "installing",
-                  ].includes(model.state) ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={disabled}
-                      onClick={() => select(model)}
-                    >
-                      Choose
-                    </Button>
-                  ) : model.state === "queued" ? (
-                    <>
-                      <span className="text-meta text-muted-foreground">
-                        Waiting…
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          void run(model.id, () =>
-                            ipc("models.cancel", { id: model.id }),
-                          )
-                        }
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  ) : ["downloading", "stalled", "paused"].includes(
-                      model.state,
-                    ) ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy === model.id}
-                        onClick={() =>
-                          void run(model.id, () =>
-                            ipc(
-                              model.state === "paused"
-                                ? "models.resume"
-                                : "models.pause",
-                              { id: model.id },
-                            ),
-                          )
-                        }
-                      >
-                        {model.state === "paused" ? "Resume" : "Pause"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy === model.id}
-                        onClick={() =>
-                          void run(model.id, () =>
-                            ipc("models.cancel", { id: model.id }),
-                          )
-                        }
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  ) : ["verifying", "installing"].includes(model.state) ? (
-                    <span className="sr-only">Preparing download</span>
-                  ) : ready ? (
+                  {active ? (
+                    <TransferControls
+                      model={model}
+                      busy={busy === model.id}
+                      run={(method) =>
+                        void run(model.id, () => ipc(method, { id: model.id }))
+                      }
+                    />
+                  ) : onSelect ? null : ready ? (
                     <>
                       {loading && !model.in_use ? (
                         <span
@@ -397,7 +380,14 @@ export function ModelPicker({
                           variant="outline"
                           size="sm"
                           disabled={disabled || loading || busy === model.id}
-                          onClick={() => select(model)}
+                          onClick={() =>
+                            void run(model.id, async () => {
+                              if (applyInstalled)
+                                await applyInstalled(model.id);
+                              else await ipc("models.use", { id: model.id });
+                              setDraft(model.id);
+                            })
+                          }
                         >
                           Use
                         </Button>
@@ -455,11 +445,9 @@ export function ModelPicker({
                         )
                       }
                     >
-                      {model.state === "failed"
-                        ? "Try again"
-                        : damaged[model.id]
-                          ? "Download again"
-                          : "Download"}
+                      {model.state === "failed" || damaged[model.id]
+                        ? "Download again"
+                        : "Download"}
                     </Button>
                   )}
                 </div>
@@ -487,24 +475,22 @@ export function ModelPicker({
                   {displaySize(model)}).
                 </p>
               )}
-              {model.disabled_reason &&
-                (!ready ||
-                  model.disabled_reason === "Needs an extra component.") && (
-                  <p className="mt-2 text-meta text-muted-foreground">
-                    {model.disabled_reason}{" "}
-                    {model.disabled_reason === "Needs an extra component." && (
-                      <Button
-                        variant="link"
-                        size="sm"
-                        onClick={() =>
-                          void action(() => invoke("open_model_help"))
-                        }
-                      >
-                        How to add it
-                      </Button>
-                    )}
-                  </p>
-                )}
+              {disabled && (
+                <p className="mt-2 text-meta text-muted-foreground">
+                  {model.disabled_reason}{" "}
+                  {model.disabled_reason === "Needs an extra component." && (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() =>
+                        void action(() => invoke("open_model_help"))
+                      }
+                    >
+                      How to add it
+                    </Button>
+                  )}
+                </p>
+              )}
               <details className="mt-3 text-meta leading-6 text-muted-foreground">
                 <summary className="flex w-fit cursor-pointer list-none items-center gap-1">
                   Details <ChevronDown className="size-3" />
@@ -566,11 +552,11 @@ export function ModelPicker({
           );
         })}
       </div>
-      {models.some((m) => !m.visible) && (
+      {collapsed.length < models.length && (
         <Button variant="ghost" size="sm" onClick={() => setAll(!all)}>
           {all
             ? "Show fewer models"
-            : `Show all models (${models.filter((m) => !m.visible).length})`}
+            : `Show all models (${models.length - collapsed.length})`}
         </Button>
       )}
       {data?.pending_use && (
@@ -596,49 +582,38 @@ export function ModelPicker({
   );
 }
 
-export function ModelDownloadLine({ modelId }: { modelId: string }) {
-  const { models, refetch } = useModels();
+export function ModelDownloadLine({
+  model,
+  refetch,
+}: {
+  model: SpeechModel;
+  refetch: () => Promise<unknown>;
+}) {
   const announcement = useDownloads((state) => state.announcement);
-  const model = models.find((item) => item.id === modelId);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (model?.state !== "installed") return;
-    setReady(true);
-    const timeout = setTimeout(() => setReady(false), 3000);
-    return () => clearTimeout(timeout);
-  }, [model?.state]);
-  if (!model) return null;
-  if (model.runtime_state === "loading")
+  const [busy, setBusy] = useState(false);
+  if (model.state === "installed" && model.runtime_state === "loading")
     return (
       <p role="status" className="text-body text-muted-foreground">
         Loading {model.label}…
       </p>
     );
-  if (model.runtime_state === "failed" || model.runtime_state === "error")
+  if (
+    model.state === "installed" &&
+    (model.runtime_state === "failed" || model.runtime_state === "error")
+  )
     return (
       <p role="alert" className="text-body text-destructive">
         {model.runtime_message || "Couldn't load the model. Retry in Settings."}
       </p>
     );
   if (model.state === "installed")
-    return ready ? (
+    return (
       <p role="status" className="text-sm text-muted-foreground">
         {model.label}
         {model.runtime_state === "ready" ? " is ready" : " downloaded"}
       </p>
-    ) : null;
-  if (
-    ![
-      "queued",
-      "downloading",
-      "stalled",
-      "paused",
-      "verifying",
-      "installing",
-      "failed",
-    ].includes(model.state)
-  )
-    return null;
+    );
+  if (!transferLabels[model.state] && model.state !== "failed") return null;
   return (
     <section
       aria-label="Speech model download"
@@ -649,22 +624,16 @@ export function ModelDownloadLine({ modelId }: { modelId: string }) {
       </div>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm">{model.label}</p>
-        {["paused", "downloading", "stalled"].includes(model.state) && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              void action(() =>
-                ipc(
-                  model.state === "paused" ? "models.resume" : "models.pause",
-                  { id: model.id },
-                ),
-              ).then(() => refetch())
-            }
-          >
-            {model.state === "paused" ? "Resume" : "Pause"}
-          </Button>
-        )}
+        <TransferControls
+          model={model}
+          busy={busy}
+          run={async (method) => {
+            setBusy(true);
+            await action(() => ipc(method, { id: model.id }));
+            await refetch();
+            setBusy(false);
+          }}
+        />
       </div>
       {model.state === "failed" ? (
         <p role="alert" className="text-meta text-destructive">

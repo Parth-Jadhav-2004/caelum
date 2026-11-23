@@ -5,7 +5,7 @@ Release notes, newest first.
 ## 0.5.2
 
 - Local models can use a separately installed NVIDIA runtime. Settings shows whether the loaded model uses CUDA or CPU, and an explicit GPU request reports setup failures instead of accepting CPU fallback.
-
+- Browse speech models in Setup and Settings without starting a download. Choose **Download** or **Download and continue** after checking the size, then follow progress, pause, resume, or cancel.
 - If a settings file prevents startup, Caelum shows its path. Edit it and retry, or choose **Back up and reset settings** to keep a copy and return to setup.
 - On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
 - On Hyprland, retrying a failed dictation dismisses its Retry/Cancel notification. If the retry fails too, only the new notification can act on it.

@@ -446,6 +446,7 @@ class ModelManager:
                                 await self._fetch(client, source["base"] + item["path"],
                                                   part, item, model_id)
                                 os.replace(part, final)
+                            self._emit({"id": model_id, "state": "verifying"})
                         else:
                             archive = work / "archive.tar.bz2.part"
                             await self._fetch(client, source["url"], archive, source, model_id)

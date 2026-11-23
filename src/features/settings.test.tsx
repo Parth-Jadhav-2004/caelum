@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi } from "vitest";
@@ -10,6 +10,7 @@ import { ipc } from "@/lib/ipc";
 import { testModels } from "@/test-models";
 import { testConfig } from "@/test-config";
 import { useApp } from "@/stores/app";
+import { useDownloads } from "@/stores/models";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
 }));
@@ -58,6 +59,109 @@ describe("credential storage warning", () => {
     await screen.findByRole("combobox", { name: "Microphone" });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+});
+
+it("keeps model browsing passive and restores the confirmed transfer when returning to Transcription", async () => {
+  const list = structuredClone(testModels);
+  const model = list.models[1];
+  model.visible = false;
+  model.total_bytes = model.download_bytes;
+  const client = new QueryClient();
+  const config = structuredClone(testConfig);
+  config.stt.engine = "local";
+  const commit = vi.fn();
+  vi.mocked(ipc)
+    .mockClear()
+    .mockImplementation((async (method: string, params: { id?: string }) => {
+      if (method === "bootstrap") return { config, credentials: {} };
+      if (method === "models.list") return structuredClone(list);
+      if (method === "models.download" && params.id === model.id)
+        model.state = "queued";
+      return { ok: true };
+    }) as typeof ipc);
+  render(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <Settings
+          config={config}
+          change={vi.fn()}
+          commit={commit}
+          initialGroup="Transcription"
+          saveState="Saved"
+        />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Show all models (1)" }),
+  );
+  await userEvent.click(screen.getByRole("radio", { name: "Parakeet" }));
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowUp} ");
+  const radio = screen.getByRole("radio", { name: model.label });
+  expect(radio).toBeChecked();
+  expect(radio).toHaveAccessibleDescription("Download: 109 MB Not installed");
+  expect(commit).not.toHaveBeenCalled();
+  expect(
+    vi
+      .mocked(ipc)
+      .mock.calls.filter(
+        ([method]) => method.startsWith("models.") && method !== "models.list",
+      ),
+  ).toEqual([]);
+  await userEvent.click(
+    screen.getByRole("button", { name: `Download ${model.label}` }),
+  );
+  const bar = { name: `${model.label} download` };
+  expect(await screen.findByRole("progressbar", bar)).toHaveAttribute(
+    "aria-valuenow",
+    "0",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  function progress(
+    state: "downloading" | "verifying" | "ready",
+    bytes: number,
+  ) {
+    useDownloads
+      .getState()
+      .update({
+        id: model.id,
+        state,
+        received_bytes: bytes,
+        total_bytes: model.total_bytes,
+        error: null,
+        eta_seconds: null,
+        bytes_per_sec: 0,
+      });
+  }
+  act(() => progress("downloading", 54_000_000));
+  await userEvent.click(screen.getByRole("button", { name: "Transcription" }));
+  expect(await screen.findByRole("progressbar", bar)).toHaveAttribute(
+    "aria-valuetext",
+    "Downloading · 50% · 54 MB / 109 MB",
+  );
+  act(() => progress("verifying", model.total_bytes));
+  expect(screen.getByRole("progressbar", bar)).toHaveAttribute(
+    "aria-valuetext",
+    expect.stringContaining("Verifying files"),
+  );
+  expect(screen.queryByRole("button", { name: "Use" })).toBeNull();
+  model.state = "installed";
+  await act(async () => {
+    progress("ready", model.total_bytes);
+    await client.invalidateQueries({ queryKey: ["models"] });
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Use" }));
+  expect(commit).toHaveBeenCalledWith({
+    ...config,
+    stt: { ...config.stt, local_model: model.id },
+  });
+  expect(
+    vi
+      .mocked(ipc)
+      .mock.calls.filter(
+        ([method]) => method === "models.download" || method === "models.use",
+      ),
+  ).toEqual([["models.download", { id: model.id }]]);
 });
 
 it("offers exactly seven settings groups and keeps advanced fields separate", async () => {
