@@ -1,7 +1,6 @@
 """Desktop-neutral Linux recording with the optional GlobalShortcuts portal.
 
-Wayland deliberately restricts focus inspection and synthetic paste. This backend
-saves completed dictations for an explicit Copy action in the desktop application.
+Clipboard-free delivery uses the original editable accessibility object when available.
 """
 
 import asyncio
@@ -316,6 +315,8 @@ class HUD:
             "success_fallback_online": "Done · used Online",
             "success_fallback_local": "Done · used this computer",
             "refining": "Cleaning up your words…",
+            "success": "Dictation inserted.",
+            "unrefined": "Dictation inserted.",
             "saved": "Dictation saved. Open Caelum and choose Copy text, then paste where you want.",
             "ready_to_copy": "Transcript ready. Choose Copy transcript in Caelum.",
             "error": "Dictation failed. Retry or cancel in Caelum.",

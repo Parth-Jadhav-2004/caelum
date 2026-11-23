@@ -50,6 +50,7 @@ async def test_final_insertion_once_and_no_transcript_in_hud(core, monkeypatch):
 
 
 async def test_completion_hook_runs_only_after_insertion(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     completed = []
     core.on_completed = lambda *arguments: completed.append(arguments)
     monkeypatch.setattr("caelum.orchestrator.insert", AsyncMock(return_value=False))
@@ -100,6 +101,7 @@ async def test_storage_hook_failure_never_retries_insertion(core, monkeypatch):
 
 
 async def test_clipboard_fallback_is_distinct(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     monkeypatch.setattr("caelum.orchestrator.insert", AsyncMock(return_value=False))
     await core.finalize(core.session)
     assert core.state == "copied"
@@ -107,6 +109,7 @@ async def test_clipboard_fallback_is_distinct(core, monkeypatch):
 
 
 async def test_retry_copies_exact_finished_transcript_with_history_off(core):
+    core.config.desktop.auto_copy = True
     from caelum.desktop_services import service_presentation
     from caelum.orchestrator import notify
 
@@ -184,6 +187,7 @@ async def test_in_app_retry_expiry_explains_discard_after_hud_hides(core):
 
 @pytest.mark.parametrize("ending", ["cancel", "expire", "locked"])
 async def test_pending_transcript_discarded_on_cancel_expiry_or_lock(core, ending):
+    core.config.desktop.auto_copy = True
     core.bindings.insert = AsyncMock(side_effect=RuntimeError("Clipboard unavailable"))
     core.bindings.copy_result = AsyncMock()
     await core.finalize(core.session)
@@ -356,6 +360,7 @@ async def test_release_before_start_is_an_accidental_press(core, monkeypatch):
 
 
 async def test_portable_delivery_waits_for_storage_and_never_injects(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     core.bindings.save_only = True
     completed = AsyncMock(return_value=True)
     core.on_completed = completed
@@ -371,6 +376,7 @@ async def test_portable_delivery_waits_for_storage_and_never_injects(core, monke
 
 
 async def test_portable_storage_failure_keeps_audio_for_retry(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     core.bindings.save_only = True
     core.on_completed = AsyncMock(return_value=False)
     insertion = AsyncMock()
@@ -428,6 +434,7 @@ async def test_queued_retry_clicks_schedule_only_one_finalization(core, monkeypa
 
 
 async def test_portable_history_off_copies_once_without_storage(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     core.config.desktop.history_enabled = False
     core.bindings.save_only = True
     copy = AsyncMock()
@@ -483,6 +490,7 @@ async def test_auto_copy_off_preserves_clipboard_and_manual_delivery(core, monke
 
 
 async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, monkeypatch):
+    core.config.desktop.auto_copy = True
     core.config.desktop.history_enabled = False
     core.bindings.save_only = True
     monkeypatch.setattr("caelum.portable.copy_private_result", AsyncMock(side_effect=OSError()))
@@ -490,6 +498,26 @@ async def test_portable_history_off_clipboard_failure_retains_retry_audio(core, 
     assert core.state == "error"
     assert core.pcm is not None
     await core.cancel(feedback=False)
+
+
+@pytest.mark.parametrize("portable", [False, True])
+async def test_default_delivery_inserts_directly_with_history_and_clipboard_off(core, monkeypatch, portable):
+    from caelum.field_input import Field
+    from caelum.linux import Target
+
+    core.config.desktop.history_enabled = False
+    core.bindings.save_only = portable
+    core.target = Target("0xabc", 15, 0, "", field=Field("id", ":1.5", "/entry", "/win"))
+    direct, clipboard = AsyncMock(return_value=True), AsyncMock()
+    monkeypatch.setattr("caelum.field_input.insert_field", direct)
+    monkeypatch.setattr("caelum.portable.copy_private_result", clipboard)
+    monkeypatch.setattr("caelum.linux.command", clipboard)
+    monkeypatch.setattr("caelum.linux.hypr_json", AsyncMock(return_value={"address": "0xabc", "pid": 15}))
+    await core.finalize(core.session)
+    direct.assert_awaited_once_with("Private spoken words.", core.target.field)
+    clipboard.assert_not_awaited()
+    assert core.state == "success"
+    assert not core.metrics.get("manual_copy")
 
 
 @pytest.mark.parametrize("ending", ["stop", "toggle", "cancel", "pause", "limit", "error", "silence"])
