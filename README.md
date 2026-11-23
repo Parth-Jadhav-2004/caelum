@@ -216,10 +216,11 @@ are filtered. For known English speech, offline cleanup removes “um” and “
 Dictionary replacements without uploading text.
 
 Settings → Transcription offers Auto, GPU and CPU execution and an idle unload
-period (five minutes by default; Never keeps the model resident). Auto uses CUDA
-for Whisper when available and otherwise uses CPU. The packaged sherpa runtime
-is CPU-only, so an explicit GPU choice for those models explains that it is
-unavailable. x86-64 processors without AVX2 are directed to Online before native
+period (five minutes by default; Never keeps the model resident). The base install
+includes CPU inference. For Parakeet and other sherpa models, see
+[optional NVIDIA setup and platform verification](docs/nvidia.md). Auto checks
+the selected backend; GPU requires it to activate CUDA. Settings reports the
+loaded device. x86-64 processors without AVX2 are directed to Online before native
 runtimes are imported.
 
 Model switches load the candidate before saving the new selection. A failure keeps
@@ -252,9 +253,8 @@ uv pip install --python /usr/bin/python3 --target "$component_dir" 'faster-whisp
 
 Restart Caelum, then download Any language. Component folders are appended after
 packaged dependencies; `.pth` files are not executed. Remove/reinstall the folder
-for a new Python minor version. NVIDIA acceleration is attempted only when
-CTranslate2 reports support; missing CUDA libraries or a failed CUDA decode
-retry locally on CPU, never Online.
+for a new Python minor version. Whisper uses CTranslate2's CUDA support, not the
+sherpa component. In Auto, a failed CUDA decode retries on CPU.
 
 The experimental `build_package.py appimage` target is separate from the candidate workflow’s Ubuntu-based `scripts/build-appimage.sh`. The experimental target requires
 linuxdeploy, its GTK plugin, and appimagetool. It targets **system Python 3.14**;

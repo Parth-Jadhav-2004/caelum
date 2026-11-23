@@ -1,0 +1,29 @@
+# Optional independent CPython 3.12 x64 worker. Never installed with model weights.
+sherpa-onnx @ https://huggingface.co/csukuangfj2/sherpa-onnx-wheels/resolve/c9f5ed2cf4b2663d23f4e93ab7f642b176dc62e3/cuda/2.0.1/sherpa_onnx-2.0.1%2Bcuda12.cudnn9.onnxruntime1.28.2-cp312-cp312-linux_x86_64.whl ; sys_platform == "linux" \
+    --hash=sha256:6a1fbb86dad446c6fef91341b80e45769d2a24c27de5efc798b81d599610e7aa
+sherpa-onnx @ https://huggingface.co/csukuangfj2/sherpa-onnx-wheels/resolve/c9f5ed2cf4b2663d23f4e93ab7f642b176dc62e3/cuda/2.0.1/sherpa_onnx-2.0.1%2Bcuda12.cudnn9-cp312-cp312-win_amd64.whl ; sys_platform == "win32" \
+    --hash=sha256:054018f0f9faba420d7be1f3cc6278ab5d0c7c767ae597775fbdd9a6a62a9fed
+numpy==2.5.4 \
+    --hash=sha256:fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a \
+    --hash=sha256:a7b1b6353e36a7e50de2973a38d705c88ee93adcf120673cee7f45a4a3fa223a
+nvidia-cuda-runtime-cu12==12.8.90 \
+    --hash=sha256:adade8dcbd0edf427b7204d480d6066d33902cab2a4707dcfc48a2d0fd44ab90 \
+    --hash=sha256:c0c6027f01505bfed6c3b21ec546f69c687689aad5f1a377554bc6ca4aa993a8
+nvidia-cublas-cu12==12.8.4.1 \
+    --hash=sha256:8ac4e771d5a348c551b2a426eda6193c19aa630236b418086020df5ba9667142 \
+    --hash=sha256:47e9b82132fa8d2b4944e708049229601448aaad7e6f296f630f2d1a32de35af
+nvidia-cudnn-cu12==9.19.0.56 \
+    --hash=sha256:ac6ad90a075bb33a94f2b4cf4622eac13dd4dc65cf6dd9c7572a318516a36625 \
+    --hash=sha256:cec70596b9ce878fab83810c3f5a2e606d35f510e5fee579759e4cbc68a23750
+nvidia-cufft-cu12==11.3.3.83 \
+    --hash=sha256:4d2dd21ec0b88cf61b62e6b43564355e5222e4a3fb394cac0db101f2dd0d4f74 \
+    --hash=sha256:7a64a98ef2a7c47f905aaf8931b69a3a43f27c55530c698bb2ed7c75c0b42cb7
+nvidia-nvjitlink-cu12==12.8.93 \
+    --hash=sha256:81ff63371a7ebd6e6451970684f916be2eab07321b73c9d244dc2b4da7f73b88 \
+    --hash=sha256:bd93fbeeee850917903583587f4fc3a4eafa022e34572251368238ab5e6bd67f
+nvidia-cuda-nvrtc-cu12==12.8.93 \
+    --hash=sha256:a7756528852ef889772a84c6cd89d41dfa74667e24cca16bb31f8f061e3e9994 \
+    --hash=sha256:7a4b6b2904850fe78e0bd179c4b655c404d4bb799ef03ddc60804247099ae909
+nvidia-curand-cu12==10.3.9.90 \
+    --hash=sha256:b32331d4f4df5d6eefa0554c565b626c7216f87a06a4f56fab27c3b68a830ec9 \
+    --hash=sha256:f149a8ca457277da854f89cf282d6ef43176861926c7ac85b2a0fbd237c587ec

@@ -196,6 +196,7 @@ export function ModelPicker({
       </div>
       <p className="pt-4 text-meta text-muted-foreground">
         Models use {size(data?.storage_bytes ?? 0)}
+        {data?.hardware.nvidia && " · NVIDIA hardware detected"}
       </p>
       {data?.recommended.id === null && data.recommended.reason_text && (
         <p className="text-body text-muted-foreground">

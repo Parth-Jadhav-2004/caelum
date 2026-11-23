@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from caelum import local_stt
+from caelum import local_stt, sherpa_stt
 from caelum.audio import RATE, read_wav, wav_bytes
 from caelum.benchmark import local_benchmark
 from caelum.config import Config
@@ -174,14 +174,15 @@ def test_repetition_guard_words_tokens_and_duration():
 def test_sherpa_word_boundaries():
     result = SimpleNamespace(tokens=["▁Hello", ",", "▁wor", "ld", "."],
                              timestamps=[0.1, 0.3, 0.5, 0.6, 0.8])
-    assert local_stt._sherpa_words(result, 1.0) == [
+    assert sherpa_stt._sherpa_words(result, 1.0) == [
         {"word": "Hello,", "start": 0.1, "end": 0.5},
         {"word": "world.", "start": 0.5, "end": 1.0},
     ]
-    assert local_stt._sherpa_words(SimpleNamespace(tokens=["x"], timestamps=[]), 1) == []
+    assert sherpa_stt._sherpa_words(SimpleNamespace(tokens=["x"], timestamps=[]), 1) == []
 
 
 def test_cuda_decode_failure_retries_on_cpu_without_downloads(tmp_path, monkeypatch):
+    monkeypatch.setattr(local_stt, "whisper_blas", lambda: None)
     calls = []
     class Model:
         def __init__(self, path, **options):
@@ -206,7 +207,7 @@ def test_cuda_decode_failure_retries_on_cpu_without_downloads(tmp_path, monkeypa
 
 
 def test_hotwords_do_not_accept_native_control_syntax():
-    assert local_stt.hotword_phrases("Acme :100, a/b\nAcme :100") == ["Acme 100", "a b"]
+    assert sherpa_stt.hotword_phrases("Acme :100, a/b\nAcme :100") == ["Acme 100", "a b"]
 
 
 async def test_local_benchmark_never_constructs_http_client(tmp_path, monkeypatch, fake_engine):

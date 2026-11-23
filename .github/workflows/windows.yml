@@ -4,6 +4,11 @@ on:
     branches: [main, dev]
   workflow_call:
   workflow_dispatch:
+    inputs:
+      verify_cpu_recovery:
+        description: "Exercise the installed app with public Parakeet v3 weights on the CPU runner"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,7 +31,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Test Windows dictation and model guidance
-        run: uv run --locked --extra dev --python 3.12 pytest -q tests/test_windows_desktop.py tests/test_windows_hardware.py tests/test_orchestrator.py
+        run: uv run --locked --extra dev --python 3.12 pytest -q tests/test_windows_desktop.py tests/test_windows_hardware.py tests/test_orchestrator.py tests/test_cuda_runtime.py
       - run: python scripts/build_windows_runtime.py
       - run: src-tauri/windows-runtime/python.exe scripts/smoke_windows_engine.py
         timeout-minutes: 3
@@ -57,6 +62,29 @@ jobs:
           } finally {
             if (-not $app.HasExited) { $app.Kill() }
           }
+      - name: Verify packaged Parakeet transcription and CPU recovery
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_cpu_recovery
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $py = "$env:RUNNER_TEMP\Caelum Install\engine\python.exe"
+          $qa = "$env:RUNNER_TEMP\speech-qa"
+          $env:LOCALAPPDATA = "$qa\data"
+          $env:APPDATA = "$qa\config"
+          $PSNativeCommandUseErrorActionPreference = $true
+          & $py -I scripts/download-local-fixtures.py "$qa\samples"
+          & $py -I -m caelum.cli models download parakeet-v3
+          $smoke = @('-I', 'scripts/smoke_nvidia.py', "$env:LOCALAPPDATA\Caelum\models", "$qa\samples\librispeech-0.wav")
+          & $py @smoke --device cpu
+          & $py @smoke --device gpu --expect-setup-error
+          & $py -I -m caelum.cli install-nvidia
+          & $py @smoke --device gpu --expect-setup-error
+          & $py @smoke --device auto
+          # Break only the disposable add-on, leaving the packaged CPU engine intact.
+          $dll = "$env:LOCALAPPDATA\Caelum\components\nvidia-cu12\Lib\site-packages\nvidia\cuda_runtime\bin\cudart64_12.dll"
+          Rename-Item $dll cudart64_12.dll.hidden
+          & $py @smoke --device gpu --expect-setup-error
+          & $py @smoke --device auto
       - name: Name installer for the shared release manifest
         shell: pwsh
         run: |

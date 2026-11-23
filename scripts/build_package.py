@@ -165,6 +165,7 @@ exec /usr/bin/python3 -m caelum.cli "$@"
         for source in (
             ROOT / "README.md",
             ROOT / "docs/linux.md",
+            ROOT / "docs/nvidia.md",
             ROOT / "docs/privacy.md",
             ROOT / "THIRD_PARTY_NOTICES.md",
             ROOT / "LICENSE",

@@ -19,6 +19,8 @@
 
 ## Build on Windows
 
+For optional local GPU inference see [NVIDIA setup and verification](nvidia.md).
+
 The Windows and Linux apps share the React application, design tokens, navigation,
 onboarding, settings, history and model catalog. The dictation pipeline,
 JSON-lines contract, model validation and SQLite schema are shared.
