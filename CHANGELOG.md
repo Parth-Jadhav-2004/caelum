@@ -2,14 +2,18 @@
 
 Release notes, newest first.
 
-## Unreleased
-
-- Light and Thorough cleanup format clearly dictated lists with a spoken heading, numbered steps or unordered bullets. Standalone English commands “new line”, “new paragraph”, and “bullet point” also work offline and with cleanup off.
-
 ## 0.5.2
 
+Changes since stable v0.5.0, including the v0.5.1 testing releases.
+
+### Dictation and local models
+
+- Light and Thorough cleanup format clearly dictated lists with a spoken heading, numbered steps or unordered bullets. Standalone English commands “new line”, “new paragraph”, and “bullet point” also work offline and with cleanup off.
 - Local models can use a separately installed NVIDIA runtime. Settings shows whether the loaded model uses CUDA or CPU, and an explicit GPU request reports setup failures instead of accepting CPU fallback.
 - Browse speech models in Setup and Settings without starting a download. Choose **Download** or **Download and continue** after checking the size, then follow progress, pause, resume, or cancel.
+
+### Settings, history and Linux fixes
+
 - If a settings file prevents startup, Caelum shows its path. Edit it and retry, or choose **Back up and reset settings** to keep a copy and return to setup.
 - On GNOME and KDE, finishing, pausing or cancelling a speech model download no longer shows “Recording cancelled.”
 - On Hyprland, retrying a failed dictation dismisses its Retry/Cancel notification. If the retry fails too, only the new notification can act on it.
@@ -18,7 +22,7 @@ Release notes, newest first.
 - On Linux, the control socket now replies “Invalid request” when a client sends a malformed or oversized request, or misses the one-second deadline.
 - Appearance and sidebar changes save quietly during dictation. Changes to recording mode, clipboard copying, and history settings take effect after dictation finishes or is cancelled, without restarting Caelum.
 
-## 0.5.1
+### Also included from 0.5.1 testing
 
 - The desktop sidebar toggle sits beside the Caelum logo and replaces it when collapsed, giving pages more vertical space.
 - New setups use **Super+Alt+V** on GNOME/KDE portal desktops, **Ctrl+Super** on native Hyprland and **Ctrl+Win** on Windows. Setup reports shortcut registration failures; use **Record** and **Finish recording** on Home. Settings shows active and pending portal shortcuts and offers **Restart Caelum** to apply changes.
