@@ -47,7 +47,7 @@ Do not remove the `models` directory: downloading weights cannot repair CUDA.
 
 Whisper does **not** load the sherpa worker or share its DLL search path.
 Windows bundles faster-whisper; native Linux uses the [optional Whisper
-component](../README.md#optional-whisper-component). For the pinned CTranslate2
+component](desktop-reference.md#optional-whisper-component). For the pinned CTranslate2
 4.9.0 x64 wheels, provide a CUDA 12 compatible driver and CUDA 12 cuBLAS in
 the **engine's** loader path (Linux: system library path or `LD_LIBRARY_PATH`;
 Windows: CUDA `bin` on PATH before launch). Other CTranslate2 builds may require
