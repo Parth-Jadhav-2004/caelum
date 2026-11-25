@@ -25,6 +25,15 @@ STEPS = (
 )
 PROSE = "I first noticed the problem on Monday."
 
+TEN_ITEM_LIST = (
+    "shopping list first cheese second apples third onions fourth oil fifth flour "
+    "sixth milk seventh eggs eighth salt ninth bread tenth rice"
+)
+TEN_ITEM_OUTPUT = (
+    "Shopping list:\n\n1. Cheese\n2. Apples\n3. Onions\n4. Oil\n5. Flour"
+    "\n6. Milk\n7. Eggs\n8. Salt\n9. Bread\n10. Rice"
+)
+
 
 @pytest.mark.parametrize("style", ["light", "thorough"])
 def test_cleanup_prompt_includes_list_rules_and_examples(style):
@@ -163,6 +172,30 @@ def test_offline_spoken_list(raw, expected):
 ])
 def test_offline_list_distinguishes_fractions_from_markers(raw, expected):
     assert offline_cleanup(raw, {}, "en-US") == expected
+
+
+@pytest.mark.parametrize("extra_items", [" eleventh tea", ", 11th tea", " eleventh tea twelfth sugar"])
+def test_offline_ordinal_limit_preserves_the_complete_dictation(extra_items):
+    raw = TEN_ITEM_LIST + extra_items
+    assert offline_cleanup(raw, {}, "en-US") == raw
+
+
+@pytest.mark.parametrize("fraction", ["", " and an eleventh of a pound of cheese"])
+def test_offline_ordinal_limit_still_formats_ten_items(fraction):
+    assert offline_cleanup(TEN_ITEM_LIST + fraction, {}, "en-US") == TEN_ITEM_OUTPUT + fraction
+
+
+@pytest.mark.parametrize("style", ["light", "thorough"])
+async def test_online_ordinal_limit_lets_the_provider_refine_the_complete_dictation(style):
+    config = Config()
+    config.cleanup.model = "test-model"
+    config.cleanup.style = style
+    raw = TEN_ITEM_LIST + " eleventh tea"
+    respond = Mock(return_value=httpx.Response(200, json={"choices": [{"message": {"content": raw}}]}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = Providers(config, client, credential_resolver=lambda _: "test-key")
+        assert await provider.cleanup(raw) == (raw, True)
+    respond.assert_called_once()
 
 
 @pytest.mark.parametrize("raw", [
