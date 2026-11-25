@@ -132,6 +132,7 @@ _ORDINAL = re.compile(
     r"(?<![^\s,;:.])(?:(?:and|then)\s+)?(" + "|".join(_ORDINAL_VALUE)
     + r")(?=[\s,:;.]|$)(?:[,:;.](?=\s|$))?[ \t]*", re.I,
 )
+_FRACTION = re.compile(r"\b(?:an?|one)\s+(\w+)(?=\s+of\b)", re.I)
 _PURCHASE = re.compile(r"^(?:I would like to|I['’]d like to|I want to) buy\s+", re.I)
 
 
@@ -155,7 +156,9 @@ def format_spoken_list(text, language=""):
     )):
         items = re.split(r",\s*(?:and\s+)?|\s+and\s+", body.removesuffix("."), flags=re.I)
         return title + ":\n\n" + "\n".join("- " + _item_case(item) for item in items)
-    cues = list(_ORDINAL.finditer(body))
+    # In “a third of”, the ordinal belongs to the item, even if it is next in sequence.
+    fraction_words = {m.start(1) for m in _FRACTION.finditer(body)}
+    cues = [cue for cue in _ORDINAL.finditer(body) if cue.start(1) not in fraction_words]
     if (len(cues) < (2 if heading else 3) or cues[0].start() != 0
             or any(_ORDINAL_VALUE[cue[1].lower()] != i for i, cue in enumerate(cues, 1))):
         return text

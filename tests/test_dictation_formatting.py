@@ -153,6 +153,18 @@ def test_offline_spoken_list(raw, expected):
     assert offline_cleanup(raw, {}, "en-US") == expected
 
 
+@pytest.mark.parametrize("raw,expected", [
+    ("shopping list first apples second a third of a pound of cheese",
+     "Shopping list:\n\n1. Apples\n2. A third of a pound of cheese"),
+    ("shopping list first apples second cheese third rice",
+     "Shopping list:\n\n1. Apples\n2. Cheese\n3. Rice"),
+    ("shopping list first apples second a third of a pound of cheese third rice",
+     "Shopping list:\n\n1. Apples\n2. A third of a pound of cheese\n3. Rice"),
+])
+def test_offline_list_distinguishes_fractions_from_markers(raw, expected):
+    assert offline_cleanup(raw, {}, "en-US") == expected
+
+
 @pytest.mark.parametrize("raw", [
     PROSE,
     "I put first aid supplies and second-hand books on my shopping list.",
