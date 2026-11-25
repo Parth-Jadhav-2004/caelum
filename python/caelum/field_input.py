@@ -66,30 +66,40 @@ async def collection_field(bus, bus_id, owner, root):
     matches, = await call(bus, owner, root, ATSPI + "Collection", "GetMatches",
                           "(aiia{ss}iaiiasib)uib", [rule, 1, 2, True])
     if len(matches) != 1 or matches[0][0] != owner:
-        return None
+        return None, False
     path = matches[0][1]
     parent = path
+    password = False
+    terminal = False
     for _ in range(64):
         role, = await call(bus, owner, parent, ACCESSIBLE, "GetRole")
-        if role in (PASSWORD_TEXT, TERMINAL):
-            break
+        if role == PASSWORD_TEXT:
+            password = True
+        elif role == TERMINAL:
+            terminal = True
         if role in WINDOW_ROLES:
             flags, = await call(bus, owner, parent, ACCESSIBLE, "GetState")
-            return Field(bus_id, owner, path, parent) if state(flags, ACTIVE) else None
+            if not state(flags, ACTIVE):
+                return None, False
+            if password:
+                return None, True
+            if terminal:
+                return None, False
+            return Field(bus_id, owner, path, parent), False
         ref, = await call(bus, owner, parent, "org.freedesktop.DBus.Properties", "Get",
                           "ss", [ACCESSIBLE, "Parent"])
         if ref.value[0] != owner:
             break
         parent = ref.value[1]
-    return None
+    return None, False
 
 
 async def app_field(bus, bus_id, owner, root, pid):
     if not owner.startswith(":"):
-        return None
+        return None, False
     if pid is not None and await call(bus, DBUS, DBUS_PATH, DBUS, "GetConnectionUnixProcessID",
                                       "s", [owner]) != [pid]:
-        return None
+        return None, False
     try:
         rows, = await call(bus, owner, "/org/a11y/atspi/cache", ATSPI + "Cache", "GetItems")
     except RuntimeError:
@@ -99,36 +109,58 @@ async def app_field(bus, bus_id, owner, root, pid):
     objects = {row[0][1]: row for row in rows if row[0][0] == owner}
     matches = []
     for path, row in objects.items():
-        if EDITABLE not in row[-5] or row[-3] in (PASSWORD_TEXT, TERMINAL) or not eligible(row[-1]):
+        if not state(row[-1], FOCUSED):
+            continue
+        is_editable = EDITABLE in row[-5] and eligible(row[-1])
+        password = row[-3] == PASSWORD_TEXT
+        terminal = row[-3] == TERMINAL
+        if not is_editable and not password:
             continue
         parent = row
         for _ in range(64):
-            if parent[-3] in (PASSWORD_TEXT, TERMINAL):
-                break
+            if parent[-3] == PASSWORD_TEXT:
+                password = True
+            elif parent[-3] == TERMINAL:
+                terminal = True
             if parent[-3] in WINDOW_ROLES:
                 if state(parent[-1], ACTIVE):
-                    matches.append(Field(bus_id, owner, path, parent[0][1]))
+                    if password:
+                        return None, True
+                    if is_editable and not terminal:
+                        matches.append(Field(bus_id, owner, path, parent[0][1]))
                 break
             parent = objects.get(parent[2][1]) if parent[2][0] == owner else None
             if parent is None:
                 break
-    return matches[0] if len(matches) == 1 else None
+    return (matches[0] if len(matches) == 1 else None), False
 
 
 UNAVAILABLE = (OSError, EOFError, RuntimeError, TimeoutError, ValueError, AuthError, InvalidAddressError)
 
 
-async def focused_field(pid=None):
+async def probe_focused_field(pid=None):
     try:
         async with asyncio.timeout(0.65), connection() as bus:
             bus_id, = await call(bus, DBUS, DBUS_PATH, DBUS, "GetId")
             apps, = await call(bus, ATSPI + "Registry", ROOT, ACCESSIBLE, "GetChildren")
-            fields = await asyncio.gather(*(app_field(bus, bus_id, owner, root, pid) for owner, root in apps),
-                                          return_exceptions=True)
-            matches = [field for field in fields if isinstance(field, Field)]
-            return matches[0] if len(matches) == 1 else None
+            results = await asyncio.gather(*(app_field(bus, bus_id, owner, root, pid) for owner, root in apps),
+                                           return_exceptions=True)
+            matches = []
+            for item in results:
+                if isinstance(item, tuple):
+                    field, blocked = item
+                    if blocked:
+                        return None, True
+                    if isinstance(field, Field):
+                        matches.append(field)
+            return (matches[0] if len(matches) == 1 else None), False
     except UNAVAILABLE:
-        return None
+        return None, False
+
+
+async def focused_field(pid=None):
+    field, _ = await probe_focused_field(pid)
+    return field
 
 
 async def insert_field(text, field):

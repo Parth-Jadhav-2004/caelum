@@ -67,12 +67,14 @@ class Target:
     output: str
     terminal: bool = False
     field: "Field | None" = None
+    blocked_field: bool = False
+    self_window: bool = False
 
     async def remember_field(self, *, portable=False):
-        from .field_input import focused_field
+        from .field_input import probe_focused_field
 
         if portable or (self.address and self.pid > 0 and not self.terminal):
-            self.field = await focused_field(None if portable else self.pid)
+            self.field, self.blocked_field = await probe_focused_field(None if portable else self.pid)
 
 
 async def target_at_press(address=None):
@@ -86,7 +88,29 @@ async def target_at_press(address=None):
     output = next((m["name"] for m in monitors if m["id"] == monitor_id), "")
     tags = window.get("tags", [])
     terminal = any(t.rstrip("*") == "terminal" for t in tags)
-    return Target(window.get("address", ""), window.get("pid", -1), monitor_id, output, terminal)
+    pid = window.get("pid", -1)
+    self_window = (
+        window.get("class") == "caelum-desktop"
+        or window.get("initialClass") == "caelum-desktop"
+        or pid == os.getpid()
+    )
+    return Target(
+        window.get("address", ""),
+        pid,
+        monitor_id,
+        output,
+        terminal,
+        self_window=self_window,
+    )
+
+
+async def same_window(target):
+    address = getattr(target, "address", "")
+    pid = getattr(target, "pid", -1)
+    if not address or pid <= 0:
+        return False
+    current = await hypr_json("activewindow")
+    return current.get("address") == address and current.get("pid") == pid
 
 
 async def notify(message, actions=False):
@@ -102,12 +126,19 @@ async def notify(message, actions=False):
 async def insert(text, target, *, auto_copy=True):
     if not auto_copy:
         from .field_input import insert_field
+        from .wayland_input import type_text
 
-        if not getattr(target, "field", None):
+        if not await same_window(target):
             return False
-        current = await hypr_json("activewindow")
-        return (current.get("address") == target.address and current.get("pid") == target.pid
-                and await insert_field(text, target.field))
+        if getattr(target, "field", None):
+            return await insert_field(text, target.field)
+        if getattr(target, "blocked_field", False) or getattr(target, "self_window", False):
+            return False
+        return await type_text(
+            text,
+            terminal=bool(getattr(target, "terminal", False)),
+            verify_focus=lambda: same_window(target),
+        )
     await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
     current = await hypr_json("activewindow")
     if (

@@ -33,7 +33,7 @@ Once your package reports `OK`, run only the command for your download:
 2. Select your microphone and run the local mic test. Set your shortcut and try **Practice**. Online practice asks before uploading audio.
 3. On **Home**, select **Record**, say “Meet me at the station at nine,” then select **Finish recording**. If Caelum shows **Copied**, paste into your editor. Otherwise, select **Copy transcript** on Home or copy the saved entry from History.
 
-For hold-to-talk, focus a text field, hold your shortcut while speaking, then release. Automatic clipboard copying is off by default. Linux can insert directly into fields that support editable text through desktop accessibility; Windows supports Edit and RichEdit fields. If the field is unsupported or focus changes, use **Copy transcript** on Home. The Home controls also work if the desktop denies the shortcut.
+For hold-to-talk, focus a text field, hold your shortcut while speaking, then release. Automatic clipboard copying is off by default. Native Hyprland inserts directly into the focused app without changing your clipboard (using desktop accessibility when exposed, or Wayland virtual keyboard input otherwise); portable Linux desktops use desktop accessibility when supported, and Windows supports Edit and RichEdit fields. If the field is unsupported or focus changes, use **Copy transcript** on Home. The Home controls also work if the desktop denies the shortcut.
 
 ## Where your words go
 
