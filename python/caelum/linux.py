@@ -12,6 +12,10 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .field_input import Field
 
 
 async def command(*args, data=None, timeout=3, capture_output=True, interrupt_on_cancel=False):
@@ -62,6 +66,13 @@ class Target:
     monitor: int
     output: str
     terminal: bool = False
+    field: "Field | None" = None
+
+    async def remember_field(self, *, portable=False):
+        from .field_input import focused_field
+
+        if portable or (self.address and self.pid > 0 and not self.terminal):
+            self.field = await focused_field(None if portable else self.pid)
 
 
 async def target_at_press(address=None):
@@ -90,8 +101,13 @@ async def notify(message, actions=False):
 
 async def insert(text, target, *, auto_copy=True):
     if not auto_copy:
-        # Hyprland paste uses the selection even when the original target is focused.
-        return False
+        from .field_input import insert_field
+
+        if not getattr(target, "field", None):
+            return False
+        current = await hypr_json("activewindow")
+        return (current.get("address") == target.address and current.get("pid") == target.pid
+                and await insert_field(text, target.field))
     await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
     current = await hypr_json("activewindow")
     if (

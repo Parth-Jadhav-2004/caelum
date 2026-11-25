@@ -2,6 +2,13 @@
 
 Release notes, newest first.
 
+## 0.5.3
+
+- The **Styles** page lets you choose an online writing style and preview an example.
+- Local transcription formats clearly dictated English lists with built-in rules and needs only the speech model. It keeps spoken fractions within their item and leaves lists with more than ten consecutive ordinal markers as dictated.
+- Automatic clipboard copying is off by default. When copying is off, the dictation shortcut inserts at the caret in supported Linux text fields and keeps your clipboard intact. If insertion is unavailable, use **Copy transcript**. Existing explicit clipboard preferences are preserved.
+- Removed the sidebar status and pause card and the accent picker in **Appearance**.
+
 ## 0.5.2
 
 Changes since stable v0.5.0, including the v0.5.1 testing releases.

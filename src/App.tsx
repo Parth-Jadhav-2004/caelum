@@ -19,13 +19,10 @@ import {
   Settings as SettingsIcon,
   BookOpen,
   Wand2,
-  Pause,
-  Play,
 } from "lucide-react";
 import { useEngine } from "@/hooks/use-engine";
 import { useApp, type Page } from "@/stores/app";
 import { ipc, errorText, IpcError, type Config, type ConfigPatch } from "@/lib/ipc";
-import { formatShortcut } from "@/lib/shortcut";
 import { action, Confirm } from "@/components/common";
 import {
   SidebarProvider,
@@ -51,7 +48,7 @@ import {
 import { version } from "../package.json";
 import { History } from "@/features/history";
 import { CaelumBrand } from "@/components/brand";
-import { Switch } from "@/components/ui/switch";
+import { Styles } from "@/features/styles";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
@@ -71,6 +68,7 @@ const pages = [
   { id: "home", title: "Home", icon: Home },
   { id: "history", title: "History", icon: Clock3 },
   { id: "dictionary", title: "Dictionary", icon: BookOpen },
+  { id: "styles", title: "Styles", icon: Wand2 },
   { id: "statistics", title: "Insights", icon: ChartNoAxesColumn },
   { id: "settings", title: "Settings", icon: SettingsIcon },
 ] as const;
@@ -164,14 +162,8 @@ export default function App() {
       useShallow((s) =>
         s.status
           ? {
-              title: s.status.title,
               state: s.status.state,
-              running: s.status.running,
-              paused: s.status.paused,
               pending_audio: s.status.pending_audio,
-              backend: s.status.backend,
-              shortcut_mode: s.status.shortcut_mode,
-              shortcut_description: s.status.shortcut_description,
             }
           : null,
       ),
@@ -408,7 +400,7 @@ export default function App() {
                   <SidebarTrigger className="ml-auto shrink-0" />
                 </SidebarHeader>
                 <SidebarContent className="px-2">
-                  {[pages.slice(0, 3), pages.slice(3)].map((group, i) => (
+                  {[pages.slice(0, 4), pages.slice(4)].map((group, i) => (
                     <SidebarMenu key={i} className={i ? "mt-6" : ""}>
                       {group.map(({ id, title, icon: Icon }) => (
                         <SidebarMenuItem key={id}>
@@ -429,76 +421,10 @@ export default function App() {
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ))}
-                      {i === 0 && (
-                        <SidebarMenuItem>
-                          <SidebarMenuButton
-                            disabled
-                            aria-label="Styles, coming later"
-                            className="h-9"
-                          >
-                            <Wand2 />
-                            <span className="group-data-[collapsible=icon]:sr-only">
-                              Styles{" "}
-                              <span className="text-meta text-muted-foreground">
-                                Coming later
-                              </span>
-                            </span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      )}
                     </SidebarMenu>
                   ))}
                 </SidebarContent>
                 <SidebarFooter className="gap-4 p-4 group-data-[collapsible=icon]:p-2">
-                  <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        tooltip={`${status?.title ?? "Connecting…"} · ${status?.paused ? "Resume" : "Pause"} dictation`}
-                        disabled={!status?.running}
-                        onClick={() =>
-                          void action(() =>
-                            ipc("control", {
-                              action: status?.paused ? "resume" : "pause",
-                            }),
-                          )
-                        }
-                      >
-                        {status?.paused ? <Play /> : <Pause />}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
-                  <div className="space-y-3 rounded-lg border border-sidebar-border bg-sidebar-status p-3 group-data-[collapsible=icon]:hidden">
-                    <p
-                      role="status"
-                      className="flex items-center gap-2 text-body"
-                    >
-                      <span
-                        className={`size-1.5 rounded-full ${status?.state === "error" ? "bg-destructive" : status?.paused || !status?.running || (page === "settings" && settingsGroup === "Appearance") ? "bg-foreground" : "bg-accent-brand"}`}
-                      />
-                      {status?.title ?? "Connecting…"}
-                    </p>
-                    {!["home", "settings"].includes(page) &&
-                      (status?.backend !== "portable" || status.shortcut_mode === "portal") && (
-                        <kbd className="inline-block">
-                          {status?.backend === "portable"
-                            ? status.shortcut_description
-                            : formatShortcut(config.app.hotkey)}
-                        </kbd>
-                      )}
-                    <label className="flex items-center justify-between gap-3 text-body">
-                      Pause
-                      <Switch
-                        aria-label="Pause dictation"
-                        disabled={!status?.running}
-                        checked={status?.paused ?? false}
-                        onCheckedChange={(v) =>
-                          void action(() =>
-                            ipc("control", { action: v ? "pause" : "resume" }),
-                          )
-                        }
-                      />
-                    </label>
-                  </div>
                   <div className="flex items-center justify-between text-meta group-data-[collapsible=icon]:hidden">
                     <Button
                       variant="ghost"
@@ -563,6 +489,7 @@ export default function App() {
                     {page === "home" && <Dashboard config={config} />}{" "}
                     {page === "statistics" && <Statistics />}
                     {page === "history" && <History />}
+                    {page === "styles" && <Styles config={config} change={change} saveState={saveState} />}
                     {page === "dictionary" && (
                       <div className="space-y-8">
                         <h1 tabIndex={-1} className="text-title font-semibold">

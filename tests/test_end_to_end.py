@@ -18,6 +18,7 @@ from caelum.providers import Providers
 async def test_record_transcribe_cleanup_save_search_export_delete(tmp_path, monkeypatch):
     config = Config()
     config.app.backend = "portable"
+    config.desktop.auto_copy = True  # Exercise the existing portable save/copy workflow.
     config.cleanup.model = "openai/gpt-oss-20b"
     path = tmp_path / "settings.toml"
     save(config, path)

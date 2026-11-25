@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/select";
 import { HistoryTools } from "./history";
 import { MicrophoneTestDialog } from "./microphone";
-import { ACCENTS, resolveColorTheme } from "@/lib/themes";
 import { DeviceSelect } from "./dashboard";
 import { Skeleton } from "@/components/ui/skeleton";
 const UpdateSettings = lazy(() =>
@@ -455,9 +454,8 @@ export function Settings({
                     />
                   </Row>
                   <p className="py-4 text-meta text-muted-foreground">
-                    Offline cleanup applies Dictionary replacements. For English
-                    speech it also removes “um” and “uh”. Say “new line”, “new
-                    paragraph”, or “bullet point” as a separate phrase to format text.
+                    Local dictation uses built-in rules for Dictionary replacements,
+                    clear English lists and spoken formatting commands. No text model is needed.
                   </p>
                 </>
               ) : (
@@ -489,36 +487,8 @@ export function Settings({
                       }}
                     />
                   </Row>
-                  <Row title="Clean up my text">
-                    <Choice
-                      label="Text cleanup"
-                      disabled={config.stt.engine === "local"}
-                      value={
-                        !config.cleanup.model ? "off" : config.cleanup.style
-                      }
-                      items={[
-                        ["off", "Off"],
-                        ["light", "Light"],
-                        ["thorough", "Thorough"],
-                        ["email", "Email"],
-                        ["casual", "Casual"],
-                        ["code", "Code"],
-                      ]}
-                      change={(v) =>
-                        change({
-                          ...config,
-                          cleanup: {
-                            ...config.cleanup,
-                            model:
-                              v === "off"
-                                ? ""
-                                : config.cleanup.model || "openai/gpt-oss-20b",
-                            style: v === "off" ? config.cleanup.style : v,
-                            reasoning_effort: v === "thorough" ? "high" : "low",
-                          },
-                        })
-                      }
-                    />
+                  <Row title="Online refinement" detail="Choose how to format online dictations.">
+                    <Button variant="outline" onClick={() => navigate("styles")}>Open Styles</Button>
                   </Row>
                   <Row title="Connection" detail={connection || undefined}>
                     <div className="flex flex-wrap gap-2">
@@ -587,7 +557,7 @@ export function Settings({
               </p>
               <Row
                 title="Copy transcripts to clipboard automatically"
-                detail="Turn off to keep your clipboard unchanged, including when Caelum can’t insert text into your app."
+                detail="Off by default. Dictation still inserts into supported focused text fields without changing your clipboard. If insertion isn’t available, choose Copy transcript on Home."
               >
                 <Switch
                   aria-label="Copy transcripts to clipboard automatically"
@@ -673,20 +643,6 @@ export function Settings({
           )}
           {group === "Appearance" && (
             <>
-              <Row title="Caelum accent">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="size-3 rounded-sm bg-accent-brand"
-                  />
-                  <Choice
-                    label="Caelum accent"
-                    value={resolveColorTheme(config.desktop.color_theme)}
-                    items={ACCENTS.map((accent) => [accent.id, accent.label])}
-                    change={(v) => set("desktop", "color_theme", v)}
-                  />
-                </div>
-              </Row>
               <Row title="Reduce motion">
                 <Switch
                   aria-label="Reduce motion"
@@ -764,7 +720,7 @@ export function Settings({
               {(["stt", "cleanup"] as const).map((section) => (
                 <section key={section} className="py-6">
                   <h2 className="mb-4 text-section font-medium">
-                    {section === "stt" ? "Transcription" : "Text cleanup"}
+                    {section === "stt" ? "Online transcription" : "Online text cleanup"}
                   </h2>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {(["base_url", "model", "key_env"] as const).map(

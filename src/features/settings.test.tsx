@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -230,40 +229,6 @@ it("saves Forever without changing the existing day limit", async () => {
         history_forever: true,
         retention_days: 30,
       }),
-    }),
-  );
-});
-
-it("persists an accent selected with the keyboard", async () => {
-  const change = vi.fn();
-  function AccentSettings() {
-    const [config, setConfig] = useState(testConfig);
-    return (
-      <Settings
-        config={config}
-        change={(next) => {
-          setConfig(next);
-          change(next);
-        }}
-        saveState="Saved"
-        initialGroup="Appearance"
-      />
-    );
-  }
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <TooltipProvider>
-        <AccentSettings />
-      </TooltipProvider>
-    </QueryClientProvider>,
-  );
-  const accent = screen.getByRole("combobox", { name: "Caelum accent" });
-  accent.focus();
-  await userEvent.keyboard("{ArrowDown}{Home}{ArrowDown}{Enter}");
-  expect(accent).toHaveTextContent("Iris");
-  expect(change).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      desktop: expect.objectContaining({ color_theme: "caelum-iris" }),
     }),
   );
 });
@@ -544,7 +509,7 @@ it("preserves cloud preferences while editing offline transcription settings", a
   }));
 });
 
-it("saves the selected cleanup style through the generated settings contract", async () => {
+it("opens Styles from online transcription settings", async () => {
   const change = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -553,9 +518,7 @@ it("saves the selected cleanup style through the generated settings contract", a
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  await userEvent.click(screen.getByRole("combobox", { name: "Text cleanup" }));
-  await userEvent.click(screen.getByRole("option", { name: "Code" }));
-  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
-    cleanup: expect.objectContaining({ style: "code", reasoning_effort: "low" }),
-  }));
+  await userEvent.click(screen.getByRole("button", { name: "Open Styles" }));
+  expect(useApp.getState().page).toBe("styles");
+  expect(change).not.toHaveBeenCalled();
 });
