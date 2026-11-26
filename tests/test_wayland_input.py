@@ -136,9 +136,8 @@ class MockWaylandServer:
 
 
 def _decode_typed_text(server):
-    """Reconstruct the typed string from recorded keymaps, modifier states, and key presses."""
+    """Reconstruct the typed string from recorded keymaps and key presses."""
     result = []
-    shift_by_vk = {}
     maps = {}
     for vk_id, raw_km in server.keymaps.items():
         text_km = raw_km.rstrip(b"\x00").decode("utf-8")
@@ -151,42 +150,29 @@ def _decode_typed_text(server):
             evdev_to_sym[name_to_evdev[m.group(1)]] = m.group(2)
         maps[vk_id] = evdev_to_sym
     for event in server.events:
-        if event[0] == "mods":
-            _, vk_id, mods = event
-            shift_by_vk[vk_id] = bool(mods[0] & wi.SHIFT_MASK)
-        elif event[0] == "key":
+        if event[0] == "key":
             _, vk_id, code, state = event
             if state != wi.KEY_PRESSED:
                 continue
             sym = maps[vk_id][code]
-            if sym == "Return":
-                assert shift_by_vk.get(vk_id), "newlines must use Shift+Return to avoid submitting chats/forms"
-                result.append("\n")
-            else:
-                assert sym.startswith("U")
-                result.append(chr(int(sym[1:], 16)))
+            assert sym.startswith("U")
+            result.append(chr(int(sym[1:], 16)))
     return "".join(result)
 
 
-def test_normalize_text_validates_control_chars_and_terminal_newlines():
-    assert wi.normalize_text("") is None
-    assert wi.normalize_text("first\tsecond") is None
-    assert wi.normalize_text("a\x00b") is None
-    assert wi.normalize_text("a\x07b") is None
-    assert wi.normalize_text("a\x7fb") is None
-    assert wi.normalize_text("a\x85b") is None
-    assert wi.normalize_text("line1\r\nline2\rline3") == "line1\nline2\nline3"
-    assert wi.normalize_text("single line in terminal", terminal=True) == "single line in terminal"
-    assert wi.normalize_text("line1\nline2", terminal=True) is None
+def test_virtual_keyboard_accepts_single_line_text_and_rejects_controls():
+    assert wi.can_type_text("Café — a single line")
+    for text in ("", "a\tb", "a\x00b", "a\x07b", "a\x7fb", "a\x85b", "a\ud800b"):
+        assert not wi.can_type_text(text)
 
 
 def test_build_batches_and_keymap_only_use_safe_printable_evdev_codes():
     # 60+ unique characters forces multiple batches, each <= 48 printable evdev scancodes.
-    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()Café—\n"
+    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()Café—"
     batches = wi.build_batches(sample)
     assert len(batches) == 2
     assert "".join(text for text, _ in batches) == sample
-    forbidden_evdev = {1, 15, 29, 54, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 97, 100, 125, 126}
+    forbidden_evdev = {1, 15, 28, 29, 42, 54, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 97, 100, 125, 126}
     lib_path = ctypes.util.find_library("xkbcommon")
     xkb = ctypes.CDLL(lib_path) if lib_path else None
     if xkb:
@@ -203,7 +189,7 @@ def test_build_batches_and_keymap_only_use_safe_printable_evdev_codes():
             assert xkb.xkb_keymap_new_from_string(ctx, keymap, 1, 0)
 
 
-async def test_type_text_streams_multibatch_unicode_and_shift_return_over_wayland(tmp_path, monkeypatch):
+async def test_type_text_streams_multibatch_unicode_over_wayland(tmp_path, monkeypatch):
     sock_path = tmp_path / "wayland-test"
     server = MockWaylandServer(sock_path).start()
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
@@ -216,7 +202,7 @@ async def test_type_text_streams_multibatch_unicode_and_shift_return_over_waylan
     )
     sample = (
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 "
-        "Café — “quotes”\n1. Rice\n2. Oil Done"
+        "Café — “quotes” 1. Rice 2. Oil Done"
     )
     try:
         assert await wi.type_text(sample) is True

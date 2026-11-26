@@ -45,7 +45,9 @@ the original window still has focus, inserts through AT-SPI `EditableText` when
 the focused widget exposes it, and otherwise inserts directly into the focused
 window via Wayland's `zwp_virtual_keyboard_manager_v1` protocol without touching
 the clipboard. The virtual keyboard checks the original window before each keystroke
-and declines transcripts containing tabs because a Tab key can move focus.
+and types single-line transcripts. Tabs can move focus and Return can submit
+a command. For either case, use **Copy transcript**. Accessible text fields
+can still receive multiline dictation directly through AT-SPI.
 Portable Linux desktops try AT-SPI `EditableText` when available.
 Click into the field before pressing the shortcut. Password fields, multi-line
 dictation in terminals, Caelum's own dashboard window, active AT-SPI selections,

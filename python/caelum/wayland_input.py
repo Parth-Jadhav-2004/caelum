@@ -17,9 +17,6 @@ PRINTABLE_EVDEV = (
     + tuple(range(43, 54))  # KEY_BACKSLASH .. KEY_SLASH (11)
     + (57,)                 # KEY_SPACE (1)
 )
-EVDEV_ENTER = 28
-EVDEV_LSHIFT = 42
-SHIFT_MASK = 1
 XKB_KEYMAP_FORMAT_V1 = 1
 KEY_RELEASED = 0
 KEY_PRESSED = 1
@@ -39,23 +36,13 @@ def wayland_socket_path():
     return os.path.join(runtime, display)
 
 
-def normalize_text(text, *, terminal=False):
-    if not text:
-        return None
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    if terminal and "\n" in normalized:
-        # Never inject Enter/Shift+Enter keystrokes into a terminal where lines can execute.
-        return None
-    for ch in normalized:
-        code = ord(ch)
-        if (
-            code == 0
-            or 0xD800 <= code <= 0xDFFF
-            or (code < 0x20 and ch != "\n")
-            or 0x7F <= code <= 0x9F
-        ):
-            return None
-    return normalized
+def can_type_text(text):
+    # A window without an accessible field can be a terminal. Never synthesize Return.
+    return bool(text) and all(
+        ord(ch) >= 0x20 and not 0x7F <= ord(ch) <= 0x9F
+        and not 0xD800 <= ord(ch) <= 0xDFFF and ch not in ("\u2028", "\u2029")
+        for ch in text
+    )
 
 
 def build_batches(text):
@@ -65,9 +52,6 @@ def build_batches(text):
     seen = set()
     limit = len(PRINTABLE_EVDEV)
     for ch in text:
-        if ch == "\n":
-            batch_text.append(ch)
-            continue
         if ch not in seen and len(batch_chars) >= limit:
             batches.append(("".join(batch_text), batch_chars))
             batch_text, batch_chars, seen = [], [], set()
@@ -81,21 +65,12 @@ def build_batches(text):
 
 
 def build_keymap(chars):
-    keycodes = [
-        f"<RTRN> = {EVDEV_ENTER + 8};",
-        f"<LFSH> = {EVDEV_LSHIFT + 8};",
-    ]
-    symbols = [
-        "key <RTRN> { [ Return ] };",
-        "key <LFSH> { [ Shift_L ] };",
-        "modifier_map Shift { <LFSH> };",
-    ]
-    mapping = {"\n": EVDEV_ENTER}
-    max_xkb = max(EVDEV_ENTER, EVDEV_LSHIFT) + 8
+    keycodes = []
+    symbols = []
+    mapping = {}
     for index, ch in enumerate(chars):
         evdev = PRINTABLE_EVDEV[index]
         xkb = evdev + 8
-        max_xkb = max(max_xkb, xkb)
         mapping[ch] = evdev
         keycodes.append(f"<K{index}> = {xkb};")
         symbols.append(f"key <K{index}> {{ [ U{ord(ch):04X} ] }};")
@@ -103,7 +78,7 @@ def build_keymap(chars):
         'xkb_keymap {\n'
         'xkb_keycodes "(unnamed)" {\n'
         'minimum = 8;\n'
-        f'maximum = {max_xkb};\n'
+        f'maximum = {max(PRINTABLE_EVDEV) + 8};\n'
         + "\n".join(keycodes)
         + '\n};\n'
         'xkb_types "(unnamed)" { include "complete" };\n'
@@ -220,15 +195,8 @@ class _WaylandVirtualKeyboardClient:
         return vk_id, mapping
 
     def type_key(self, vk_id, code):
-        newline = code == EVDEV_ENTER
-        if newline:
-            self._send(vk_id, 2, struct.pack("<IIII", SHIFT_MASK, 0, 0, 0))
-        try:
-            self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_PRESSED))
-            self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_RELEASED))
-        finally:
-            if newline:
-                self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))
+        self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_PRESSED))
+        self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_RELEASED))
         self._roundtrip()
 
     def destroy_keyboard(self, vk_id):
@@ -242,15 +210,14 @@ class _WaylandVirtualKeyboardClient:
             self.sock = None
 
 
-async def type_text(text, *, terminal=False, verify_focus=None):
-    normalized = normalize_text(text, terminal=terminal)
-    if normalized is None:
+async def type_text(text, *, verify_focus=None):
+    if not can_type_text(text):
         return False
     path = wayland_socket_path()
     if not path:
         return False
-    batches = build_batches(normalized)
-    timeout = min(max(3.0, len(normalized) * 0.02 + 2.0), 30.0)
+    batches = build_batches(text)
+    timeout = min(max(3.0, len(text) * 0.02 + 2.0), 30.0)
     client = _WaylandVirtualKeyboardClient(path)
     try:
         async with asyncio.timeout(timeout):
