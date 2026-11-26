@@ -73,9 +73,20 @@ async def test_hyprland_falls_back_to_wayland_typing_without_atspi_or_clipboard(
     assert await insert("Direct into VS Code", target, auto_copy=False) is True
     typed.assert_awaited_once()
     assert typed.call_args.args == ("Direct into VS Code",)
-    assert typed.call_args.kwargs["terminal"] is False
     assert await typed.call_args.kwargs["verify_focus"]() is True
     clipboard.assert_not_awaited()
+
+
+@pytest.mark.parametrize("separator", ["\n", "\r", "\r\n", "\u2028", "\u2029"])
+async def test_multiline_without_a_known_field_never_opens_the_keyboard(monkeypatch, separator):
+    from caelum import linux, wayland_input
+
+    target = linux.Target("0xabc", 42, 0, "")
+    monkeypatch.setattr(linux, "same_window", AsyncMock(return_value=True))
+    monkeypatch.setattr(fi, "probe_focused_field", AsyncMock(return_value=fi.FieldProbe()))
+    monkeypatch.setattr(wayland_input, "wayland_socket_path", lambda: pytest.fail("opened keyboard"))
+
+    assert not await linux.insert(f"first{separator}second", target, auto_copy=False)
 
 
 @pytest.mark.parametrize("current", [

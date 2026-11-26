@@ -5,7 +5,7 @@ Release notes, newest first.
 ## 0.5.4
 
 - On Hyprland, dictation can now type directly into apps that lack an accessible text field, including Chromium and single-line terminal prompts, while keeping your clipboard intact.
-- Direct typing checks the original window before each keystroke. When Caelum detects a protected field, or a transcript contains tabs or multiple lines for a terminal, the transcript stays available through **Copy transcript**.
+- Direct typing checks the original window before each keystroke. Multiline dictation inserts directly into supported accessible fields. When only keyboard input is available, transcripts with tabs or line breaks stay available through **Copy transcript**.
 
 ## 0.5.3
 

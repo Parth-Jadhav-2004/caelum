@@ -143,7 +143,6 @@ async def insert(text, target, *, auto_copy=True):
             return False
         return await type_text(
             text,
-            terminal=current.terminal or getattr(target, "terminal", False),
             verify_focus=lambda: same_window(target),
         )
     await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
