@@ -120,5 +120,59 @@ async def test_probe_focused_field_detects_active_password_field(monkeypatch):
 
     monkeypatch.setattr(fi, "connection", connection)
     monkeypatch.setattr(fi, "call", call)
-    assert await fi.probe_focused_field(42) == (None, True)
+    assert await fi.probe_focused_field(42) == fi.FieldProbe(blocked=True)
     assert await fi.focused_field(42) is None
+
+
+@pytest.mark.parametrize("use_cache", [True, False], ids=["cache", "collection"])
+@pytest.mark.parametrize("focused_child", [False, True], ids=["terminal", "terminal-child"])
+async def test_untagged_terminal_rejects_multiline_before_opening_keyboard(monkeypatch, use_cache, focused_child):
+    from caelum import linux, wayland_input
+
+    owner = ":1.9"
+    roles = {"/window": 23, "/terminal": fi.TERMINAL}
+    parents = {"/window": "/app", "/terminal": "/window", "/child": "/terminal"}
+    focused = "/child" if focused_child else "/terminal"
+    if focused_child:
+        roles["/child"] = 61
+
+    def flags(path):
+        if path == "/window":
+            return [1 << fi.ACTIVE, 0]
+        return [1 << fi.FOCUSED if path == focused else 0, 0]
+
+    @asynccontextmanager
+    async def connection():
+        yield object()
+
+    async def call(_, destination, path, interface, member, signature="", body=None):
+        if member == "GetId":
+            return ["bus-1"]
+        if member == "GetChildren":
+            return [[(owner, "/app")]]
+        if member == "GetConnectionUnixProcessID":
+            return [42]
+        if member == "GetItems":
+            if not use_cache:
+                raise RuntimeError("Cache unavailable")
+            return [[[(owner, node), (owner, "/app"), (owner, parents[node]), 0, 0,
+                      [fi.ACCESSIBLE], "", role, "", flags(node)] for node, role in roles.items()]]
+        if member == "GetMatches":
+            assert body[0][0] == [1 << fi.FOCUSED, 0] and body[0][6] == []
+            return [[(owner, focused)]]
+        if member == "GetRole":
+            return [roles[path]]
+        if member == "GetState":
+            return [flags(path)]
+        if member == "Get" and body == [fi.ACCESSIBLE, "Parent"]:
+            return [Variant("(so)", [owner, parents[path]])]
+        raise AssertionError(f"unexpected call: {member}")
+
+    monkeypatch.setattr(fi, "connection", connection)
+    monkeypatch.setattr(fi, "call", call)
+    monkeypatch.setattr(linux, "hypr_json", AsyncMock(return_value={"address": "0xabc", "pid": 42}))
+    monkeypatch.setattr(wayland_input, "wayland_socket_path", lambda: pytest.fail("opened keyboard"))
+    target = linux.Target("0xabc", 42, 0, "")
+    await target.remember_field()
+    assert target.terminal and target.field is None and not target.blocked_field
+    assert not await linux.insert("first line\nsecond line", target, auto_copy=False)

@@ -29,6 +29,22 @@ class Field:
     window: str
 
 
+@dataclass(frozen=True)
+class FieldProbe:
+    field: Field | None = None
+    terminal: bool = False
+    blocked: bool = False
+
+
+def combine_probes(probes):
+    fields = [probe.field for probe in probes if probe.field]
+    if any(probe.blocked for probe in probes) or len(fields) > 1:
+        return FieldProbe(blocked=True)
+    if any(probe.terminal for probe in probes):
+        return FieldProbe(terminal=True)
+    return FieldProbe(field=fields[0]) if fields else FieldProbe()
+
+
 async def call(bus, owner, path, interface, member, signature="", body=None):
     reply = await bus.call(Message(destination=owner, path=path, interface=interface,
                                    member=member, signature=signature, body=body or []))
@@ -61,12 +77,14 @@ def eligible(bits):
 
 async def collection_field(bus, bus_id, owner, root):
     # ATK clients can expose Collection without implementing Cache.GetItems.
-    # Match all specified states and interfaces, in canonical order.
-    rule = [[(1 << FOCUSED) | (1 << EDITABLE_STATE), 0], 1, {}, 1, [], 1, ["EditableText"], 1, False]
+    # Terminals and password widgets may be focused without exposing EditableText.
+    rule = [[1 << FOCUSED, 0], 1, {}, 1, [], 1, [], 1, False]
     matches, = await call(bus, owner, root, ATSPI + "Collection", "GetMatches",
                           "(aiia{ss}iaiiasib)uib", [rule, 1, 2, True])
-    if len(matches) != 1 or matches[0][0] != owner:
-        return None, False
+    if len(matches) > 1:
+        return FieldProbe(blocked=True)
+    if not matches or matches[0][0] != owner:
+        return FieldProbe()
     path = matches[0][1]
     parent = path
     password = False
@@ -80,26 +98,30 @@ async def collection_field(bus, bus_id, owner, root):
         if role in WINDOW_ROLES:
             flags, = await call(bus, owner, parent, ACCESSIBLE, "GetState")
             if not state(flags, ACTIVE):
-                return None, False
+                return FieldProbe()
             if password:
-                return None, True
+                return FieldProbe(blocked=True)
             if terminal:
-                return None, False
-            return Field(bus_id, owner, path, parent), False
+                return FieldProbe(terminal=True)
+            flags, = await call(bus, owner, path, ACCESSIBLE, "GetState")
+            interfaces, = await call(bus, owner, path, ACCESSIBLE, "GetInterfaces")
+            if eligible(flags) and EDITABLE in interfaces:
+                return FieldProbe(field=Field(bus_id, owner, path, parent))
+            return FieldProbe()
         ref, = await call(bus, owner, parent, "org.freedesktop.DBus.Properties", "Get",
                           "ss", [ACCESSIBLE, "Parent"])
         if ref.value[0] != owner:
             break
         parent = ref.value[1]
-    return None, False
+    return FieldProbe()
 
 
 async def app_field(bus, bus_id, owner, root, pid):
     if not owner.startswith(":"):
-        return None, False
+        return FieldProbe()
     if pid is not None and await call(bus, DBUS, DBUS_PATH, DBUS, "GetConnectionUnixProcessID",
                                       "s", [owner]) != [pid]:
-        return None, False
+        return FieldProbe()
     try:
         rows, = await call(bus, owner, "/org/a11y/atspi/cache", ATSPI + "Cache", "GetItems")
     except RuntimeError:
@@ -114,8 +136,6 @@ async def app_field(bus, bus_id, owner, root, pid):
         is_editable = EDITABLE in row[-5] and eligible(row[-1])
         password = row[-3] == PASSWORD_TEXT
         terminal = row[-3] == TERMINAL
-        if not is_editable and not password:
-            continue
         parent = row
         for _ in range(64):
             if parent[-3] == PASSWORD_TEXT:
@@ -125,14 +145,16 @@ async def app_field(bus, bus_id, owner, root, pid):
             if parent[-3] in WINDOW_ROLES:
                 if state(parent[-1], ACTIVE):
                     if password:
-                        return None, True
-                    if is_editable and not terminal:
-                        matches.append(Field(bus_id, owner, path, parent[0][1]))
+                        return FieldProbe(blocked=True)
+                    if terminal:
+                        matches.append(FieldProbe(terminal=True))
+                    elif is_editable:
+                        matches.append(FieldProbe(field=Field(bus_id, owner, path, parent[0][1])))
                 break
             parent = objects.get(parent[2][1]) if parent[2][0] == owner else None
             if parent is None:
                 break
-    return (matches[0] if len(matches) == 1 else None), False
+    return combine_probes(matches)
 
 
 UNAVAILABLE = (OSError, EOFError, RuntimeError, TimeoutError, ValueError, AuthError, InvalidAddressError)
@@ -145,22 +167,13 @@ async def probe_focused_field(pid=None):
             apps, = await call(bus, ATSPI + "Registry", ROOT, ACCESSIBLE, "GetChildren")
             results = await asyncio.gather(*(app_field(bus, bus_id, owner, root, pid) for owner, root in apps),
                                            return_exceptions=True)
-            matches = []
-            for item in results:
-                if isinstance(item, tuple):
-                    field, blocked = item
-                    if blocked:
-                        return None, True
-                    if isinstance(field, Field):
-                        matches.append(field)
-            return (matches[0] if len(matches) == 1 else None), False
+            return combine_probes([item for item in results if isinstance(item, FieldProbe)])
     except UNAVAILABLE:
-        return None, False
+        return FieldProbe()
 
 
 async def focused_field(pid=None):
-    field, _ = await probe_focused_field(pid)
-    return field
+    return (await probe_focused_field(pid)).field
 
 
 async def insert_field(text, field):

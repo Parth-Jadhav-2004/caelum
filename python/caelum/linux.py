@@ -73,8 +73,11 @@ class Target:
     async def remember_field(self, *, portable=False):
         from .field_input import probe_focused_field
 
-        if portable or (self.address and self.pid > 0 and not self.terminal):
-            self.field, self.blocked_field = await probe_focused_field(None if portable else self.pid)
+        if portable or (self.address and self.pid > 0):
+            probe = await probe_focused_field(None if portable else self.pid)
+            self.terminal = self.terminal or probe.terminal
+            self.field = None if self.terminal else probe.field
+            self.blocked_field = probe.blocked
 
 
 async def target_at_press(address=None):
