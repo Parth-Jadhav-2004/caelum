@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
@@ -207,3 +208,19 @@ async def test_untagged_terminal_rejects_multiline_before_opening_keyboard(monke
     await target.remember_field()
     assert target.terminal and target.field is None and not target.blocked_field
     assert not await linux.insert("first line\nsecond line", target, auto_copy=False)
+
+
+@pytest.mark.parametrize("class_key", ["class", "initialClass"])
+async def test_wayland_dashboard_preserves_transcript_for_copy(monkeypatch, class_key):
+    from caelum import linux, wayland_input
+    from caelum.launcher import APP_ID
+
+    dashboard = {"address": "0xabc", "pid": os.getpid() + 1, class_key: APP_ID}
+    replies = {"clients": [dashboard], "monitors": [], "activewindow": dashboard}
+    monkeypatch.setattr(linux, "hypr_json", AsyncMock(side_effect=replies.__getitem__))
+    monkeypatch.setattr(fi, "probe_focused_field", AsyncMock(return_value=fi.FieldProbe()))
+    monkeypatch.setattr(wayland_input, "wayland_socket_path", lambda: pytest.fail("opened keyboard"))
+
+    target = await linux.target_at_press()
+    await target.remember_field()
+    assert not await linux.insert("Keep this transcript", target, auto_copy=False)

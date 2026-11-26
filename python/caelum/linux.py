@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .launcher import APP_ID
+
 if TYPE_CHECKING:
     from .field_input import Field
 
@@ -92,9 +94,10 @@ async def target_at_press(address=None):
     tags = window.get("tags", [])
     terminal = any(t.rstrip("*") == "terminal" for t in tags)
     pid = window.get("pid", -1)
+    dashboard_ids = (APP_ID, "caelum-desktop")
     self_window = (
-        window.get("class") == "caelum-desktop"
-        or window.get("initialClass") == "caelum-desktop"
+        window.get("class") in dashboard_ids
+        or window.get("initialClass") in dashboard_ids
         or pid == os.getpid()
     )
     return Target(
