@@ -64,6 +64,7 @@ async def test_hyprland_falls_back_to_wayland_typing_without_atspi_or_clipboard(
 
     target = Target("0xabc", 12, 0, "", terminal=False, field=None)
     monkeypatch.setattr("caelum.linux.hypr_json", AsyncMock(return_value={"address": "0xabc", "pid": 12}))
+    monkeypatch.setattr(fi, "probe_focused_field", AsyncMock(return_value=fi.FieldProbe()))
     typed = AsyncMock(return_value=True)
     clipboard = AsyncMock()
     monkeypatch.setattr("caelum.wayland_input.type_text", typed)
@@ -75,6 +76,25 @@ async def test_hyprland_falls_back_to_wayland_typing_without_atspi_or_clipboard(
     assert typed.call_args.kwargs["terminal"] is False
     assert await typed.call_args.kwargs["verify_focus"]() is True
     clipboard.assert_not_awaited()
+
+
+@pytest.mark.parametrize("current", [
+    fi.FieldProbe(blocked=True),
+    fi.FieldProbe(field=fi.Field("bus-1", ":1.9", "/new-field", "/window")),
+    fi.FieldProbe(terminal=True),
+], ids=["password", "different-editable-field", "terminal"])
+async def test_keyboard_fallback_rechecks_widget_after_recording(monkeypatch, current):
+    from caelum import linux, wayland_input
+
+    target = linux.Target("0xabc", 42, 0, "")
+    probe = AsyncMock(side_effect=[fi.FieldProbe(), current])
+    monkeypatch.setattr(fi, "probe_focused_field", probe)
+    monkeypatch.setattr(linux, "hypr_json", AsyncMock(return_value={"address": target.address, "pid": target.pid}))
+    monkeypatch.setattr(wayland_input, "wayland_socket_path", lambda: pytest.fail("opened keyboard"))
+
+    await target.remember_field()
+    assert not await linux.insert("first line\nsecond line", target, auto_copy=False)
+    assert [call.args for call in probe.await_args_list] == [(42,), (42,)]
 
 
 async def test_hyprland_respects_atspi_refusal_password_and_self_window(monkeypatch):

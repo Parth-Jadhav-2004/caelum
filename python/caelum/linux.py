@@ -128,7 +128,7 @@ async def notify(message, actions=False):
 
 async def insert(text, target, *, auto_copy=True):
     if not auto_copy:
-        from .field_input import insert_field
+        from .field_input import insert_field, probe_focused_field
         from .wayland_input import type_text
 
         if not await same_window(target):
@@ -137,9 +137,13 @@ async def insert(text, target, *, auto_copy=True):
             return await insert_field(text, target.field)
         if getattr(target, "blocked_field", False) or getattr(target, "self_window", False):
             return False
+        # The window may still be active while a different widget now has focus.
+        current = await probe_focused_field(target.pid)
+        if current.blocked or current.field is not None:
+            return False
         return await type_text(
             text,
-            terminal=bool(getattr(target, "terminal", False)),
+            terminal=current.terminal or getattr(target, "terminal", False),
             verify_focus=lambda: same_window(target),
         )
     await command("wl-copy", "--type", "text/plain;charset=utf-8", data=text.encode(), capture_output=False)
