@@ -17,7 +17,6 @@ PRINTABLE_EVDEV = (
     + tuple(range(43, 54))  # KEY_BACKSLASH .. KEY_SLASH (11)
     + (57,)                 # KEY_SPACE (1)
 )
-EVDEV_TAB = 15
 EVDEV_ENTER = 28
 EVDEV_LSHIFT = 42
 SHIFT_MASK = 1
@@ -52,7 +51,7 @@ def normalize_text(text, *, terminal=False):
         if (
             code == 0
             or 0xD800 <= code <= 0xDFFF
-            or (code < 0x20 and ch not in ("\n", "\t"))
+            or (code < 0x20 and ch != "\n")
             or 0x7F <= code <= 0x9F
         ):
             return None
@@ -66,7 +65,7 @@ def build_batches(text):
     seen = set()
     limit = len(PRINTABLE_EVDEV)
     for ch in text:
-        if ch in ("\n", "\t"):
+        if ch == "\n":
             batch_text.append(ch)
             continue
         if ch not in seen and len(batch_chars) >= limit:
@@ -83,18 +82,16 @@ def build_batches(text):
 
 def build_keymap(chars):
     keycodes = [
-        f"<TAB> = {EVDEV_TAB + 8};",
         f"<RTRN> = {EVDEV_ENTER + 8};",
         f"<LFSH> = {EVDEV_LSHIFT + 8};",
     ]
     symbols = [
-        "key <TAB> { [ Tab ] };",
         "key <RTRN> { [ Return ] };",
         "key <LFSH> { [ Shift_L ] };",
         "modifier_map Shift { <LFSH> };",
     ]
-    mapping = {"\t": EVDEV_TAB, "\n": EVDEV_ENTER}
-    max_xkb = max(EVDEV_TAB, EVDEV_ENTER, EVDEV_LSHIFT) + 8
+    mapping = {"\n": EVDEV_ENTER}
+    max_xkb = max(EVDEV_ENTER, EVDEV_LSHIFT) + 8
     for index, ch in enumerate(chars):
         evdev = PRINTABLE_EVDEV[index]
         xkb = evdev + 8
@@ -206,48 +203,37 @@ class _WaylandVirtualKeyboardClient:
     def _timestamp(self):
         return int((time.monotonic() - self.started) * 1000) & 0xFFFFFFFF
 
-    def type_batch(self, batch_text, batch_chars):
-        # A fresh virtual keyboard per batch forces compositors to send the new keymap to clients.
+    def start_keyboard(self, batch_chars):
+        # A fresh virtual keyboard per batch makes compositors send its new keymap to clients.
         vk_id = self._alloc()
-        self._send(self.vkm_id, 0, struct.pack("<II", self.seat_id, vk_id))  # create_virtual_keyboard
-        shift_active = False
+        self._send(self.vkm_id, 0, struct.pack("<II", self.seat_id, vk_id))
+        keymap, mapping = build_keymap(batch_chars)
+        fd = os.memfd_create("caelum-keymap", os.MFD_CLOEXEC)
         try:
-            keymap, mapping = build_keymap(batch_chars)
-            fd = os.memfd_create("caelum-keymap", os.MFD_CLOEXEC)
-            try:
-                os.write(fd, keymap)
-                os.lseek(fd, 0, os.SEEK_SET)
-                self._send(vk_id, 0, struct.pack("<II", XKB_KEYMAP_FORMAT_V1, len(keymap)), fds=(fd,))
-            finally:
-                os.close(fd)
-            self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))  # modifiers
-            self._roundtrip()
-            if self.settle_seconds > 0:
-                time.sleep(self.settle_seconds)
-
-            for ch in batch_text:
-                code = mapping[ch]
-                if ch == "\n":
-                    # Shift+Return inserts a newline in editors and chat inputs without submitting.
-                    shift_active = True
-                    self._send(vk_id, 2, struct.pack("<IIII", SHIFT_MASK, 0, 0, 0))
-                    self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_PRESSED))
-                    self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_RELEASED))
-                    self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))
-                    shift_active = False
-                else:
-                    self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_PRESSED))
-                    self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_RELEASED))
-                self._roundtrip()
-            if self.drain_seconds > 0:
-                time.sleep(self.drain_seconds)
+            os.write(fd, keymap)
+            os.lseek(fd, 0, os.SEEK_SET)
+            self._send(vk_id, 0, struct.pack("<II", XKB_KEYMAP_FORMAT_V1, len(keymap)), fds=(fd,))
         finally:
-            if shift_active:
-                with suppress(OSError):
-                    self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))
-            with suppress(OSError, EOFError, RuntimeError, TimeoutError):
-                self._send(vk_id, 3)  # destroy
-                self._roundtrip()
+            os.close(fd)
+        self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))
+        self._roundtrip()
+        return vk_id, mapping
+
+    def type_key(self, vk_id, code):
+        newline = code == EVDEV_ENTER
+        if newline:
+            self._send(vk_id, 2, struct.pack("<IIII", SHIFT_MASK, 0, 0, 0))
+        try:
+            self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_PRESSED))
+            self._send(vk_id, 1, struct.pack("<III", self._timestamp(), code, KEY_RELEASED))
+        finally:
+            if newline:
+                self._send(vk_id, 2, struct.pack("<IIII", 0, 0, 0, 0))
+        self._roundtrip()
+
+    def destroy_keyboard(self, vk_id):
+        self._send(vk_id, 3)
+        self._roundtrip()
 
     def close(self):
         if self.sock is not None:
@@ -271,9 +257,15 @@ async def type_text(text, *, terminal=False, verify_focus=None):
             if not await asyncio.to_thread(client.connect):
                 return False
             for batch_text, batch_chars in batches:
-                if verify_focus is not None and not await verify_focus():
-                    return False
-                await asyncio.to_thread(client.type_batch, batch_text, batch_chars)
+                vk_id, mapping = await asyncio.to_thread(client.start_keyboard, batch_chars)
+                await asyncio.sleep(client.settle_seconds)
+                for ch in batch_text:
+                    if verify_focus is not None and not await verify_focus():
+                        await asyncio.to_thread(client.destroy_keyboard, vk_id)
+                        return False
+                    await asyncio.to_thread(client.type_key, vk_id, mapping[ch])
+                await asyncio.sleep(client.drain_seconds)
+                await asyncio.to_thread(client.destroy_keyboard, vk_id)
             return True
     except UNAVAILABLE:
         return False

@@ -162,8 +162,6 @@ def _decode_typed_text(server):
             if sym == "Return":
                 assert shift_by_vk.get(vk_id), "newlines must use Shift+Return to avoid submitting chats/forms"
                 result.append("\n")
-            elif sym == "Tab":
-                result.append("\t")
             else:
                 assert sym.startswith("U")
                 result.append(chr(int(sym[1:], 16)))
@@ -172,6 +170,7 @@ def _decode_typed_text(server):
 
 def test_normalize_text_validates_control_chars_and_terminal_newlines():
     assert wi.normalize_text("") is None
+    assert wi.normalize_text("first\tsecond") is None
     assert wi.normalize_text("a\x00b") is None
     assert wi.normalize_text("a\x07b") is None
     assert wi.normalize_text("a\x7fb") is None
@@ -183,11 +182,11 @@ def test_normalize_text_validates_control_chars_and_terminal_newlines():
 
 def test_build_batches_and_keymap_only_use_safe_printable_evdev_codes():
     # 60+ unique characters forces multiple batches, each <= 48 printable evdev scancodes.
-    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()Café—\n\t"
+    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()Café—\n"
     batches = wi.build_batches(sample)
     assert len(batches) == 2
     assert "".join(text for text, _ in batches) == sample
-    forbidden_evdev = {1, 29, 54, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 97, 100, 125, 126}
+    forbidden_evdev = {1, 15, 29, 54, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 97, 100, 125, 126}
     lib_path = ctypes.util.find_library("xkbcommon")
     xkb = ctypes.CDLL(lib_path) if lib_path else None
     if xkb:
@@ -217,7 +216,7 @@ async def test_type_text_streams_multibatch_unicode_and_shift_return_over_waylan
     )
     sample = (
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 "
-        "Café — “quotes”\n1. Rice\n2. Oil\tDone"
+        "Café — “quotes”\n1. Rice\n2. Oil Done"
     )
     try:
         assert await wi.type_text(sample) is True
@@ -229,7 +228,7 @@ async def test_type_text_streams_multibatch_unicode_and_shift_return_over_waylan
     assert _decode_typed_text(server) == sample
 
 
-async def test_type_text_stops_if_focus_changes_before_or_between_batches(tmp_path, monkeypatch):
+async def test_type_text_stops_if_focus_changes_within_one_batch(tmp_path, monkeypatch):
     sock_path = tmp_path / "wayland-focus"
     server = MockWaylandServer(sock_path).start()
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
@@ -245,13 +244,13 @@ async def test_type_text_stops_if_focus_changes_before_or_between_batches(tmp_pa
     async def verify_focus():
         return next(checks)
 
-    sample = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    sample = "a" * 100
     try:
         assert await wi.type_text(sample, verify_focus=verify_focus) is False
     finally:
         server.close()
 
-    # Batch 1 typed, batch 2 skipped when focus changed, and batch 1 keyboard was destroyed.
+    assert _decode_typed_text(server) == "a"
     assert len(server.vk_objects) == 1
     assert server.destroyed == server.vk_objects
 

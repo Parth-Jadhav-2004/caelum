@@ -44,7 +44,9 @@ original app. With automatic copy off (the default), native Hyprland verifies
 the original window still has focus, inserts through AT-SPI `EditableText` when
 the focused widget exposes it, and otherwise inserts directly into the focused
 window via Wayland's `zwp_virtual_keyboard_manager_v1` protocol without touching
-the clipboard. Portable Linux desktops try AT-SPI `EditableText` when available.
+the clipboard. The virtual keyboard checks the original window before each keystroke
+and declines transcripts containing tabs because a Tab key can move focus.
+Portable Linux desktops try AT-SPI `EditableText` when available.
 Click into the field before pressing the shortcut. Password fields, multi-line
 dictation in terminals, Caelum's own dashboard window, active AT-SPI selections,
 unsupported compositors, and changed focus fall back to **Copy transcript** on
