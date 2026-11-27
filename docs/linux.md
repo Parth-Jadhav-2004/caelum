@@ -40,14 +40,22 @@ Caelum does not install broad keyboard hooks or bypass compositor permissions.
 
 On Hyprland the existing bindings are installed dynamically and removed by exact
 handle; no user compositor config is rewritten. Native insertion targets the
-original app. With automatic copy off (the default), both native and portable
-Linux modes try to insert at the caret in the same focused, editable AT-SPI
-field. Click into the field before pressing the shortcut. Password fields,
-terminals, active selections, apps that do not expose editable text, and changed
-focus fall back to **Copy transcript** on Home. The clipboard is never used for
-this direct insertion. If you enable automatic copy, Hyprland uses clipboard
-paste and portable desktops retain their save/copy workflow. Lock/suspend signals
-cancel capture; lock feedback failures fail closed.
+original app. With automatic copy off (the default), native Hyprland verifies
+the original window still has focus, inserts through AT-SPI `EditableText` when
+the focused widget exposes it, and otherwise inserts directly into the focused
+window via Wayland's `zwp_virtual_keyboard_manager_v1` protocol without touching
+the clipboard. The virtual keyboard checks the original window before each keystroke
+and types single-line transcripts. Tabs can move focus and Return can submit
+a command. For either case, use **Copy transcript**. Accessible text fields
+can still receive multiline dictation directly through AT-SPI.
+Portable Linux desktops try AT-SPI `EditableText` when available.
+Click into the field before pressing the shortcut. Password fields, multi-line
+dictation in terminals, Caelum's own dashboard window, active AT-SPI selections,
+unsupported compositors, and changed focus fall back to **Copy transcript** on
+Home. The clipboard is never used for this direct insertion. If you enable
+automatic copy, Hyprland uses clipboard paste and portable desktops retain their
+save/copy workflow. Lock/suspend signals cancel capture; lock feedback failures
+fail closed.
 
 Tauri uses WebKitGTK on Linux. GPU/driver rendering issues require testing on the
 deployment host: https://v2.tauri.app/develop/debug/linux-graphics/ . Do not force
